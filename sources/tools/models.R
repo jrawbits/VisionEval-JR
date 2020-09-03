@@ -668,7 +668,6 @@ ve.model.extract <- function(
 }
 
 # Query.R
-# This script provides illustrative functions for doing Datastore summary queries, using a SpecFile
 
 ###########################################################################
 # Required libraries
@@ -823,6 +822,7 @@ makeMeasureDataFrame <- function(measureEnv) {
 #' from the model's geo.csv file; for Region, an empty string).
 #' @param SpecFile is the file name of the file containing the query. Relative path
 #' interpreted relative to the model path (so you can put it next to run_model.R)
+#' @param Spec is a list of specifications (already loaded - for one-offs or testing)
 #' @param outputFile template for generating scenario output file
 #' @param saveTo sub-directory of model path into which to write output files (defaults to "output" like extract)
 #' @param log, one of c("WARN","ERROR") for level at which to generate trace details (default "ERROR")
@@ -830,26 +830,35 @@ makeMeasureDataFrame <- function(measureEnv) {
 #' @export
 ve.model.query <- function(
   Geography,
+  GeoValue,
+  Spec, # Can submit a list (like what is contained in Query-Spec.R)
   SpecFile = "Query-Spec.R",
   outputFile = "Measures_%scenario%_%years%_%geography%.csv",
   #   Default is a long-but-informative filename
-  saveTo="output", # an 
-  log="ERROR"
+  saveTo="output", # folder in which to put outputFile (if FALSE, return list of data.frames)
+  log="ERROR"  # set to "WARN" if to get detailed information on warnings as they happen
   )
 {
   # TODO: Geography "Value" should eventually be screened against model's 'defs/geo.csv'
   if ( missing(Geography) ||
     ( ! is.character(Geography) ) ||
-    ( ! "Type" %in% names(Geography) ) ||
-    ( ! Geography["Type"] %in% c("Regions", "Azone","Marea") ) ||
-    ( Geography["Type"] != "Region" && ! "Value" %in% names(Geography) ) )
+    ( ! Geography %in% c("Regions", "Azone","Marea") ) )
   {
-    message("Geography parameter is not set up right.")
-    cat("Geography should be a two-element named vector, with a structure like this:\n")
-    cat("  Geography=c(Type='Marea',Value='RVMPO')\n")
-    cat("Type can be one of c('Azone','Marea'), Value must be consistent with defs/geo.csv\n")
+    message("Geography must be one of 'Region','Marea' or 'Azone'")
     return(character(0))
   }
+  if ( Geography %in% c("Azone","Marea") ) {
+    if ( missing(GeoValue) || ! is.character(GeoValue) ) {
+      GeoValue <- ""
+      message("Breaking measures by ",GeoValue,"; including all values")
+    } else {
+      message("Evaluating measures for each ",Geography,": ",GeoValue)
+    }
+  } else {
+    GeoValue <- "" # Region has no GeoValue
+    message("Evaluating measures for region")
+  }
+  Geography <- c(Type=Geography,Value=GeoValue) # prepare to do the query
 
   # Get SecenarioRoot and Scenarios using modelPaths
   # We'll look for the SpecFile in path or dirname(path)
@@ -861,8 +870,9 @@ ve.model.query <- function(
   if (
     self$status != "Complete" ||
     length(grep("Datastore",sd))==0 ||
-    length(grep("ModelState.Rda",sd))== 0
+    length(grep("ModelState.Rda",sd))==0
   ) {
+    # TODO: eventually open the ModelState and determine the run status
     message("Model appears not to have been run yet: ",self$status)
     return(character(0))
   }
@@ -880,44 +890,122 @@ ve.model.query <- function(
     return(character(0))
   }
 
-  # Gather the specifications, if they're not already there
-  # We will read SpecFile if it exists, and if not, use PMSpecifications
-  # already defined in the current R environment.
-  if ( ! is.character(SpecFile) || ! nzchar(SpecFile[1]) ) {
-    message("Invalid SpecFile")
-    cat("Provide the name, with optional path, to the file with the Query Specifications.\n")
-    return(character(0))
-  }
-  for ( specName in unique(c(SpecFile,"Query-Spec.R")) ) {
-    if ( !file.exists( SpecFile ) ) {
-      SpecFile <- file.path(dataPath,SpecFile)
-      if ( ! file.exists( SpecFile ) ) {
-        SpecFile <- file.path(ScenarioRoot,SpecFile)
-      }
-    }
-    if ( file.exists(SpecFile) ) break
-  }
-  SpecFile = normalizePath(SpecFile,winslash="/",mustWork=FALSE)
-  if ( ! file.exists(SpecFile) ) {
-    message("Specification File ",SpecFile," does not exist")
-    return(character(0))
+  # Gather the specifications, if they're not supplied via "Spec" parameter
+  if ( ! missing(Spec) && ! is.list(Spec) ) {
+    PMSpecifications <- Spec
+    message("Specifications from existing list")
   } else {
-    specEnv <- new.env()
-    sys.source(SpecFile,envir=specEnv)
-    specs <- objects(specEnv)
-    if ( length(specs) != 1 ) {
-      print(specs)
-      message("Must define a single specification list in ",SpecFile)
+    # We will read SpecFile if it exists, and if not, use PMSpecifications
+    # already defined in the current R environment.
+    if ( ! is.character(SpecFile) || ! nzchar(SpecFile[1]) ) {
+      message("Invalid SpecFile")
+      cat("Provide the name, with optional path, to the file with the Query Specifications.\n")
       return(character(0))
     }
-    PMSpecifications <- get(specs,envir=specEnv)
-    displaySpec <- if ( exists("ve.runtime") ) {
-      sub(ve.runtime,"",SpecFile)
-    } else {
-      SpecFile
+    for ( specName in unique(c(SpecFile,"Query-Spec.R")) ) {
+      if ( !file.exists( SpecFile ) ) {
+        SpecFile <- file.path(dataPath,SpecFile)
+        if ( ! file.exists( SpecFile ) ) {
+          SpecFile <- file.path(ScenarioRoot,SpecFile)
+        }
+      }
+      if ( file.exists(SpecFile) ) break
     }
-    message(paste("Specification File: ",displaySpec,"",sep="'"))
-    rm(specEnv)
+    SpecFile = normalizePath(SpecFile,winslash="/",mustWork=FALSE)
+    if ( ! file.exists(SpecFile) ) {
+      message("Specification File ",SpecFile," does not exist")
+      return(character(0))
+    } else {
+      specEnv <- new.env()
+      sys.source(SpecFile,envir=specEnv)
+      specs <- objects(specEnv)
+      if ( length(specs) != 1 ) {
+        print(specs)
+        message("Must define a single specification list in ",SpecFile)
+        return(character(0))
+      }
+      PMSpecifications <- get(specs,envir=specEnv)
+      displaySpec <- if ( exists("ve.runtime") ) {
+        sub(ve.runtime,"",SpecFile)
+      } else {
+        SpecFile
+      }
+      message(paste("Specification File: ",displaySpec,"",sep="'"))
+      rm(specEnv)
+    }
+  }
+
+  # Superficial sanity check of PMSpecifications (deeper checks within visioneval::summarizeDatasets)
+  # Plus rewrite the geography (so we can re-use may of the same spec files for "Region","Marea",
+  # or "Azone" (Probably need better error recovery)
+  spec.valid <- is.list(PMSpecifications)
+  if ( spec.valid ) {
+    for ( test.spec.num in 1:length(PMSpecifications) ) {
+      test.spec <- PMSpecifications[[test.spec.num]]
+      nm.test.spec <- names(test.spec)
+      if ( is.null(nm.test.spec) ) spec.valid <- FALSE
+      if ( spec.valid ) {
+        have.names <- nm.test.spec %in% c("Name","Units","Description","Function","Summarize")
+        spec.valid <- all(have.names)
+        if ( ! spec.valid ) {
+          message("Unknown specification elements: ",paste(nm.test.spec,collapse=", "))
+        } else if ( "Summarize" %in% nm.test.spec ) {
+          test.sum <- test.spec[["Summarize"]]
+          if ( Geography["Type"] == "Region" ) {
+            # remove Marea or Azone from "By" and "Units", if present
+            for ( test.field in c("By","Units") ) {
+              test.sum.by <- test.sum[[test.field]]
+              any.geo <- "Marea" %in% test.sum.by | "Azone" %in% test.sum.by
+              if ( any(!any.geo) {
+                test.sum[[test.field]] <- test.sum.by[!any.geo]
+              } else {
+                # This shouldn't ever happen to "Units"
+                test.sum[test.field] <- NULL # Note list element index
+              }
+            }
+          } else {
+            if ( Geography["Type"] == "Marea" ) {
+              geo.from <- "Azone"
+              geo.to <- "Marea"
+            } else if ( Geography["Type"] == "Azone" ) {
+              geo.from <- "Marea"
+              geo.to <- "Azone"
+            }
+            # Check that "By" and "Units" include geo.from
+            # If geo.from BUT NOT geo.to, change geo.from to geo.to
+            #   if we have both, don't touch geo.from or geo.to
+            # If geo.to not in "By" and "Units", add geo.to to By and geo.to = ''" to Units
+            test.sum.by <- test.sum[["By"]]
+            azb <- geo.from %in% test.sum.by
+            if ( ! geo.to %in% test.sum.by ) {
+              if ( any(azb) ) {
+                test.sum.by[azb] <- geo.to
+              } else {
+                test.sum.by <- c(test.sum.by,geo.to)
+              }
+              test.sum[["By"]] <- test.sum.by
+            }
+            test.sum.units <- test.sum[["Units"]]
+            azb <- geo.from %in% names(test.sum.units)
+            if ( ! geo.to %in% nams(test.sum.units) ) {
+              if ( any(azb) ) {
+                names(test.sum.units)[azb] <- geo.to
+              } else {
+                test.sum.units[geo.to] <- ""
+              }
+              test.sum[["Units"]] <- test.sum.units
+            }
+          }
+          test.spec[["Summarize"]] <- test.sum
+        }
+        if ( spec.valid ) PMSpecifications[[test.spec.num]] <- test.spec
+      }
+      if ( ! spec.valid ) break
+    }
+  }
+  if ( ! spec.valid ) {
+    message("Invalid measure specification.")
+    return(character(0))
   }
 
   # Now run the query
