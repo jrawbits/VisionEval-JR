@@ -956,7 +956,7 @@ ve.model.query <- function(
             for ( test.field in c("By","Units") ) {
               test.sum.by <- test.sum[[test.field]]
               any.geo <- "Marea" %in% test.sum.by | "Azone" %in% test.sum.by
-              if ( any(!any.geo) {
+              if ( any(!any.geo) ) {
                 test.sum[[test.field]] <- test.sum.by[!any.geo]
               } else {
                 # This shouldn't ever happen to "Units"
