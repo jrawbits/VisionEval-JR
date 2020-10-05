@@ -662,6 +662,7 @@ ve.model.extract <- function(
       }
     )
   } else {
+    names(results) <- sub("\\.[^.]*$","",names(results))
     if (!quiet) message("Returning extracted data as invisible list of data.frames\n(quiet=TRUE to suppress this message)")
   }
   invisible(results)
@@ -724,9 +725,10 @@ makeMeasure <- function(measureSpec,thisYear,Geography,QPrep_ls,measureEnv) {
     }
     usingBreaks <- "Breaks" %in% names(sumSpec) && ! is.null(sumSpec$Breaks)
     usingKey <- "Key" %in% names(sumSpec) && ! is.null(sumSpec$Key)
+    assign("spec",sumSpec,envir=globalenv())
     measure <- visioneval::summarizeDatasets(
         Expr = sumSpec$Expr,
-        Units = sumSpec$Units,
+        Units_ = sumSpec$Units,
         By_ = if ( ! byRegion || usingBreaks ) sumSpec$By else NULL,
         Breaks_ls = if ( usingBreaks) sumSpec$Breaks else NULL,
         Table = sumSpec$Table,
@@ -735,12 +737,15 @@ makeMeasure <- function(measureSpec,thisYear,Geography,QPrep_ls,measureEnv) {
         QueryPrep_ls = QPrep_ls
       )
     if ( ! byRegion && ! usingBreaks ) {
+      # TODO: Handle missing GeoValue (all values) or list of GeoValues
+      # For now, GeoValue must be present and just a single value
       measure <- measure[GeoValue]  # reduce to scalar value (one geographical unit)
       names(measure) <- measureName
     } else {
       if ( ! byRegion ) { # need to reduce to vector for GeoValue
         measure <- measure[,GeoValue]
       }
+      assign("measure",measure,envir=globalenv())
       if ( usingBreaks ) {
         if ( "BreakNames" %in% names(sumSpec) ) {
           breakNames <- sumSpec$BreakNames[[sumSpec$By[1]]]
@@ -756,8 +761,7 @@ makeMeasure <- function(measureSpec,thisYear,Geography,QPrep_ls,measureEnv) {
         names(measure) <- measureName
       }
     }
-  } else
-  {
+  } else {
     stop("Invalid Measure Specification")
   }
   
@@ -792,7 +796,8 @@ makeMeasureDataFrame <- function(measureEnv) {
     Units       = Units_,
     Description = Description_
   )
-  # The following addresses a unique naming standard in original PBOT script
+  # The following addresses a unique naming standard in original script
+  # TODO: make it obsolete
   Data_df$Measure <- gsub("_Ma", "_", Data_df$Measure)
   Data_df$Measure <- gsub("_$", "", Data_df$Measure)
   Data_df$Measure <- gsub("_\\.", ".", Data_df$Measure)
@@ -806,7 +811,7 @@ makeMeasureDataFrame <- function(measureEnv) {
 # VEModel function to process a query specification against a Datastore
 #
 
-#PROCESS QUERY DEFINITIONS A DATASTORE
+#PROCESS QUERY DEFINITIONS AGAINST A DATASTORE
 #================================================================
 #' Process a set of query definitions against the model's final Datastore
 #'
@@ -829,8 +834,8 @@ makeMeasureDataFrame <- function(measureEnv) {
 #' @return A character vector with the names of the .csv files containing the computed measures.
 #' @export
 ve.model.query <- function(
-  Geography,
-  GeoValue,
+  Geography, # required - although perhaps default to 'Region'?
+  GeoValue, # optional - if Geography is not Region, only compute for this list
   Spec, # Can submit a list (like what is contained in Query-Spec.R)
   SpecFile = "Query-Spec.R",
   outputFile = "Measures_%scenario%_%years%_%geography%.csv",
@@ -839,10 +844,9 @@ ve.model.query <- function(
   log="ERROR"  # set to "WARN" if to get detailed information on warnings as they happen
   )
 {
-  # TODO: Geography "Value" should eventually be screened against model's 'defs/geo.csv'
   if ( missing(Geography) ||
     ( ! is.character(Geography) ) ||
-    ( ! Geography %in% c("Regions", "Azone","Marea") ) )
+    ( ! Geography %in% c("Region", "Azone","Marea") ) )
   {
     message("Geography must be one of 'Region','Marea' or 'Azone'")
     return(character(0))
@@ -850,7 +854,7 @@ ve.model.query <- function(
   if ( Geography %in% c("Azone","Marea") ) {
     if ( missing(GeoValue) || ! is.character(GeoValue) ) {
       GeoValue <- ""
-      message("Breaking measures by ",GeoValue,"; including all values")
+      message("Breaking measures by ",Geography,"; including all values")
     } else {
       message("Evaluating measures for each ",Geography,": ",GeoValue)
     }
@@ -861,9 +865,11 @@ ve.model.query <- function(
   Geography <- c(Type=Geography,Value=GeoValue) # prepare to do the query
 
   # Get SecenarioRoot and Scenarios using modelPaths
+  # TODO: if we processing actual scenarios, we'll set the root a little differently
+
   # We'll look for the SpecFile in path or dirname(path)
   dataPath <- self$modelPath[self$stageCount]
-  ScenarioRoot <- dirname(dataPath)
+  ScenarioRoot <- dirname(dataPath) # For now, just the one final stage of the model
 
   Scenarios <- normalizePath(dataPath,mustWork=FALSE)
   sd <- dir(Scenarios)
@@ -872,16 +878,39 @@ ve.model.query <- function(
     length(grep("Datastore",sd))==0 ||
     length(grep("ModelState.Rda",sd))==0
   ) {
+    # TODO: this may work with a vector of Scenarios; we can use the grep
+    #   results to determine which of Scenarios has model outputs
     # TODO: eventually open the ModelState and determine the run status
     message("Model appears not to have been run yet: ",self$status)
     return(character(0))
   }
 
+  # Compute the saveTo location (if requested) relative to dataPath
+  if ( is.logical(saveTo) ) {
+    if ( saveTo ) # If somebody says saveTo=TRUE, they mean saveTo="output" (default)
+      saveTo = "output" # re-install the default
+  } 
+  if ( is.character(saveTo) ) { # could be a directory
+    if ( ! ( grepl("^[/\\]",saveTo) | grepl("^.:",saveTo) ) ) { # relative path
+      # saveTo is a relative path, so create it relative to dataPath
+      saveTo <- normalizePath(file.path(dataPath,saveTo),winslash="/",mustWork=FALSE)
+    } # else use saveTo as it is
+    if ( ! dir.exists(saveTo) ) dir.create(saveTo,recursive=TRUE,showWarnings=FALSE)
+    if ( ! dir.exists(saveTo) ) { # which it won't if saveTo was absolute but made no sense, e.g. missing drive
+      message("saveTo directory invalid: ",saveTo)
+      saveTo <- FALSE
+    } else {
+      message("Writing query output into directory: ",saveTo)
+    }
+  } else {
+    if ( ! is.logical(saveTo) ) message("saveTo parameter is invalid: ",saveTo)
+    saveTo <- FALSE
+  }
+
   # Years are those defined for the model, less any that are not selected via $groups
+  # We will only query groups that are Years from the runParams
   Years <- self$runParams$Years
   groups <- self$groups
-  print(groups)
-  print(Years %in% groups$Group[groups$Selected=="Yes"])
   Years <- Years[Years %in% groups$Group[groups$Selected=="Yes"]]
   if ( length(Years)==0 || any(is.na(Years)) ) {
     message("Invalid Years specified")
@@ -895,11 +924,15 @@ ve.model.query <- function(
     PMSpecifications <- Spec
     message("Specifications from existing list")
   } else {
-    # We will read SpecFile if it exists, and if not, use PMSpecifications
-    # already defined in the current R environment.
+    Spec <- NULL
+  }
+  if ( is.null(Spec) ) {
+    # No pre-manufactured Spec.
+    # Read SpecFile if Spec not passed as a parameter
     if ( ! is.character(SpecFile) || ! nzchar(SpecFile[1]) ) {
       message("Invalid SpecFile")
       cat("Provide the name, with optional path, to the file with the Query Specifications.\n")
+      cat("SpecFile Path is relative to the model directory.\n")
       return(character(0))
     }
     for ( specName in unique(c(SpecFile,"Query-Spec.R")) ) {
@@ -922,6 +955,7 @@ ve.model.query <- function(
       if ( length(specs) != 1 ) {
         print(specs)
         message("Must define a single specification list in ",SpecFile)
+        cat(SpecFile,"contains: ",paste(specs,collapse=", "),"\n")
         return(character(0))
       }
       PMSpecifications <- get(specs,envir=specEnv)
@@ -936,34 +970,61 @@ ve.model.query <- function(
   }
 
   # Superficial sanity check of PMSpecifications (deeper checks within visioneval::summarizeDatasets)
-  # Plus rewrite the geography (so we can re-use may of the same spec files for "Region","Marea",
-  # or "Azone" (Probably need better error recovery)
+  # Also rewrite the geography (so we can mostly reuse spec files for "Region","Marea", or "Azone"
+  # TODO: Probably need better error recovery
+  # TODO: If we're using a geography table, and it's not the same as Geography, then we
+  # want to skip the spec. So in the for loop, we want to rebuild PMSpecifications, only
+  # copying over specs that make sense for this geography.
+  have.names <- character(0)
   spec.valid <- is.list(PMSpecifications)
   if ( spec.valid ) {
     for ( test.spec.num in 1:length(PMSpecifications) ) {
       test.spec <- PMSpecifications[[test.spec.num]]
-      nm.test.spec <- names(test.spec)
+      nm.test.spec <- names(test.spec) # may be NULL
       if ( is.null(nm.test.spec) ) spec.valid <- FALSE
       if ( spec.valid ) {
-        have.names <- nm.test.spec %in% c("Name","Units","Description","Function","Summarize")
+        have.names <- nm.test.spec %in% c("Name","Units","Description","Function","Summarize","Require","RequireNot")
+        # have.names will be logical(0) if nm.test.spec is NULL
         spec.valid <- all(have.names)
         if ( ! spec.valid ) {
-          message("Unknown specification elements: ",paste(nm.test.spec,collapse=", "))
+          if ( !all(is.na(have.names)) ) {
+            message("Unknown specification elements: ",
+              paste(nm.test.spec[!have.names],collapse=", ")
+            )
+          } else {
+            message("Unrecognized specification list element:")
+            print(test.spec)
+          }
+          spec.valid <- FALSE
         } else if ( "Summarize" %in% nm.test.spec ) {
           test.sum <- test.spec[["Summarize"]]
           if ( Geography["Type"] == "Region" ) {
-            # remove Marea or Azone from "By" and "Units", if present
-            for ( test.field in c("By","Units") ) {
-              test.sum.by <- test.sum[[test.field]]
-              any.geo <- "Marea" %in% test.sum.by | "Azone" %in% test.sum.by
-              if ( any(!any.geo) ) {
-                test.sum[[test.field]] <- test.sum.by[!any.geo]
+            # Region: remove Marea or Azone from "By" and "Units", if present
+            test.by <- test.sum[["By"]]
+            any.geo <- ( test.by %in% c("Marea","Azone") )
+            if ( any ( ! any.geo ) ) {
+              # remove geography but leave the rest
+              # cat( "In ",test.spec[["Name"]],"By from:",test.by,"to",test.by[!any.geo],"\n" )
+              test.sum[["By"]] <- test.by[!any.geo]
+            } else if ( all(any.geo) ) {
+              # cat( "In ",test.spec[["Name"]],"Removing all from",test.by,"\n" )
+              test.sum["By"] <- NULL # Single brackets - remove element entire
+            } # else leave "By" untouched.
+            if ( "Units" %in% names(test.sum) ) {
+              test.units <- test.sum[["Units"]]
+              any.geo <- ( "Marea" %in% names(test.units) | "Azone" %in% names(test.units) )
+              if ( any ( ! any.geo ) ) {
+                # remove geography
+                test.sum[["By"]] <- test.by[!any.geo]
               } else {
-                # This shouldn't ever happen to "Units"
-                test.sum[test.field] <- NULL # Note list element index
+                test.sum["By"] <- NULL # Single brackets - remove element entire
               }
             }
-          } else {
+          } else { # Summarizing by geography
+            # TODO: Geography "Value" should eventually be screened against model's 'defs/geo.csv'
+            # TODO: If "Table" is the same as "By" and not GeographyType, skip that specification
+            # with a message (or we could use Require). So any dip into the Marea table or the
+            # Azone table only gets processed if we are running for that GeographyType.
             if ( Geography["Type"] == "Marea" ) {
               geo.from <- "Azone"
               geo.to <- "Marea"
@@ -972,12 +1033,12 @@ ve.model.query <- function(
               geo.to <- "Azone"
             }
             # Check that "By" and "Units" include geo.from
-            # If geo.from BUT NOT geo.to, change geo.from to geo.to
-            #   if we have both, don't touch geo.from or geo.to
+            # If geo.from BUT NOT geo.to in "By" and "Units", change geo.from to geo.to
+            #   if we have both in the spec, don't touch geo.from or geo.to
             # If geo.to not in "By" and "Units", add geo.to to By and geo.to = ''" to Units
             test.sum.by <- test.sum[["By"]]
-            azb <- geo.from %in% test.sum.by
-            if ( ! geo.to %in% test.sum.by ) {
+            azb <- test.sum.by %in% geo.from
+            if ( ! geo.to %in% ( test.sum.by ) ) {
               if ( any(azb) ) {
                 test.sum.by[azb] <- geo.to
               } else {
@@ -986,8 +1047,10 @@ ve.model.query <- function(
               test.sum[["By"]] <- test.sum.by
             }
             test.sum.units <- test.sum[["Units"]]
-            azb <- geo.from %in% names(test.sum.units)
-            if ( ! geo.to %in% nams(test.sum.units) ) {
+            cat("Spec name:",test.spec[["Name"]],"\n")
+            cat("Units before:",paste(names(test.sum.units),collapse=","),"\n")
+            azb <- test.sum.units %in% geo.from
+            if ( ! geo.to %in% names(test.sum.units) ) {
               if ( any(azb) ) {
                 names(test.sum.units)[azb] <- geo.to
               } else {
@@ -995,6 +1058,7 @@ ve.model.query <- function(
               }
               test.sum[["Units"]] <- test.sum.units
             }
+            cat("Units after:",paste(names(test.sum.units),collapse=","),"\n")
           }
           test.spec[["Summarize"]] <- test.sum
         }
@@ -1004,6 +1068,8 @@ ve.model.query <- function(
     }
   }
   if ( ! spec.valid ) {
+    # Report failing spec name, if it has one...
+    if ( !is.na(have.names) && have.names[1] ) cat("In Specification '",test.spec$Name,"\n")
     message("Invalid measure specification.")
     return(character(0))
   }
@@ -1020,12 +1086,16 @@ ve.model.query <- function(
     log=log.level(log)
   )
 
-  return(outputFiles)
+  invisible(outputFiles)
 }
 
 ############################################################
 # PROCESS QUERY SPECIFICATIONS ON DATASTORE
 #
+###########################################################################
+# Process the Specification list
+###########################################################################
+
 doQuery <- function (
   Scenarios,
   Years,
@@ -1049,11 +1119,14 @@ doQuery <- function (
     return(character(0))
   }
     
-  ###########################################################################
-  # Finally, Process the Specification list
-  ###########################################################################
-
-  # Get down to business
+  saving <- is.character(saveTo) && length(saveTo)==1 && nzchar(saveTo)[1] && dir.exists(saveTo)
+  if ( ! saving ) {
+    outputFiles <- list() # will return list of data.frames
+  } else {
+    outputFiles <- character(0) # will return vector of file names
+  }
+  # Put the Specifications where we can review them against the outputs
+  attr(outputFiles,"Specifications") <- Specifications
 
   old.wd <- getwd()
 
@@ -1061,7 +1134,8 @@ doQuery <- function (
   futile.logger::flog.threshold(log)
   tryCatchLog::tryCatchLog(
     {
-      for ( scenario in Scenarios ) { # scenario contains a path to a working directory with a Datastore in it
+      for ( scenario in Scenarios ) {
+        # scenario contains a path to a working directory with a Datastore in it
 
         # Move to scenario directory
         setwd(scenario)
@@ -1071,7 +1145,16 @@ doQuery <- function (
 
         # Confirm what we're working on
         catYears <- paste(Years,collapse=",")
-        catGeography <- paste(Geography["Type"],"=",paste0("'",Geography["Value"],"'"))
+        catGeography <- Geography["Type"]
+        if ( Geography["Type"]!="Region" &&
+          (
+            "Value" %in% Geography &&
+            ! any(is.null(Geography["Value"])) &&
+            ! any(is.na(Geography["Value"]))
+          )
+        ) {
+          catGeography <- paste(catGeography,"=",paste0("'",Geography["Value"],"'"))
+        }
         cat(
           "Building measures for:\n",
           "Scenario:",scenarioName,"\n",
@@ -1079,15 +1162,15 @@ doQuery <- function (
           "Geography:",catGeography,"\n"
         )
 
-        # Backstop to ensure that the saveTo driectory is available
-        save.path <- file.path(scenario,saveTo)
-        if ( ! dir.exists( save.path  ) ) dir.create( save.path )
-
         # Build the outputFile name using the just reported specifications
         outputFileToWrite <- stringr::str_replace(outputFile,"%scenario%",scenarioName)
         outputFileToWrite <- stringr::str_replace(outputFileToWrite,"%years%",catYears)
         outputFileToWrite <- stringr::str_replace(outputFileToWrite,"%geography%",stringr::str_remove_all(catGeography,"[ ']"))
-        outputFileToWrite <- normalizePath(file.path(save.path,outputFileToWrite),mustWork=FALSE)
+        if ( saving ) {
+          outputFileToWrite <- normalizePath(file.path(saveTo,outputFileToWrite),mustWork=FALSE)
+        } else {
+          outputFileToWrite <- sub("\\.[^.]+$","",outputFileToWrite) # use this as data.frame name (dropping any file extension)
+        }
 
         # Prepare for datastore queries
         #------------------------------
@@ -1126,11 +1209,15 @@ doQuery <- function (
           names(Measures_df)[names(Measures_df)=="thisYear"]<-thisYear
         }
 
-        # Write the measures for all the Years to the output file
-        cat("Saving measures in",basename(dirname(outputFileToWrite)),"as",basename(outputFileToWrite),"...")
-        write.csv(Measures_df, row.names = FALSE, file = outputFileToWrite)
-        cat("Saved\n")
-        outputFiles <- c(outputFiles,outputFileToWrite)
+        # Add the measures to the output list
+        if ( saving ) {
+          cat("Saving measures in",basename(dirname(outputFileToWrite)),"as",basename(outputFileToWrite),"...")
+          write.csv(Measures_df, row.names = FALSE, file = outputFileToWrite)
+          cat("Saved\n")
+          outputFiles <- c(outputFiles,outputFileToWrite) # Saving: return list of file names
+        } else {
+          outputFiles[outputFileToWrite] <- (Measures_df) # Not Saving: return list of data.frames
+        }
       }
     },
     error=function(e) cat(geterrmessage(),"\n"),
@@ -1139,7 +1226,8 @@ doQuery <- function (
   return(outputFiles)
 }
 
-# Here is VEModel R6 class
+# Here is the VEModel R6 class
+# One of these objects is returned by "openModel"
 
 VEModel <- R6::R6Class(
   "VEModel",
