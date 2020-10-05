@@ -61,7 +61,7 @@ PMSpecifications <- list(
     Name = "UrbanHhDvmt",
     Summarize = list(
       Expr = "sum(UrbanHhDvmt)",
-      Units_ = c(
+      Units = c(
         UrbanHhDvmt = "MI/DAY",
         Marea = ""
       ),
@@ -80,7 +80,7 @@ PMSpecifications <- list(
 #     Name = "UrbanHhDvmtAz",
 #     Summarize = list(
 #       Expr = "sum(Dvmt[Azone == 'RVMPO' & LocType == 'Urban'] )",
-#       Units_ = c(
+#       Units = c(
 #         Dvmt = "MI/DAY",
 #         LocType = "",
 #         Azone = "",
@@ -98,7 +98,7 @@ PMSpecifications <- list(
     Name = "UrbanHhDvmt_MixNbrhd",
     Summarize = list(
       Expr = "sum(Dvmt[LocType == 'Urban' & IsUrbanMixNbrhd == '1'])",
-      Units_ = c(
+      Units = c(
         Dvmt = "MI/DAY",
         LocType = "",
         IsUrbanMixNbrhd = "",
@@ -159,7 +159,7 @@ PMSpecifications <- list(
     Name = "UrbanHhPop",
     Summarize = list(
       Expr = "sum(HhSize[LocType == 'Urban'])",
-      Units_ = c(
+      Units = c(
         HhSize = "",
         LocType = "",
         Marea = ""
@@ -177,7 +177,7 @@ PMSpecifications <- list(
     Name = "UrbanHhPopLowInc",
     Summarize = list(
       Expr = "sum(HhSize[LocType == 'Urban'])",
-      Units_ = c(
+      Units = c(
         HhSize = "",
         LocType = "",
         Income = "USD",
@@ -384,7 +384,7 @@ PMSpecifications <- list(
     Name = "UrbanHhNum",
     Summarize = list(
       Expr = "count(HhSize[LocType == 'Urban'])",
-      Units_ = c(
+      Units = c(
         HhSize = "",
         LocType = "",
         Marea = ""
@@ -402,7 +402,7 @@ PMSpecifications <- list(
     Name = "UrbanHhVehicles",
     Summarize = list(
       Expr = "sum(NumAuto[LocType == 'Urban']) + sum(NumLtTrk[LocType == 'Urban'])",
-      Units_ = c(
+      Units = c(
         NumAuto = "VEH",
         NumLtTrk = "VEH",
         LocType = "",
@@ -430,7 +430,7 @@ PMSpecifications <- list(
     Name = "UrbanHhWorkers",
     Summarize = list(
       Expr = "sum(Workers[LocType == 'Urban'])",
-      Units_ = c(
+      Units = c(
         Workers = "PRSN",
         LocType = "",
         Marea = ""
@@ -449,7 +449,7 @@ PMSpecifications <- list(
     Name = "UrbanHhDrivers",
     Summarize = list(
       Expr = "sum(Drivers[LocType == 'Urban'])",
-      Units_ = c(
+      Units = c(
         Drivers = "PRSN",
         LocType = "",
         Marea = ""
@@ -468,7 +468,7 @@ PMSpecifications <- list(
     Require = c(Dataset="LocType",Table="Bzone"),
     Summarize = list(
       Expr = "sum(IsUrbanMixNbrhd[LocType == 'Urban'])",
-      Units_ = c(
+      Units = c(
         IsUrbanMixNbrhd = "",
         LocType = "category",
         Marea = ""
@@ -485,7 +485,7 @@ PMSpecifications <- list(
     RequireNot = c(Dataset="LocType",Table="Bzone"),
     Summarize = list(
       Expr = "sum(IsUrbanMixNbrhd)",
-      Units_ = c(
+      Units = c(
         IsUrbanMixNbrhd = "",
         Marea = ""
       ),
@@ -644,7 +644,7 @@ PMSpecifications <- list(
     Name = "UrbanWalkTrips",
     Summarize = list(
       Expr = "sum(WalkTrips[LocType == 'Urban'])",
-      Units_ = c(
+      Units = c(
         WalkTrips = "TRIP/DAY",
         LocType = "",
         Marea = ""
@@ -661,7 +661,7 @@ PMSpecifications <- list(
     Name = "UrbanBikeTrips",
     Summarize = list(
       Expr = "sum(BikeTrips[LocType == 'Urban'])",
-      Units_ = c(
+      Units = c(
         BikeTrips = "TRIP/DAY",
         LocType = "",
         Marea = ""
@@ -678,7 +678,7 @@ PMSpecifications <- list(
     Name = "UrbanTransitTrips",
     Summarize = list(
       Expr = "sum(TransitTrips[LocType == 'Urban'])",
-      Units_ = c(
+      Units = c(
         TransitTrips = "TRIP/DAY",
         LocType = "",
         Marea = ""
@@ -802,7 +802,7 @@ PMSpecifications <- list(
     Name = "UrbanVehOwnershipCost",
     Summarize = list(
       Expr = "mean(OwnCost[LocType == 'Urban'])",
-      Units_ = c(
+      Units = c(
         OwnCost = "USD",
         LocType = "",
         Marea = ""
@@ -820,7 +820,7 @@ PMSpecifications <- list(
     Name = "UrbanAveVehCostPM",
     Summarize = list(
       Expr = "mean(AveVehCostPM[LocType == 'Urban'])",
-      Units_ = c(
+      Units = c(
         AveVehCostPM = "USD",
         LocType = "",
         Marea = ""
@@ -838,7 +838,7 @@ PMSpecifications <- list(
     Name = "UrbanVehOperatingCost",
     Summarize = list(
       Expr = "mean(AveVehCostPM[LocType == 'Urban']) * mean(Dvmt[LocType == 'Urban'])*365",
-      Units_ = c(
+      Units = c(
         AveVehCostPM = "USD",
         Dvmt = "MI/DAY",
         LocType = "",
@@ -857,7 +857,7 @@ PMSpecifications <- list(
     Name = "UrbanTotalHhIncome",
     Summarize = list(
       Expr = "sum(Income[LocType == 'Urban'])",
-      Units_ = c(
+      Units = c(
         Income = "USD",
         LocType = "",
         Marea = ""
@@ -884,7 +884,7 @@ PMSpecifications <- list(
     Name = "UrbanTotalHhIncomeLowInc",
     Summarize = list(
       Expr = "sum(Income[LocType == 'Urban'])",
-      Units_ = c(
+      Units = c(
         Income = "USD",
         LocType = "",
         Marea = ""
@@ -911,7 +911,7 @@ PMSpecifications <- list(
     Name = "UrbanHhNumLowInc",
     Summarize = list(
       Expr = "count(HhSize[LocType == 'Urban'])",
-      Units_ = c(
+      Units = c(
         HhSize = "",
         LocType = "",
         Income = "USD",
@@ -956,7 +956,7 @@ PMSpecifications <- list(
     Name = "UrbanVehOperatingCostLowInc",
     Summarize = list(
       Expr = "mean(AveVehCostPM[LocType == 'Urban'])* mean(Dvmt[LocType == 'Urban'])*365",
-      Units_ = c(
+      Units = c(
         AveVehCostPM = "USD",
         LocType = "",
         Income = "USD",
@@ -984,7 +984,7 @@ PMSpecifications <- list(
     Name = "UrbanVehOwnershipCostLowInc",
     Summarize = list(
       Expr = "mean(OwnCost[LocType == 'Urban'])",
-      Units_ = c(
+      Units = c(
         OwnCost = "USD",
         LocType = "",
         Income = "USD",
@@ -1011,7 +1011,7 @@ PMSpecifications <- list(
     Name = "UrbanHhDvmtLowInc",
     Summarize = list(
       Expr = "sum(Dvmt[LocType == 'Urban'])",
-      Units_ = c(
+      Units = c(
         Dvmt = "MI/DAY",
         LocType = "",
         Income = "USD",
@@ -1063,7 +1063,7 @@ PMSpecifications <- list(
     Name = "MareaCarSvcLtTrkDvmtProp",
     Summarize = list(
       Expr = "sum(DvmtProp[VehicleAccess != 'Own' & Type == 'LtTrk']) / sum(DvmtProp[VehicleAccess != 'Own'])",
-      Units_ = c(
+      Units = c(
         DvmtProp = "",
         VehicleAccess = "",
         Type = "",
@@ -1082,7 +1082,7 @@ PMSpecifications <- list(
     Name = "UrbanAvePopDen",
     Summarize = list(
       Expr = "sum(UrbanPop) / sum(UrbanArea)",
-      Units_ = c(
+      Units = c(
         UrbanArea = "ACRE",
         UrbanPop = "PRSN",
         Marea = ""
@@ -1101,7 +1101,7 @@ PMSpecifications <- list(
     Require = c(Dataset="LocType",Table="Bzone"),
     Summarize = list(
       Expr = "median(D1B[LocType == 'Urban'])",
-      Units_ = c(
+      Units = c(
         D1B = "PRSN/ACRE",
         LocType = "Category",
         Marea = ""
@@ -1118,7 +1118,7 @@ PMSpecifications <- list(
     RequireNot = c(Dataset="LocType",Table="Bzone"),
     Summarize = list(
       Expr = "median(UrbanPop / UrbanArea)",
-      Units_ = c(
+      Units = c(
         UrbanPop = "PRSN",
         UrbanArea = "ACRE",
         Marea = ""
@@ -1137,7 +1137,7 @@ PMSpecifications <- list(
     Require = c(Dataset="LocType",Table="Bzone"),
     Summarize = list(
       Expr = "sum(NumHh[LocType == 'Urban'] + TotEmp[LocType == 'Urban']) / sum(UrbanArea)",
-      Units_ = c(
+      Units = c(
         NumHh = "HH",
         TotEmp = "PRSN",
         UrbanArea = "ACRE",
@@ -1166,7 +1166,7 @@ PMSpecifications <- list(
     Name = "HhTotDailyWkrParkingCost",
     Summarize = list(
       Expr = "sum(ParkingCost[LocType == 'Urban'])",
-      Units_ = c(
+      Units = c(
         ParkingCost = "",
         LocType = "",
         Marea = ""
@@ -1279,7 +1279,7 @@ PMSpecifications <- list(
     Name = "MareaCarSvcAutoDvmtProp",
     Summarize = list(
       Expr = " sum(DvmtProp[VehicleAccess != 'Own' & Type == 'Auto']) / sum(DvmtProp[VehicleAccess != 'Own'])",
-      Units_ = c(
+      Units = c(
         DvmtProp = "",
         VehicleAccess = "",
         Type = "",
