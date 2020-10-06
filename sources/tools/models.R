@@ -362,6 +362,9 @@ ve.model.index <- function() {
     ds <- (ms$Datastore)
     model.path <- file.path(basename(dirname(self$modelPath[stage])),basename(self$modelPath[stage]))
 
+    # TODO: change this to parse the model from run_model.R if modelstate does not exist
+    # Use
+
     # message("Processing ",basename(self$modelPath[stage]))
     # NOTE: Datastore element ds of ModelState is a data.frame.
     #       The attributes column contains a list for each row
@@ -463,6 +466,68 @@ ve.print.model <- function() {
   self$status
 }
 
+selectName <- c(fields="Name",tables="Table",groups="Group")
+selectOrder <- c("Name","Table","Group","Stage")
+prepSelect <- function(self,what,details=FALSE) {
+  # self is a VEModel object
+  # what is the character name of the thing we're selecting (groups,tables,fields)
+  # details if TRUE pastes all the fields, otherwise
+  df <- self[[what]]
+  name <- selectName[what]
+  if ( details ) {
+    show <- selectOrder[ selectOrder %in% names(df) ]
+    detail.fields <- show[-grep(name,show)]
+    detail.function <- function(x) {
+      paste(x[name],paste(paste(detail.fields,x[detail.fields],sep=":"),collapse=", "),sep=" | ")
+    }
+  } else {
+    show <- name
+    detail.function <- function(x) x
+  }
+  choices <- apply(df[,show,drop=FALSE], 1, detail.function)
+  selected <- choices[which(df$Selected=="Yes")]
+  names <- df[,name,drop=TRUE]
+  return( list(choices=choices,selected=selected,names=names) )
+}
+
+ve.model.select <- function( what, details=FALSE ) {
+  # interactive utility to select groups, tables or fields
+  # 'what' can be "groups","tables" or "fields" (either as strings or names without quotes)
+  # 'details' = FALSE (default) will present just the item name
+  # 'details' = TRUE will present all items details
+  # Interactive dialog will pre-select whatever is already selected (everything if
+  #   nothing has been selected yet (either by assignment or earlier invocation of ve.model.select)
+  sub.what <- substitute(what)
+  if ( class(sub.what) == "name" ) {
+    what <- deparse(sub.what)
+  }
+  if ( class(what) != "character" ) {
+    message("What to select must be 'groups','tables' or 'names'")
+    invisible(character(0))
+  }
+  if ( ! interactive() ) {
+    message("VEModel$select(",paste(what,collapse=","),") called from non-interactive session.")
+    message("In a script, just assign desired selection to VEModel$groups (or tables or fields)")
+    invisible(character(0))
+  }
+  what <- what[1] # if there's a vector, use the first element
+  select.from <- which(c("groups","tables","fields") %in% what)
+  select.from <- prepSelect(self,what,details)
+  # select.from is a list with two elements:
+  #  "names" which is a character vector of names corresponding to "choices" (just the name)
+  #  "choices" which are the text lines that appear in the display
+  #            (pasted text with name, details)
+  #  "selected" which are the subset of the strings in "choices" that are already selected
+  if ( is.null(select.from) ) {
+    message("Unknown entity to select from:",paste(what,collapse=","))
+    invisible(character(0))
+  }
+  selected <- select.list(choices=select.from$choices,preselect=select.from$selected,multiple=TRUE,
+    title=paste("Select",paste(toupper(substring(what,1,1)),substring(what,2),sep=""),sep=" "))
+  self[[what]] <- select.from$names[ select.from$choices %in% selected ] # character(0) if none selected => selects all
+  invisible(self[[what]]) # print result to see what actually got selected.
+}
+
 ve.model.groups <- function(groups) {
   if ( ! all(file.exists(file.path(self$modelPath,"ModelState.Rda"))) ) {
     stop("Model has not been run yet.")
@@ -470,6 +535,11 @@ ve.model.groups <- function(groups) {
   idxGroups <- unique(self$modelIndex[,c("Group","Stage")])
   row.names(idxGroups) <- NULL
   if ( ! missing(groups) ) {
+    years <- ( tolower(groups) %in% c("years","year") ) # magic shortcut
+    if ( any(years) ) {
+      # Expand literal "Years" into all the year-like groups (name is exactly 4 digits)
+      groups <- c( groups[!years], grep("^[[:digit:]]{4}$",idxGroups$Group,value=TRUE) )
+    }
     if ( is.character(groups) && length(groups)>0 ) {
       self$groupsSelected <- groups[ groups %in% idxGroups$Group ]
     } else {
@@ -553,19 +623,25 @@ ve.field.selected <- function(test.field,fields) {
   return ( test.field %in% fields$Name[fields$Selected=="Yes"] )
 }
 
-ve.model.list <- function(selected=TRUE,pattern="",index=FALSE) {
+ve.model.list <- function(selected=TRUE, pattern="", details=FALSE) {
+  # Show details about model fields
+  # selected = TRUE shows just the selected fields
+  # selected = FALSE shows all fields (not just unselected)
+  # pattern matches (case-insensitive regexp) some portion of field name
+  # details = TRUE returns a data.frame self$modelIndex (units, description)
+  # detail = FALSE returns just the "Name" vector from self$modelIndex
   if ( ! all(file.exists(file.path(self$modelPath,"ModelState.Rda"))) ) {
     stop("Model has not been run yet.")
   }
   filter <- if ( missing(selected) || selected ) {
-    ve.field.selected( self$modelIndex$Name, self$fields )
+    self$fields$Selected=="Yes"
   } else {
     rep(TRUE,nrow(self$modelIndex))
   }
   if ( ! missing(pattern) && is.character(pattern) && nzchar(pattern) ) {
     filter <- filter & grepl(pattern,self$modelIndex$Name,ignore.case=TRUE )
   }
-  if ( missing(index) || ! index ) {
+  if ( missing(details) || ! details ) {
     ret.fields <- c("Name")
   } else {
     ret.fields <- names(self$modelIndex)
@@ -672,7 +748,7 @@ ve.model.extract <- function(
 
 ###########################################################################
 # Required libraries
-# Need to affix namespace resolution operator to use functions
+# Need to affix namespace resolution operator (stringr::...) to use functions
 
 requireNamespace("stringr")
 
@@ -1250,6 +1326,7 @@ VEModel <- R6::R6Class(
     dir=ve.model.dir,
     clear=ve.model.clear,
     copy=ve.model.copy,
+    select=ve.model.select,
     extract=ve.model.extract,
     list=ve.model.list,
     inputs=ve.model.inputs,
