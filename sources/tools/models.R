@@ -477,8 +477,14 @@ prepSelect <- function(self,what,details=FALSE) {
   if ( details ) {
     show <- selectOrder[ selectOrder %in% names(df) ]
     detail.fields <- show[-grep(name,show)]
+    if ( what=="fields" ) {
+      list.fields <- self[["list"]](details=TRUE)
+      df$Description <- substr(list.fields$Description,1,40)
+      detail.fields <- c(detail.fields,"Description")
+      show <- c(show,"Description")
+      }
     detail.function <- function(x) {
-      paste(x[name],paste(paste(detail.fields,x[detail.fields],sep=":"),collapse=", "),sep=" | ")
+      paste(x[name],paste(paste(detail.fields,x[detail.fields],sep=": "),collapse=", "),sep=" | ")
     }
   } else {
     show <- name
