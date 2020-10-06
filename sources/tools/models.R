@@ -249,15 +249,18 @@ ve.model.clear <- function(force=FALSE,outputOnly=NULL,path=NULL,stage=NULL) {
   }
   to.delete <- private$artifacts(path=path,outputOnly=outputOnly)
   if ( length(to.delete)>0 ) {
-    to.delete <- gsub(paste0("^",getwd()),"",to.delete)
+    to.delete <- gsub(paste0("^",getwd(),"/"),"",to.delete)
     print(to.delete)
     if ( interactive() ) {
       choices <- to.delete
       preselect <- if (force || outputOnly ) to.delete else character(0)
       to.delete <- select.list(choices=choices,preselect=preselect,multiple=TRUE,title="Delete Select Outputs")
       force <- length(to.delete)>0
-    } else force <- force || length(to.delete)>0
+    } else {
+      force <- ( force || length(to.delete)>0 )
+    }
     if ( force) {
+      print(dir(to.delete),recursive=TRUE)
       unlink(to.delete,recursive=TRUE)
       self$modelState <- lapply(
         self$modelPath,
