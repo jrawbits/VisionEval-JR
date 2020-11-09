@@ -19,7 +19,7 @@ Imports:
     R6,
     stringr,
     tryCatchLog,
-    futile.logger,
+    futile.logger
 Suggests:
     knitr
 Encoding: UTF-8

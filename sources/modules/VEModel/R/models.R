@@ -24,8 +24,12 @@ requireNamespace("tryCatchLog")
 # If only one directory, and it does not contain run_model.R, look
 # for a staged model scenario - so find all the subdirectories and
 # verify that each has a run_model.R.
+# 'confirm' parameter if TRUE prompts user to install standard model
+# using installModel function.
+# user separately has direct access to installModel function to load
+# a standard model from the package into their models folder.
 
-ve.model.path <- function(modelPath=NULL) {
+ve.model.path <- function(modelPath=NULL, confirm) {
   # Check how modelPath specifies a run_model.R file
   # Does modelPath make sense (absolute or relative to getwd())?
   if ( is.null(modelPath) ) stop("Must provide model path locator.\n")
@@ -71,9 +75,9 @@ load.model.state <- function(path) {
 # Split input+defs into "skeleton" (empty files) and "sample"
 # Push ahead on the framework "path search", so a model will search its parent
 # for inputs/defs/local.
-ve.init.model <- function(modelPath=NULL,modelName=NULL) {
-  self$modelPath <- ve.model.path(modelPath)
-  names(self$modelPath) <- basename(self$modelPath)
+ve.init.model <- function(modelPath=NULL,modelName=NULL,confirm=TRUE) {
+  self$modelPath <- ve.model.path(modelPath,confirm)
+  names0(self$modelPath) <- basename(self$modelPath)
   if ( is.null(modelName) ) {
     self$modelName <- if ( length(self$modelPath)>1 ) {
        # default modelName for multi-stage model is basename of
