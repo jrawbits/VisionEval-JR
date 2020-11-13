@@ -15,51 +15,259 @@ requireNamespace("futile.logger")
 requireNamespace("tryCatchLog")
 
 # Function: ve.model.path
-# Determine if parameter is a list of locations of run_model.R riles
-# First parameter is character vector of directories that may contain
-# run_model.R
-# Check first whether modelPath contains directories or full paths
-# to run_model.R (if the latter, replace with dirnames)
-# If modelPath contains directories, each one must have a run_model.R
-# If only one directory, and it does not contain run_model.R, look
-# for a staged model scenario - so find all the subdirectories and
-# verify that each has a run_model.R.
-# 'confirm' parameter if TRUE prompts user to install standard model
-# using installModel function.
-# user separately has direct access to installModel function to load
-# a standard model from the package into their models folder.
+# Use the modelPath parameter to find run_model.R files
+# modelPath is a character vector of directories that may contain run_model.R
+#
+# 1. Is run_model.R mentioned explicitly in each element of the vector of paths?
+#    If so, reduce modelPath to just the elements that contain run_model.R
+#        Then replace the vector with the dirnames and return those
+#    If not, proceed to step 2
+# 2. Does modelPath contain existing directories?
+#    Are modelPath absolute (check first one)? If so examine each for run_model.R and if found, return modelPath
+#        If not found, examine first-level subdirectories of each listed path, and include the absolute path of all
+#          of those that contain run_model.R
+#        If run_model.R is not found, throw an error "no model found at modelPath"
+#    If modelPath are relative (check first one), try finding run_model.R by normalizing as follows:
+#      A. If ve.runtime exists:
+#         Look relative to ve.runtime/models if ve.runtime exists
+#         Look relative to ve.runtime (directly)
+#         If run-model not found directly, also consider first-level sub-directories as with absolute paths
+#      B. If ve.runtime does not exist, or run_model.R not found, repeat A. using getwd() instead of ve.runtime
+# 3. If directories are still not found and dirname(modelPath) is an empty string, conduct standard model search
+#    If dirname(modelPath) is not empty, throw an error "no model found at modelPath"
+#    If modelPath contains more than one element, throw an error "no model found on modelPath"
+#    Search for models within extdata directory (system.file); but also search in package tree in case we're running
+#      the source interactively for testing.
+#    If no matching model exists, throw an error "no model found at modelPath"
+#    If a matching model exists, if "confirm" is TRUE, conduct a dialog asking if the user wants to install the
+#      standard model named in modelPath. Otherwise, use the "skeleton" parameter (TRUE/FALSE) to install either
+#      (TRUE) the standard model skeleton files (bare inputs/defs) or (FALSE) the full sample model
+#    Then attempt to install the standard model
 
-ve.model.path <- function(modelPath=NULL, confirm) {
-  # Check how modelPath specifies a run_model.R file
-  # Does modelPath make sense (absolute or relative to getwd())?
-  if ( is.null(modelPath) ) stop("Must provide model path locator.\n")
-  if ( ! all( file.exists(modelPath) ) ) {
-    modelPath = file.path(ve.runtime,"models",modelPath)
-    if ( ! all( dir.exists(modelPath) ) ) {
-      stop("Could not locate model directory for [",paste(modelPath,dir.exists(modelPath),sep=":",collapse=","),"]")
-    }
-  }
-  # Figure out if we can use modelPath to find "run_model.R"
-  # script(s)
-  if ( all ( file.exists(modelPath) & toupper(basename(modelPath))=="RUN_MODEL.R" ) ) {
-    # Provided full path to run_model.R (possibly more than one)
-    modelPath <- dirname(modelPath)
-  } else if ( ! all( file.exists( file.path(modelPath,"run_model.R") ) ) ) {
-    if ( length(modelPath)==1 ) { # no run_model.R in modelPath
-      # Check for staged model (must be single root directory)
-      subs <- dir(modelPath,full.names=TRUE)
-      modelPath <- subs[dir.exists(subs) & file.exists(file.path(subs,"run_model.R"))]
-      if ( length(modelPath)==0 ) {
-        stop("No run_model.R in [",paste(modelPath,collapse=","),"]")
-      }
-    } else {
-      stop("Could not locate run_model.R for [",paste(modelPath,collapse=","),"]")
-    }
-  }
-  return(normalizePath(modelPath,winslash="/",mustWork=TRUE))
+## Helper
+confirmDialog <- function(msg) {
+  conf <- askYesNo(msg,prompts="y/n/c")
+  if ( is.na(conf) ) conf<-FALSE # Cancel is the same as No
+  return(conf)
 }
 
-load.model.state <- function(path) {
+## Helper
+#  return TRUE if modelPath looks like an absolute file path
+isAbsolutePath <- function(modelPath) {
+  # TODO: may need a more robust regular expression
+  absPath <- any(grepl("^([[:alpha:]]:|/)",modelPath))
+}
+
+## Helper
+#  Model roots: ve.runtime/models, getwd()/models, ve.runtime, getwd()
+getModelRoots <- function(int get.root=0) {
+  roots <- c( getwd() )
+  if ( exists("ve.runtime") ) {
+    roots <- c( ve.runtime, roots )
+  }
+  # VEModelPath is an optional directory in which to seek models
+  modelPath <- getOption("VEModelPath")
+  if ( ! is.null(modelPath) ) {
+    modelPath <- modelPath[1]
+    if ( ! isAbsolutePath(modelPath) ) {
+      test.paths <- normalizePath(file.path(roots,modelPath))
+      modelPath <- test.paths[dir.exists(test.paths)]
+      if ( length(modelPath)==0 || ! nzchar(modelPath[1]) ) {
+        modelPath <- NULL
+      } else {
+        modelPath <- modelPath[1]
+      }
+    }
+  }
+  roots <- c( modelPath, file.path(roots,"models"), roots)
+  if ( get.root > length(roots) ) get.root <- 1
+  if ( root>0 ) return(roots[get.root]) else return(roots)
+}
+
+## Helper
+#  Get unique file name based on newName in folder newPath
+getUniqueName <- function(newPath,newName) {
+  newModelPath <- file.path(newPath,newName)
+  tryName <- newName; try <- 1
+  while ( dir.exists(newModelPath) ) {
+    tryName <- paste0(newName,"(",try,")")
+    newModelPath <- file.path(newPath,tryName)
+    try <- try+1
+  }
+  return (newModelpath)
+}
+
+## Helper function
+#  Look for run_model.R (any case) in root or subdirectories and return full paths
+run.model <- "run_model.R"
+modelInRoot <- function(root) {
+    paths <- grep(paste0("^",run.model,"$"),ignore.case=TRUE,dir(root,full.names=TRUE,pattern=,recursive=TRUE)
+}
+
+## Helper function
+#  Examine modelPath and return (sub-)directories containing run_model.R
+#  If modelPath identifies a standard model that is not already installed among the roots
+#  divert into installing it. Can also call install separately
+#  The dots are passed to installStandardModel
+findModel <- function( modelPath=NULL, install=TRUE, ... ) {
+
+  # Does modelPath explicitly mention run_model.R?
+  if ( is.null(modelPath) ) stop("Must provide modelPath locator.")
+  if ( all( runmodel <- grepl(modelPath,"run_model.R",ignore.case=TRUE) ) ) {
+    return( normalizePath(dirname(modelPath(runmodel)),winslash="/") )
+  }
+
+  # No run_model.R, so we'll presume modelPath describes directories
+  # Check for run_model.R in absolute paths
+  if ( isAbsolutePath(modelPath) ) {
+    # Check recursively for possible stages in subdirectories
+    paths <- modelInRoot(modelPath)
+    if ( length(paths)>0 ) {
+      return(paths)
+    } else {
+      stop("No run_model.R in [",paste(modelPath,dir.exists(modelPath),sep=":",collapse=","),"]")
+    }
+  }
+  
+  # modelPath is a relative path, so check relative to "roots" (VEModelPath, ve.runtime, getwd())
+  roots <- getModelRoots()
+  for ( root in roots ) {
+    paths <- modelInRoot(file.path(root,"models",modelPath))
+    if ( length(paths)>0 ) {
+      return(paths)
+    }
+  }
+
+  # No run_model in modelPath relative to "roots"
+  # If we have a path-like form in modelPath, we have failed
+  if ( any(nzchar(dirname(modelPath))) ) {
+    stop("No run_model.R in [",paste(modelPath,dir.exists(modelPath),sep=":",collapse=","),"]")
+  }
+
+  # Remaining modelPath consists of "bare words" - might be a standard model
+  # But we won't look for a standard model unless install is TRUE
+  if ( ! install ) {
+    stop("Cannot locate run_model.R in [",paste(modelPath,dir.exists(modelPath),sep=":",collapse=","),"]")
+  }
+
+  # User requested "install", so we'll see if modelPath names a standard model
+  return ( installStandardModel( model, ... ) )
+}
+
+## Helper
+#  Look up a standard model
+#  model is bare name of standard model
+findStandardModel <- function( model ) {
+  model <- model[1]
+  standardModels <- system.file("models",package="VEModel")
+  if ( ! nzchar(standardModels[1]) ) {
+    standardModels <- normalizePath(file.path(getwd(),"../inst/models"),winslash="/")
+  }
+  model <- file.path(standardModels,model)
+  if ( ! dir.exists(modelPath) ) {
+    stop("No standard model for ",model)
+  }
+  return(model)
+}
+
+## install a standard model either as a template (skeleton==TRUE) or a sample (skeleton==FALSE)
+#  Called automatically from findModel, where modelPath must be a bare model name
+#  Can install from other locations by calling this function with a more elaborate modelPath
+
+installStandardModel <- function( modelName, modelPath=NULL, confirm=TRUE, skeleton=!confirm ) {
+  # Locate and install standard modelName into modelPath
+  #   If modelPath is NULL or empty string, create conflict-resolved modelName in first available standard root
+  #   If modelPath is an existing directory, put modelName into it (conflict-resolved name)
+  #   If modelPath does not exist, but dirname(modelPath) exists, create new directory and put the model there
+  #   If dirname(modelPath) also does not exist, tell user dirname(modelPath) does not exist and they have to try again
+  model <- findStandardModel( modelName )
+
+  # Confirm installation if requested
+  install <- TRUE
+  skeleton <- if ( skeleton ) "template" else "sample"
+  if ( confirm && interactive() ) {
+    msg <- paste0("Install standard model '",modelPath,"' as ",skeleton,"?\n")
+    install <- confirmDialog(msg)
+  }
+
+  if ( ! install ) stop("Model ",modelName," not installed.")
+
+  # Set up destination modelPath if it is not present (will use the first root)
+  if ( ! is.null(modelPath) ) {
+    # Reconcile modelPath with modelName
+    if ( ! dir.exists(modelPath) ) {
+      modelPath <- dirname(modelPath)
+      modelName <- basename(modelPath) # this will be the *destination* model name
+      if ( nzchar(modelPath) ) {
+        if ( ! isAbsolutePath(modelPath) ) {
+          modelPath <- normalizePath(modelPath,winslash="/",mustWork=FALSE)
+        }
+        if ( ! dir.exists(modelPath) ) stop("Cannot install ",model,": missing directory ",modelPath)
+      } else {
+        modelPath <- getModelRoots(1)
+      }
+    }
+  } else {
+    modelPath <- getModelRoots(1)
+  }
+  installPath <- getUniqueName( modelPath, modelName )
+  dir.create(installPath) # getUniqueName guarantees it doesn't exist
+
+  # Locate the model and data source files
+  model.path <- file.path(model,"model")
+  model.files <- dir(model.path,recursive=TRUE)
+
+  data.path <- file.path(model,skeleton)
+  if ( ! dir.exists(data.path) ) stop("No ",skeleton," available for ",modelName)
+
+  file.copy(model.path,installPath,recursive=TRUE) # Copy standard model into modelPath
+  file.copy(data.path,installPath,recursive=TRUE) # Copy skeleton data into modelPath
+  message(modelName," installed in ",installPath)
+
+  return( modelInRoot(installPath) ) # return list of installed directories containing run_model.R
+}
+
+ve.model.copy <- function(newName=NULL,newPath=NULL) {
+  if ( is.null(newPath) ) {
+    if ( self$stageCount>1 ) {
+      newPath <- dirname(self$modelPath)
+      newPath <- ve.path.prefix(newPath)
+      if ( ! dir.exists(newPath) ) newPath <- dirname(newPath) # match might extend into basename
+      if ( ! nzchar(newPath) ) {
+        newPath <- dirname(self$modelPath[1])
+      } else {   # assume there's an embracing directory
+        newPath <- dirname(newPath)
+      }
+    } else {
+      newPath <- dirname(self$modelPath[1])
+    }
+  } else {
+    if ( ! dir.exists(newPath) ) newPath <- dirname(newPath)
+  }
+
+  newPath <- normalizePath(newPath,winslash="/",mustWork=TRUE)
+  if ( is.null(newName) ) newName <- paste0(self$modelName,"-Copy")
+  newModelPath <- getUniqueName(newPath,newName)
+
+  get.destination <- if ( self$stageCount == 1 ) {
+    function(modelPath,...) modelPath
+  } else {
+    function(modelPath,basenameStage) file.path(modelPath,basenameStage)
+  }
+  newModelPath <- normalizePath(newModelPath,winslash="/",mustWork=FALSE)
+  dir.create(newModelPath,showWarnings=FALSE)
+  for ( p in 1:self$stageCount ) {
+    copy.from <- setdiff(self$dir(path=p),private$artifacts(path=p))
+    copy.to <- get.destination(newModelPath,basename(self$modelPath[p]))
+    print(copy.to)
+    dir.create(copy.to,showWarnings=FALSE)
+    file.copy(copy.from,copy.to,recursive=TRUE)
+  }
+    
+  return( openModel(newModelPath,newName) )
+}
+
+loadModelState <- function(path) {
   ms.env <- new.env()
   if ( ! grepl("ModelState\\.Rda$",path) ) path <- file.path(path,"ModelState.Rda")
   if ( file.exists(path) ) {
@@ -71,13 +279,14 @@ load.model.state <- function(path) {
   return(model.state)
 }
 
-# TODO: conduct the standard model search within the "models" folder of the package
-# Split input+defs into "skeleton" (empty files) and "sample"
-# Push ahead on the framework "path search", so a model will search its parent
-# for inputs/defs/local.
-ve.init.model <- function(modelPath=NULL,modelName=NULL,confirm=TRUE) {
-  self$modelPath <- ve.model.path(modelPath,confirm)
-  names0(self$modelPath) <- basename(self$modelPath)
+# Initialize a VEModel from modelPath/modelName, optionally installing a standard model
+ve.init.model <- function(modelPath=NULL,modelName=NULL,install=FALSE,confirm=!install,skeleton=!confirm) {
+
+  # Identify the run_model.R root location
+  self$modelPath <- findModel(modelPath,modelName,install,confirm,skeleton)
+
+  # The remainder sets up the components for this model management structure
+  names(self$modelPath) <- basename(self$modelPath)
   if ( is.null(modelName) ) {
     self$modelName <- if ( length(self$modelPath)>1 ) {
        # default modelName for multi-stage model is basename of
@@ -89,6 +298,7 @@ ve.init.model <- function(modelPath=NULL,modelName=NULL,confirm=TRUE) {
   } else {
     self$modelName <- modelName
   }
+
   # Gather defs/run_parameters.json
   if ( file.exists(rpfile <- file.path(self$modelPath[1],"defs","run_parameters.json")) ) {
     self$runParams <- jsonlite::fromJSON(rpfile)
@@ -98,7 +308,7 @@ ve.init.model <- function(modelPath=NULL,modelName=NULL,confirm=TRUE) {
   self$stageCount <- length(self$modelPath)
   self$modelState <- lapply(
     self$modelPath,
-    load.model.state
+    loadModelState
   )
   if ( length(self$modelState)>0 && any(unlist(lapply(self$modelState,length))>0) ) {
     private$index()
@@ -201,7 +411,7 @@ ve.model.run <- function(verbose=TRUE,path=NULL,stage=NULL,log="ERROR") {
   }
   self$modelState <- lapply(
     self$modelPath,
-    load.model.state
+    loadModelState
   )
   if ( length(self$modelState)>0 && all(unlist(lapply(self$modelState,length))>0) ) {
     private$index()
@@ -218,12 +428,6 @@ ve.model.dir <- function(pattern=NULL,recursive=FALSE,shorten="",path=NULL,stage
   files <- dir(self$modelPath[path],pattern=pattern,recursive=recursive,full.names=TRUE)
   if ( nzchar(shorten) ) files <- gsub(shorten,"",files)
   return(files)
-}
-
-confirm <- function(msg) {
-  conf <- askYesNo(msg,prompts="y/n/c")
-  if ( is.na(conf) ) conf<-FALSE
-  return(conf)
 }
 
 # outputOnly will just report the extraction results
@@ -292,50 +496,6 @@ ve.path.prefix <- function(x) {
     } else {
       return(substr(x[1],1,pfx))
     }
-}
-
-ve.model.copy <- function(newName=NULL,newPath=NULL) {
-  if ( is.null(newPath) ) {
-    if ( self$stageCount>1 ) {
-      newPath <- dirname(self$modelPath)
-      newPath <- ve.path.prefix(newPath)
-      if ( ! dir.exists(newPath) ) newPath <- dirname(newPath) # match might extend into basename
-      if ( ! nzchar(newPath) ) {
-        newPath <- dirname(self$modelPath[1])
-      } else {   # assume there's an embracing directory
-        newPath <- dirname(newPath)
-      }
-    } else {
-      newPath <- dirname(self$modelPath[1])
-    }
-  } else {
-    if ( ! dir.exists(newPath) ) newPath <- dirname(newPath)
-  }
-  newPath <- normalizePath(newPath,winslash="/",mustWork=TRUE)
-  if ( is.null(newName) ) newName <- paste0(self$modelName,"-Copy")
-  newModelPath <- file.path(newPath,newName)
-  tryName <- newName; try <- 1
-  while ( dir.exists(newModelPath) ) {
-    tryName <- paste0(newName,"(",try,")")
-    newModelPath <- file.path(newPath,tryName)
-    try <- try+1
-  }
-  get.destination <- if ( self$stageCount == 1 ) {
-    function(modelPath,...) modelPath
-  } else {
-    function(modelPath,basenameStage) file.path(modelPath,basenameStage)
-  }
-  newModelPath <- normalizePath(newModelPath,winslash="/",mustWork=FALSE)
-  dir.create(newModelPath,showWarnings=FALSE)
-  for ( p in 1:self$stageCount ) {
-    copy.from <- setdiff(self$dir(path=p),private$artifacts(path=p))
-    copy.to <- get.destination(newModelPath,basename(self$modelPath[p]))
-    print(copy.to)
-    dir.create(copy.to,showWarnings=FALSE)
-    file.copy(copy.from,copy.to,recursive=TRUE)
-  }
-    
-  return( openModel(newModelPath,newName) )
 }
 
 # Check if a specified attribute belongs to the Datastore row
