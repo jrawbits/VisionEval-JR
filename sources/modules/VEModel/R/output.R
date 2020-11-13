@@ -1,29 +1,37 @@
 # Output.R
 
-ve.init.output <- function() { # parameters yet to come - hook to model
-  NULL
+ve.init.output <- function(ModelState,model) { # parameters yet to come - hook to model
+  self$model <- model
+  private$ModelState <- ModelState
+  private$index()
+}
+
+ve.output.valid <- function() {
+  return( !is.null(private$modelIndex) && length(private$modelIndex)>0 &&
+          !is.null(private$modelInputs) && length(private$modelInputs)>0 )
 }
 
 ve.output.index <- function() {
   # Check that there is a model state
   # message("indexing model stages...")
-  if ( length(self$modelState)==0 || ! any(unlist(lapply(self$modelState,length))>0) ) {
-    stop("Model does not appear to have been run yet.")
+  if ( length(private$ModelState)==0 || ! any(unlist(lapply(private$ModelState,length))>0) ) {
+    message("Model does not appear to have been run yet.")
+    return(list())
   }
 
   # message("Processing model stages...")
   Index <- data.frame()
   Inputs <- data.frame()
-  for ( stage in self$stageCount ) {
-    ms <- self$modelState[[stage]]
+  for ( stage in length(private$ModelState) ) {
+    ms <- private$ModelState[[stage]]
     if ( length(ms)==0 ) next
     ds <- (ms$Datastore)
-    model.path <- file.path(basename(dirname(self$modelPath[stage])),basename(self$modelPath[stage]))
+    model.path <- file.path(basename(dirname(self$model$modelPath[stage])),basename(self$model$modelPath[stage]))
 
     # TODO: change this to parse the model from run_model.R if modelstate does not exist
     # Use
 
-    # message("Processing ",basename(self$modelPath[stage]))
+    # message("Processing ",basename(self$model$modelPath[stage]))
     # NOTE: Datastore element ds of ModelState is a data.frame.
     #       The attributes column contains a list for each row
     # Datastore elements with a "FILE" attribute are inputs; we want the outputs
@@ -58,7 +66,7 @@ ve.output.index <- function() {
 
     maxLength <- max(unlist(lapply(splitGroupTableName, length)))
     if ( maxLength != 3 ) {
-      warning("Model state ",self$modelPath[stage],"is incomplete (",maxLength,")")
+      warning("Model state ",self$model$modelPath[stage],"is incomplete (",maxLength,")")
       next
     }
     splitGroupTableName <- lapply(splitGroupTableName , function(x) c(x, rep(NA, maxLength-length(x))))
@@ -105,9 +113,9 @@ ve.output.index <- function() {
     # message("length of Index:",nrow(Index))
   }
   # message("Attaching ve.inputs attribute to Index")
-  self$modelIndex <- Index
-  self$modelInputs <- Inputs
-  invisible(list(Index=self$modelIndex,Inputs=self$modelInputs))
+  private$modelIndex <- Index
+  private$modelInputs <- Inputs
+  invisible(list(Index=private$modelIndex,Inputs=private$modelInputs))
 }
 
 # TODO: change this so the fields are always sought within the
@@ -153,10 +161,10 @@ ve.output.select <- function( what, details=FALSE ) {
 }
 
 ve.output.groups <- function(groups) {
-  if ( ! all(file.exists(file.path(self$modelPath,"ModelState.Rda"))) ) {
+  if ( ! all(file.exists(file.path(self$model$modelPath,"ModelState.Rda"))) ) {
     stop("Model has not been run yet.")
   }
-  idxGroups <- unique(self$modelIndex[,c("Group","Stage")])
+  idxGroups <- unique(private$modelIndex[,c("Group","Stage")])
   row.names(idxGroups) <- NULL
   if ( ! missing(groups) ) {
     years <- ( tolower(groups) %in% c("years","year") ) # magic shortcut
@@ -165,15 +173,15 @@ ve.output.groups <- function(groups) {
       groups <- c( groups[!years], grep("^[[:digit:]]{4}$",idxGroups$Group,value=TRUE) )
     }
     if ( is.character(groups) && length(groups)>0 ) {
-      self$groupsSelected <- groups[ groups %in% idxGroups$Group ]
+      private$groupsSelected <- groups[ groups %in% idxGroups$Group ]
     } else {
-      self$groupsSelected <- character(0)
+      private$groupsSelected <- character(0)
     }
   }
-  if ( length(self$groupsSelected)==0 ) {
+  if ( length(private$groupsSelected)==0 ) {
     idxGroups$Selected <- "Yes"
   } else {
-    idxGroups$Selected <- ifelse(idxGroups$Group %in% self$groupsSelected,"Yes","No")
+    idxGroups$Selected <- ifelse(idxGroups$Group %in% private$groupsSelected,"Yes","No")
   }
   return(idxGroups)
 }
@@ -183,24 +191,24 @@ ve.group.selected <- function(test.group,groups) {
 }
 
 ve.output.tables <- function(tables) {
-  if ( ! all(file.exists(file.path(self$modelPath,"ModelState.Rda"))) ) {
+  if ( ! all(file.exists(file.path(self$model$modelPath,"ModelState.Rda"))) ) {
     stop("Model has not been run yet.")
   }
-  idxTables <- unique(self$modelIndex[,c("Group","Table","Stage")])
+  idxTables <- unique(private$modelIndex[,c("Group","Table","Stage")])
   row.names(idxTables) <- NULL
   if ( ! missing(tables) ) {
     if ( is.character(tables) && length(tables)>0 ) {
-      self$tablesSelected <- tables[ tables %in% idxTables$Table ]
+      private$tablesSelected <- tables[ tables %in% idxTables$Table ]
     } else {
-      self$tablesSelected <- character(0)
+      private$tablesSelected <- character(0)
     }
   }
   group.selected <- ve.group.selected(idxTables$Group,self$groups)
-  if ( length(self$tablesSelected)==0 ) {
+  if ( length(private$tablesSelected)==0 ) {
     idxTables$Selected <- ifelse( group.selected, "Yes", "No (!Group)" )
   } else {
     idxTables$Selected <- ifelse(
-      idxTables$Table %in% self$tablesSelected,
+      idxTables$Table %in% private$tablesSelected,
       ifelse( group.selected,
         "Yes","No (!Group)"
       ),
@@ -215,26 +223,26 @@ ve.table.selected <- function(test.table,tables) {
 
 ve.output.fields <- function(fields) {
   # extract fields from the index where groups and tables are selected
-  if ( ! all(file.exists(file.path(self$modelPath,"ModelState.Rda"))) ) {
+  if ( ! all(file.exists(file.path(self$model$modelPath,"ModelState.Rda"))) ) {
     stop("Model has not been run yet.")
   }
-  idxFields <- self$modelIndex[,c("Group","Table","Name","Stage")]
+  idxFields <- private$modelIndex[,c("Group","Table","Name","Stage")]
   row.names(idxFields) <- NULL
   if ( ! missing(fields) ) {
     if ( is.character(fields) && length(fields)>0 ) {
-      self$fieldsSelected <- fields[ fields %in% idxFields$Name ]
+      private$fieldsSelected <- fields[ fields %in% idxFields$Name ]
     } else {
-      self$fieldsSelected <- character(0)
+      private$fieldsSelected <- character(0)
     }
   }
   table.selected <- ve.table.selected(idxFields$Table,self$tables)
   group.selected <- ve.group.selected(idxFields$Group,self$groups)
   tg.selected <- table.selected & group.selected
-  if ( length(self$fieldsSelected)==0 ) {
+  if ( length(private$fieldsSelected)==0 ) {
     idxFields$Selected <- ifelse( tg.selected, "Yes", "No (!Table)" )
   } else {
     idxFields$Selected <- ifelse(
-      idxFields$Name %in% self$fieldsSelected,
+      idxFields$Name %in% private$fieldsSelected,
       ifelse( tg.selected,
         "Yes","No (!Table)"
       ),
@@ -252,31 +260,31 @@ ve.output.list <- function(selected=TRUE, pattern="", details=FALSE) {
   # selected = TRUE shows just the selected fields
   # selected = FALSE shows all fields (not just unselected)
   # pattern matches (case-insensitive regexp) some portion of field name
-  # details = TRUE returns a data.frame self$modelIndex (units, description)
-  # detail = FALSE returns just the "Name" vector from self$modelIndex
-  if ( ! all(file.exists(file.path(self$modelPath,"ModelState.Rda"))) ) {
+  # details = TRUE returns a data.frame private$modelIndex (units, description)
+  # detail = FALSE returns just the "Name" vector from private$modelIndex
+  if ( ! all(file.exists(file.path(self$model$modelPath,"ModelState.Rda"))) ) {
     stop("Model has not been run yet.")
   }
   filter <- if ( missing(selected) || selected ) {
-    self$fields$Selected=="Yes"
+    private$fields$Selected=="Yes"
   } else {
-    rep(TRUE,nrow(self$modelIndex))
+    rep(TRUE,nrow(private$modelIndex))
   }
   if ( ! missing(pattern) && is.character(pattern) && nzchar(pattern) ) {
-    filter <- filter & grepl(pattern,self$modelIndex$Name,ignore.case=TRUE )
+    filter <- filter & grepl(pattern,private$modelIndex$Name,ignore.case=TRUE )
   }
   if ( missing(details) || ! details ) {
     ret.fields <- c("Name")
   } else {
-    ret.fields <- names(self$modelIndex)
+    ret.fields <- names(private$modelIndex)
   }
-  ret.value <- self$modelIndex[ filter, ret.fields, drop=TRUE ]
+  ret.value <- private$modelIndex[ filter, ret.fields, drop=TRUE ]
   if ( class(ret.value)!='character' ) ret.value <- ret.value[order(ret.value$Stage, ret.value$Group, ret.value$Name),]
   return(unique(ret.value))
 }
 
 ve.output.inputs <- function( fields=FALSE, module="", filename="" ) {
-  if ( ! all(file.exists(file.path(self$modelPath,"ModelState.Rda"))) ) {
+  if ( ! all(file.exists(file.path(self$model$modelPath,"ModelState.Rda"))) ) {
     stop("Model has not been run yet.")
   }
   if ( ! missing(fields) && fields ) {
@@ -285,15 +293,15 @@ ve.output.inputs <- function( fields=FALSE, module="", filename="" ) {
     ret.fields <- c("Module","File","Stage","Path")
   }
 
-  filter <- rep(TRUE,nrow(self$modelInputs))
+  filter <- rep(TRUE,nrow(private$modelInputs))
   if ( !missing(module) && nzchar(module) ) {
-    filter <- filter & grepl(module,self$modelInputs$Module)
+    filter <- filter & grepl(module,private$modelInputs$Module)
   }
   if ( !missing(filename) && nzchar(filename) ) {
-    filter <- filter & grepl(filename,self$modelInputs$File)
+    filter <- filter & grepl(filename,private$modelInputs$File)
   }
 
-  ret.value <- unique(self$modelInputs[ filter, ret.fields ])
+  ret.value <- unique(private$modelInputs[ filter, ret.fields ])
   return( ret.value[order(ret.value$Stage,ret.value$File),] )
 }
 
@@ -308,13 +316,13 @@ ve.output.extract <- function(
   overwrite=FALSE,
   quiet=FALSE
 ) {
-  if ( ! all(file.exists(file.path(self$modelPath,"ModelState.Rda"))) ) {
+  if ( ! all(file.exists(file.path(self$model$modelPath,"ModelState.Rda"))) ) {
     stop("Model has not been run yet.")
   }
-  if ( is.null(stage) ) stage <- self$stageCount # Last one should have everything
+  if ( is.null(stage) ) stage <- length(self$model$modelPath) # Last one should have everything
   saving <- is.character(saveTo) && nzchar(saveTo)[1]
   
-  visioneval::assignDatastoreFunctions(self$runParams$DatastoreType)
+  visioneval::assignDatastoreFunctions(private$ModelState$DatastoreType)
   fields <- ( self$fields )
 
   extract <- fields[ ( fields$Selected=="Yes" & fields$Stage==stage ) ,c("Name","Table","Group","Stage")]
@@ -324,8 +332,8 @@ ve.output.extract <- function(
   DataSpecs <- lapply( names(tables), function(T.G.S) {
         TGS <- unlist(strsplit(T.G.S,"\\."))
         stage <- as.integer(TGS[3])
-        mp <- self$modelPath[stage]
-        ms <- self$modelState[[stage]]
+        mp <- self$model$modelPath[stage]
+        ms <- private$ModelState[[stage]]
         dstoreloc <- file.path(mp,ms$DatastoreName)
         df <- data.frame(
           Name  = tables[[T.G.S]],
@@ -361,7 +369,7 @@ ve.output.extract <- function(
       stages,
       FUN=function(f,s) {
         data <- results[[f]]
-        out.path <- file.path(self$modelPath[s],saveTo)
+        out.path <- file.path(self$model$modelPath[s],saveTo)
         if ( ! dir.exists(out.path) ) dir.create(out.path,recursive=TRUE)
         fn <- file.path(out.path,f)
         write.csv(data,file=fn)
@@ -377,18 +385,14 @@ ve.output.extract <- function(
 
 ve.output.print <- function() {
   # Update for output
-  cat("Model:",self$modelName,"\n")
-  cat("Path:\n")
-  print(self$modelPath)
-  cat("Datastore Type:",self$runParams$DatastoreType,"\n")
-  cat("Status:", self$status,"\n")
-  self$status
+  cat("VEOutput object:\n")
+  print(basename(self$model$modelPath))
 }
 
-ve.output.query <- function() {
-  if ( ! private$queryObject ) {
-    query <- VEQuery$new() # parameters TBD
-    if ( query.isValid() ) {
+ve.output.query <- function(...) {
+  if ( is.null(private$queryObject) ) {
+    query <- VEQuery$new(...) # parameters TBD
+    if ( query.valid() ) {
       private$queryObject <- query
     } else {
       private$queryObject <- NULL
@@ -405,6 +409,7 @@ VEOutput <- R6::R6Class(
   public = list(
     initialize=ve.init.output,
     model=NULL,                     # Back-reference to the VEModel for this output
+    valid=ve.output.valid,          # has the model been run, etc.
     select=ve.output.select,
     extract=ve.output.extract,
     list=ve.output.list,
