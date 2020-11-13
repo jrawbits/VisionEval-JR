@@ -55,17 +55,24 @@ confirmDialog <- function(msg) {
 #  return TRUE if modelPath looks like an absolute file path
 isAbsolutePath <- function(modelPath) {
   # TODO: may need a more robust regular expression
-  absPath <- any(grepl("^([[:alpha:]]:|/)",modelPath))
+  any(grepl("^([[:alpha:]]:|/)",modelPath))
 }
 
 ## Helper
 #  Model roots: ve.runtime/models, getwd()/models, ve.runtime, getwd()
-getModelRoots <- function(int get.root=0) {
+getModelRoots <- function(get.root=0) {
   roots <- c( getwd() )
   if ( exists("ve.runtime") ) {
     roots <- c( ve.runtime, roots )
   }
-  # VEModelPath is an optional directory in which to seek models
+  # VEModelPath is an optional directory in which to seek or put models
+  # Hierarchy of places:
+  #    VEModelPath (if defined and exists)
+  #      if relative, check ve.runtime/VEModelPath and getwd()/VEModelPath
+  #    ve.runtime/models (if exists)
+  #    getwd()/models (if exists)
+  #    ve.runtime
+  #    getwd()
   modelPath <- getOption("VEModelPath")
   if ( ! is.null(modelPath) ) {
     modelPath <- modelPath[1]
@@ -81,7 +88,7 @@ getModelRoots <- function(int get.root=0) {
   }
   roots <- c( modelPath, file.path(roots,"models"), roots)
   if ( get.root > length(roots) ) get.root <- 1
-  if ( root>0 ) return(roots[get.root]) else return(roots)
+  if ( get.root>0 ) return(roots[get.root]) else return(roots)
 }
 
 ## Helper
@@ -94,14 +101,16 @@ getUniqueName <- function(newPath,newName) {
     newModelPath <- file.path(newPath,tryName)
     try <- try+1
   }
-  return (newModelpath)
+  return (newModelPath)
 }
 
 ## Helper function
 #  Look for run_model.R (any case) in root or subdirectories and return full paths
 run.model <- "run_model.R"
 modelInRoot <- function(root) {
-    paths <- grep(paste0("^",run.model,"$"),ignore.case=TRUE,dir(root,full.names=TRUE,pattern=,recursive=TRUE)
+  model.spec <- paste0(run.model,"$")
+  paths <- grep(model.spec,ignore.case=TRUE,dir(root,full.names=TRUE,recursive=TRUE),value=TRUE)
+  dirname(paths)
 }
 
 ## Helper function
@@ -138,9 +147,9 @@ findModel <- function( modelPath=NULL, install=TRUE, ... ) {
     }
   }
 
-  # No run_model in modelPath relative to "roots"
-  # If we have a path-like form in modelPath, we have failed
-  if ( any(nzchar(dirname(modelPath))) ) {
+  # No run_model in modelPath relative to "roots" - look for standard model perhaps
+  # If we have more than a bare name in modelPath, we've failed
+  if ( modelPath != basename(modelPath) ) {
     stop("No run_model.R in [",paste(modelPath,dir.exists(modelPath),sep=":",collapse=","),"]")
   }
 
@@ -151,7 +160,7 @@ findModel <- function( modelPath=NULL, install=TRUE, ... ) {
   }
 
   # User requested "install", so we'll see if modelPath names a standard model
-  return ( installStandardModel( model, ... ) )
+  return ( installStandardModel( modelPath, ... ) )
 }
 
 ## Helper
@@ -160,11 +169,11 @@ findModel <- function( modelPath=NULL, install=TRUE, ... ) {
 findStandardModel <- function( model ) {
   model <- model[1]
   standardModels <- system.file("models",package="VEModel")
-  if ( ! nzchar(standardModels[1]) ) {
-    standardModels <- normalizePath(file.path(getwd(),"../inst/models"),winslash="/")
+  if ( ! nzchar(standardModels) || ! model %in% dir(standardModels) ) {
+    standardModels <- getOption("VEStandardModels",default=normalizePath("inst/models"))
   }
   model <- file.path(standardModels,model)
-  if ( ! dir.exists(modelPath) ) {
+  if ( ! dir.exists(model) ) {
     stop("No standard model for ",model)
   }
   return(model)
@@ -174,7 +183,7 @@ findStandardModel <- function( model ) {
 #  Called automatically from findModel, where modelPath must be a bare model name
 #  Can install from other locations by calling this function with a more elaborate modelPath
 
-installStandardModel <- function( modelName, modelPath=NULL, confirm=TRUE, skeleton=!confirm ) {
+installStandardModel <- function( modelName, confirm=TRUE, skeleton=!confirm ) {
   # Locate and install standard modelName into modelPath
   #   If modelPath is NULL or empty string, create conflict-resolved modelName in first available standard root
   #   If modelPath is an existing directory, put modelName into it (conflict-resolved name)
@@ -186,45 +195,34 @@ installStandardModel <- function( modelName, modelPath=NULL, confirm=TRUE, skele
   install <- TRUE
   skeleton <- if ( skeleton ) "template" else "sample"
   if ( confirm && interactive() ) {
-    msg <- paste0("Install standard model '",modelPath,"' as ",skeleton,"?\n")
+    msg <- paste0("Install standard model '",modelName,"' as ",skeleton,"?\n")
     install <- confirmDialog(msg)
   }
 
-  if ( ! install ) stop("Model ",modelName," not installed.")
+  if ( ! install ) stop("Model ",modelName," not installed.",call.=FALSE)
+  message("Installing ",modelName," from ",model," as ",skeleton)
 
   # Set up destination modelPath if it is not present (will use the first root)
-  if ( ! is.null(modelPath) ) {
-    # Reconcile modelPath with modelName
-    if ( ! dir.exists(modelPath) ) {
-      modelPath <- dirname(modelPath)
-      modelName <- basename(modelPath) # this will be the *destination* model name
-      if ( nzchar(modelPath) ) {
-        if ( ! isAbsolutePath(modelPath) ) {
-          modelPath <- normalizePath(modelPath,winslash="/",mustWork=FALSE)
-        }
-        if ( ! dir.exists(modelPath) ) stop("Cannot install ",model,": missing directory ",modelPath)
-      } else {
-        modelPath <- getModelRoots(1)
-      }
-    }
-  } else {
-    modelPath <- getModelRoots(1)
-  }
+  modelPath <- getModelRoots(1)
+
   installPath <- getUniqueName( modelPath, modelName )
   dir.create(installPath) # getUniqueName guarantees it doesn't exist
 
   # Locate the model and data source files
   model.path <- file.path(model,"model")
-  model.files <- dir(model.path,recursive=TRUE)
+  model.files <- dir(model.path,full.names=TRUE)
 
   data.path <- file.path(model,skeleton)
   if ( ! dir.exists(data.path) ) stop("No ",skeleton," available for ",modelName)
+  data.files <- dir(data.path,full.names=TRUE)
 
-  file.copy(model.path,installPath,recursive=TRUE) # Copy standard model into modelPath
-  file.copy(data.path,installPath,recursive=TRUE) # Copy skeleton data into modelPath
-  message(modelName," installed in ",installPath)
+  file.copy(model.files,installPath,recursive=TRUE) # Copy standard model into modelPath
+  file.copy(data.files,installPath,recursive=TRUE) # Copy skeleton data into modelPath
+  message("Installed ",modelName," in ",installPath)
 
-  return( modelInRoot(installPath) ) # return list of installed directories containing run_model.R
+  run.model <- modelInRoot(installPath)
+  if ( ! all(nzchar(run.model)) ) stop("No run_model.R in ",paste(run.model,collapse=","))
+  return( dirname(run.model) ) # return list of installed directories containing run_model.R
 }
 
 ve.model.copy <- function(newName=NULL,newPath=NULL) {
@@ -259,7 +257,6 @@ ve.model.copy <- function(newName=NULL,newPath=NULL) {
   for ( p in 1:self$stageCount ) {
     copy.from <- setdiff(self$dir(path=p),private$artifacts(path=p))
     copy.to <- get.destination(newModelPath,basename(self$modelPath[p]))
-    print(copy.to)
     dir.create(copy.to,showWarnings=FALSE)
     file.copy(copy.from,copy.to,recursive=TRUE)
   }
@@ -280,12 +277,13 @@ loadModelState <- function(path) {
 }
 
 # Initialize a VEModel from modelPath/modelName, optionally installing a standard model
-ve.init.model <- function(modelPath=NULL,modelName=NULL,install=FALSE,confirm=!install,skeleton=!confirm) {
+ve.init.model <- function(modelPath=NULL,modelName=NULL,install=TRUE,confirm=!install,skeleton=!confirm) {
 
   # Identify the run_model.R root location
-  self$modelPath <- findModel(modelPath,modelName,install,confirm,skeleton)
+  self$modelPath <- findModel(modelPath,install,confirm,skeleton)
 
   # The remainder sets up the components for this model management structure
+  print(self$modelPath)
   names(self$modelPath) <- basename(self$modelPath)
   if ( is.null(modelName) ) {
     self$modelName <- if ( length(self$modelPath)>1 ) {
@@ -306,17 +304,17 @@ ve.init.model <- function(modelPath=NULL,modelName=NULL,install=FALSE,confirm=!i
     stop("Cannot construct model; missing: ",rpfile)
   }
   self$stageCount <- length(self$modelPath)
-  self$modelState <- lapply(
+  private$ModelState <- lapply(
     self$modelPath,
     loadModelState
   )
-  if ( length(self$modelState)>0 && any(unlist(lapply(self$modelState,length))>0) ) {
-    private$index()
+  if ( length(private$ModelState)>0 && any(unlist(lapply(private$ModelState,length))>0) ) {
+    private$outputObject <- VEOutput$new(private$ModelState,self)
   }
 
   self$runStatus <- sapply(
     simplify=TRUE,
-    self$modelState,
+    private$ModelState,
     function(ms) {
       if ( length(ms) > 0 ) {
         ifelse(
@@ -352,6 +350,7 @@ ve.model.run <- function(verbose=TRUE,path=NULL,stage=NULL,log="ERROR") {
   # Unlike .dir the path/stage says where to start - the run will
   # then continue by running that stage then each following stage
   if ( missing(path) ) path <- stage    # Still might be NULL; allow alias
+  if ( ! exists("ve.runtime") ) ve.runtime <- getwd()
   pathLength <- length(self$modelPath)
   stageStart <- if ( ! is.null(path) ) path else 1
   for ( ms in stageStart:self$stageCount ) {
@@ -409,11 +408,11 @@ ve.model.run <- function(verbose=TRUE,path=NULL,stage=NULL,log="ERROR") {
     }
     if ( self$status != "Complete" ) break;
   }
-  self$modelState <- lapply(
+  private$ModelState <- lapply(
     self$modelPath,
     loadModelState
   )
-  if ( length(self$modelState)>0 && all(unlist(lapply(self$modelState,length))>0) ) {
+  if ( length(private$ModelState)>0 && all(unlist(lapply(private$ModelState,length))>0) ) {
     private$index()
   }
 
@@ -470,7 +469,7 @@ ve.model.clear <- function(force=FALSE,outputOnly=NULL,path=NULL,stage=NULL) {
     if ( force) {
       print(dir(to.delete),recursive=TRUE)
       unlink(to.delete,recursive=TRUE)
-      self$modelState <- lapply(
+      private$ModelState <- lapply(
         self$modelPath,
         function(x) list()
       )
@@ -565,16 +564,21 @@ prepSelect <- function(self,what,details=FALSE) {
 }
 
 # Create an output object from the model output
-ve.model.output <- function() {
-  if ( ! private$outputObject ) {
-    output <- VEOutput$new() # parameters TBD
-    if ( output.isValid() ) {
+ve.model.output <- function(rhs) {
+  if ( ! missing(rhs) ) stop("Cannot assign to model output",call.=FALSE)
+  if ( is.null(private$outputObject) ) {
+    output <- VEOutput$new(private$ModelState,self) # parameters TBD
+    if ( output$valid() ) {
       private$outputObject <- output
     } else {
       private$outputObject <- NULL
     }
   }
-  return(private$outputObject)
+  if ( is.null(private$outputObject) ) {
+    invisible(private$outputObject)
+  } else {
+    return(private$outputObject)
+  }
 }
 
 # Here is the VEModel R6 class
@@ -593,18 +597,21 @@ VEModel <- R6::R6Class(
     # Methods
     initialize=ve.init.model,
     run=ve.model.run,
-    print=ve.model.print,                    # provides generic print functionality
+    print=ve.model.print,                   # provides generic print functionality
     dir=ve.model.dir,
     clear=ve.model.clear,
     copy=ve.model.copy,
-    output=ve.model.output                   # Create a VEOutput object (if model is run)
-    status=ve.model.status
+    status="Uninitialized"
+  ),
+  active = list(
+    output=ve.model.output                  # Create a VEOutput object (if model is run)
   ),
   private = list(
     # Private Members
     runError=NULL,
     artifacts = ve.artifacts,               # Function may interrogate an existing Output
-    outputObject=NULL                       # VEOutput object for this model
+    outputObject=NULL,                      # VEOutput object for this model
+    ModelState=NULL                         # ModelState placeholder
   )
 )
 
@@ -665,6 +672,6 @@ VEModel <- R6::R6Class(
 #' @return A VEModel object or a VEModelList of available models if no modelPath or modelName is
 #'   provided; see details and `vignette("VEModel")`
 #' @export
-openModel <- function(modelPath, modelName = NULL, installModel=TRUE, installData = TRUE) {
-  return( VEModel$new(modelPath = modelPath, modelName = modelName) )
+openModel <- function(modelPath, modelName = NULL, install=TRUE) {
+  return( VEModel$new(modelPath = modelPath, modelName = modelName, install=install) )
 }
