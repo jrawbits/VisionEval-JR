@@ -2293,6 +2293,9 @@ documentModule <- function(ModuleName){
 #' to occur. This function fetches the datasets from the datastore and returns
 #' them in the form they are required to be in to run the module.
 #'
+#' Armed with the return from this function, you can manually source
+#' a module and then step through its function call with the debugger...
+#'
 #' @param ModuleName a string identifying the name of the module.
 #' @param PackageName a string identifying the name of the package that the
 #' module is in.
