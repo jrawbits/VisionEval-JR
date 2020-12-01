@@ -8,17 +8,70 @@
 # Get rid of the global function references
 utils::globalVariables(c("initTable","writeToTable","ModelState_ls","listDatastore"))
 
+#CREATE R ENVIRONMENT FOR MODEL
+#==============================
+#' Attach an R environment to the search path for the active model
+#'
+#' \code{modelEnvironment} a visioneval framework control function that locates
+#' the environment for elements of the active model, creating it and placing it
+#' on the search path if necessary. That environment contains the ModelState,
+#' the Datastore access function aliases and related information. If create is
+#' \code{FALSE}, throw an error instead of creating a new environment.
+#'
+#' @param missingOK a logical indicating whether to create the environment
+#' @return an R environment attached to "ve.model" on the search path.
+#' @export
+modelEnvironment <- function(create=TRUE) {
+  # export this function since it can be useful in the VEModel
+  # package
+  if ( ! "ve.model" %in% search() ) {
+    if ( ! create ) stop("Missing ve.model environment.")
+    ve.model <- attach(DstoreFuncs_,name="ve.model")
+  } else {
+    ve.model <- as.environment("ve.model")
+  }
+  return(ve.model)
+}
+
+#GET VISIONEVAL RUN STEPS
+#========================
+#' Get end user API run mode.
+#'
+#' \code{getInitializeMode} a visioneval framework control function
+#' that controls how initializeModel and runModule/runScript/Stage
+#' operations are processed (see visioneval::initializeModel)
+#'
+#' The default for RunMode runs all steps.
+#'
+#' @param RunMode list of values identifying initialization steps.
+#' @value vector subset of c("Init","Load","Run")
+getInitializeMode <- function(RunMode=NULL) {
+  envir=modelEnvironment()
+  runSteps <- c("Init","Load","Run")
+  if ( ! is.null(RunMode) && length(RunMode)>0 && all(nzchar(RunMode)) ) {
+    mode <- runSteps[ runSteps %in% runMode ]
+    if ( length(mode)>0 ) runSteps <- mode
+  } else {
+    VEInitializeMode <- get0("runSteps",envir=envir,inherits=FALSE,ifnotfound=NULL)
+    if ( !is.null(VEInitializeMode) ) {
+      runSteps <- VEInitializeMode
+    }
+  }
+  envir$runSteps <- runSteps
+  runSteps
+}
+
 #INITIALIZE MODEL STATE
 #======================
 #' Initialize model state.
 #'
-#' \code{initModelState} a visioneval framework control function that loads
+#' \code{initModelStateFile} a visioneval framework control function that loads
 #' model run parameters into the model state list in the global workspace and
-#' saves as file.
+#' optionally saves it as file.
 #'
 #' This function creates the model state list and loads model run parameters
 #' recorded in the 'parameters.json' file into the model state list. It also
-#' saves the model state list in a file (ModelState.Rda).
+#' optionally saves the model state list in a file (ModelState.Rda).
 #'
 #' @param Dir A string identifying the name of the directory where the global
 #' parameters, deflator, and default units files are located. The default value
@@ -31,22 +84,25 @@ utils::globalVariables(c("initTable","writeToTable","ModelState_ls","listDatasto
 #' @param UnitsFile A string identifying the name of the file which contains
 #' default units for complex data types (e.g. currency, distance, speed, etc.).
 #' The default value is units.csv.
-#' @return TRUE if the model state list is created and file is saved. It creates
-#' the model state list and loads parameters recorded in the 'parameters.json'
-#' file into the model state lists and saves a model state file.
+#' @param Save A logical (default=TRUE) indicating whether the model state file
+#' should be written out.
+#' @return TRUE if the model state list is created and file is saved, FALSE if
+#' the model state file was not saved.
 #' @export
 #' @import jsonlite
 initModelStateFile <-
   function(Dir = "defs",
            ParamFile = "run_parameters.json",
            DeflatorFile = "deflators.csv",
-           UnitsFile = "units.csv") {
+           UnitsFile = "units.csv",
+           Save=TRUE
+         ) {
   ParamFilePath <- file.path(Dir,  ParamFile)
   DeflatorFilePath <- file.path(Dir, DeflatorFile)
   UnitsFilePath <- file.path(Dir, UnitsFile)
   if (!file.exists(ParamFilePath)) {
     Message <- paste("Missing", ParamFilePath, "file.")
-    stop(Message)
+    stop( writeLog(Message,Level="error") )
   } else {
     RunParam_ls <- jsonlite::fromJSON(ParamFilePath)
     RequiredParam_ <- c(
@@ -57,59 +113,72 @@ initModelStateFile <-
     if (any(!ParamExists_)) {
       MissingParam_ <- RequiredParam_[!ParamExists_]
       Message <- paste0(
-        "One or more parameters in the 'run_parameters.json' file are missing. ",
-        "Following are the missing parameters: ",
+        "Missing parameters in '",ParamFilePath,' file:\n",
         paste(MissingParam_, collapse = ", ")
       )
-      stop(Message)
+      stop( writeLog(Message,Level="error") )
     } else {
       newModelState_ls <- jsonlite::fromJSON(ParamFilePath)
       newModelState_ls$LastChanged <- Sys.time()
       newModelState_ls$Deflators <- read.csv(DeflatorFilePath, as.is = TRUE)
       newModelState_ls$Units <- read.csv(UnitsFilePath, as.is = TRUE)
-      if ( ! "ve.model" %in% search() ) attach(NULL,name="ve.model")
-      assign("ModelState_ls",newModelState_ls,envir=as.environment("ve.model"))
-      save(ModelState_ls, envir=as.environment("ve.model"), file = "ModelState.Rda")
+      envir = modelEnvironment()
+      envir$ModelState_ls <- newModelState_ls
+      if ( Save) save(ModelState_ls, envir=envir, file = getModelStateFile())
     }
   }
-  TRUE
+  return(Save) 
 }
 #initModelStateFile(Dir = "tests/defs")
 
-#GET MODEL STATE VALUES
-#======================
-#' Get values from model state list.
+#LOAD MODEL STATE
+#================
+#' Load ModelState into ve.model environment
 #'
-#' \code{getModelState} a visioneval framework control function that reads
-#' components of the list that keeps track of the model state.
+#' \code{loadModelState} a visioneval framework control function that
+#' loads the ModelState for a model run into the ve.model environment
 #'
-#' Key variables that are important for managing the model run are stored in a
-#' list (ModelState_ls) that is managed in the ve.model environment. This
-#' function extracts named components of the list.
-#'
-#' @param Names_ A string vector of the components to extract from the
-#' ModelState_ls list.
-#' @param localModelState a ModelState_ls structure living somewhere other than
-#'   on the search path. If missing, hunt for global model state
-#' @return A list containing the specified components from the model state file.
+#' @param FileName A string identifying the name of the file that contains
+#' the ModelState_ls list. The default name is 'ModelState.Rda'.
+#' @param envir An environment into which to load ModelState.Rda
+#' (default ve.model)
+#' @return TRUE if ModelState was loaded, FALSE if it could not be
+#  (invisibly)
 #' @export
-getModelState <- function(Names_ = "All", localModelState=NULL) {
-  if ( missing(localModelState) || is.null(localModelState) ) {
-    if ( ! "ve.model" %in% search() ) stop("Missing ve.model environment.")
-    State_ls <- get("ModelState_ls",as.environment("ve.model"))
-  } else {
-    cat("Using localModelState: ",localModelState,"\n")
-    State_ls <- localModelState
+loadModelState <- function(FileName=getModelStateFile(),envir=NULL) {
+  if ( is.null(envir) ) envir = modelEnvironment()
+  # TODO: do some error checking on what "envir" is
+  # TODO: use a function to find default ModelState FileName
+  if ( ! "ModelState_ls" %in% ls(envir) ) {
+    if (file.exists(FileName)) {
+      load(FileName,envir=envir)
+    }
   }
-  if (Names_[1] == "All") {
-    return(State_ls)
-  } else {
-    return(State_ls[Names_])
-  }
+  invisible( "ModelState_ls" %in% ls(envir) )
 }
 
+# GET MODEL STATE
+#================
+#' Get elements from ModelState in ve.model environment (option to Load)
+#'
+#' \code{getModelState} a visioneval framework control function that
+#' gets ModelState elements from ModelState_ls in the ve.model environment
+#'
+#' Use this faster function inside of modules rather than readModelState, which
+#' can load the ModelState.Rda or work with different environments.
+#'
+#' @param FileName A string identifying the name of the file that contains
+#' the ModelState_ls list. The default name is 'ModelState.Rda'.
+#' @return TRUE if ModelState was loaded, FALSE if it could not be
+#  (invisibly)
+#' @export
+getModelState <- function() {
+  envir <- getModelEnvironment()
+  if ( ! "ModelState_ls" %in% ls(envir) ) stop("ModelState is not initialized.")
+  return get("ModelState_ls",envir=envir)
+}
 
-#UPDATE MODEL STATE
+#SET (UPDATE) MODEL STATE
 #==================
 #' Update model state.
 #'
@@ -122,30 +191,72 @@ getModelState <- function(Names_ = "All", localModelState=NULL) {
 #' 'ModelState.Rda' file. This function updates  entries in the model state list
 #' with a supplied named list of values, and then saves the results in the file.
 #'
-#' @param ChangeState_ls A named list of components to change in ModelState_ls
-#' @param FileName A string identifying the name of the file that contains
+#' @param ChangeState_ls A named list of components to change in ModelState_ls.
+#'   If empty, just Save (and if Save==FALSE, do nothing)
+#' @param FileName A string identifying the name of the file in which to save
 #' the ModelState_ls list. The default name is 'ModelState.Rda'.
-#' @return TRUE if the model state list and file are changed.
+#' @param Save A boolean (default TRUE) saying whether to save the
+#' ModelState to its file (otherwise only ModelState_ls in ve.model environment is updated)
+#' @return always TRUE
 #' @export
 setModelState <-
-  function(ChangeState_ls, FileName = "ModelState.Rda") {
-    ModelState_ls <- getModelState()
-    for (i in 1:length(ChangeState_ls)) {
-      ModelState_ls[[names(ChangeState_ls)[i]]] <- ChangeState_ls[[i]]
+  function(ChangeState_ls=list(), FileName = getModelStateFile(), Save=TRUE) {
+    # Get current ModelState (providing FileName will force a "Read")
+    changeModelState_ls <- readModelState(FileName=FileName)
+    envir=modelEnvironment()
+
+    # Make requested changes, if any
+    # (pass an empty list just to Save existing ModelState_Ls)
+    if ( (changes <- length(ChangeState_ls)) > 0 ) {
+      changeNames <- names(ChangeState_ls)
+      for (i in 1:changes) {
+        changeModelState_ls[[changeNames[i]]] <- ChangeState_ls[[i]]
+      }
+      changeModelState_ls$LastChanged <- Sys.time()
+      envir$ModelState_ls <- changeModelState_ls
     }
-    ModelState_ls$LastChanged <- Sys.time()
 
-    result <- try(save(ModelState_ls, file=FileName))
-    if ( class(result) == 'try-class' ) stop('Could not write to ', FileName)
-
-    if ( ! "ve.model" %in% search() ) stop("ve.model environment not available.")
-    assign("ModelState_ls", ModelState_ls, envir=as.environment("ve.model"))
-    TRUE
+    if ( Save ) {
+      result <- try(save("ModelState_ls",envir=envir,file=FileName))
+      if ( class(result) == 'try-error' ) {
+        Msg <- paste('Could not write ModelState:', FileName)
+        writeLog(Msg,Level="error")
+        writeLog(result,Level="error")
+        stop(msg,call.=FALSE)
+    }
+    invisible(TRUE)
   }
+
+#IDENTIFY MODEL STATE FILE
+#=========================
+#' Get model state file name and attach attribute saying if it exists
+#'
+#' \code{getModelStateFile} a visioneval framework control function that
+#' reports the (user-configurable model state file name and reports
+#' whether the files exists (\code{attribute("exists")})
+#'
+#' @return a character string containing the standard ModelState (base)name and an
+#' attribute \code{"exists"} saying if it exists.
+#' @export
+
+getModelStateFile <- function() {
+  envir <- modelEnvironment()
+  # use the basename - not legal (yet) to specific any directory other than getwd()
+  if ( ! exists("ModelState_filename"), envir=envir, inherits=FALSE) {
+    # TODO: get the option from .VisionEval setup file - need a whole framework to
+    # grab options from wherever they are set/over-ridden. Log the option source at
+    # level "trace".
+    envir$ModelState_filename <- basename(getOption("visioneval.ModelStateName", "ModelState.Rda"))
+  }
+  modelStateName <- envir$ModelState_filename
+  # The exists attribute is fluid: file is sought in working directory.
+  attr(modelStateName,"exists") <- file.exists(modelStateName)
+  return(modelStateName)
+}
 
 #READ MODEL STATE FILE
 #=====================
-#' Reads values from model state file.
+#' Reads values from model state file (attempting to load if not present)
 #'
 #' \code{readModelState} a visioneval framework control function that reads
 #' components of the file that saves a copy of the model state.
@@ -161,29 +272,26 @@ setModelState <-
 #' @param envir An environment into which to load ModelState.Rda
 #' @return A list containing the specified components from the model state file.
 #' @export
-readModelState <- function(Names_ = "All", FileName = "ModelState.Rda", envir=NULL) {
-
-  if ( missing(envir) || is.null(envir) ) {
-    if ( ! "ve.model" %in% search() ) {
-      envir <- attach(NULL,name="ve.model")
-    } else {
-      envir <- as.environment("ve.model")
+readModelState <- function(Names_ = "All", FileName=NULL, envir=NULL) {
+  # Establish environment
+  if ( is.null(envir) ) envir <- modelEnvironment()
+  # Load from FileName if we explicitly provide it, or if we do not already
+  # have a ModelState_ls in the environment
+  if ( !is.null(FileName) || ! exists("ModelState_ls",envir=envir,inherits=FALSE) ) {
+    if ( is.null(FileName) ) FileName <- getModelStateFile()
+    if ( ! loadModelState(FileName,envir) ) {
+      Msg <- paste0("Could not load ModelState from",FileName)
+      writeLog(Msg,Level="error")
+      stop(msg,call.=FALSE)
     }
   }
-  if (file.exists(FileName)) {
-    load(FileName,envir=envir)
-  }
-  if ( ! "ModelState_ls" %in% ls(envir) ) {
-    stop("No Model State available.")
-  }
-  State_ls <- get("ModelState_ls",envir=envir)
+  State_ls <- get0("ModelState_ls",envir=envir,ifnotfound=list())
   if (Names_[1] == "All") {
     return(State_ls)
   } else {
     return(State_ls[Names_])
   }
 }
-
 
 #RETRIEVE YEARS
 #==============
@@ -261,27 +369,70 @@ getUnits <- function(Type_) {
 #'   working directory and identifies the name of the log file in the
 #'   model state file.
 #' @export
-initLog <- function(Suffix = NULL) {
+initLog <- function(TimeStamp = NULL, Threshold="info", Suffix = NULL) {
+  # TODO: integrate with running a model from VEModel$run
+  # TODO: also ensure that it is backward compatible if just sourcing run_model.R
+  # TODO: use ve.env to grab the active logger name
+
   ModelState_ls <- getModelState()
-  LogInitTime <- gsub(" ", "_", as.character(Sys.time()))
+  if (is.null(TimeStamp)) {
+    TimeStamp <- as.character(Sys.time()))
+  }
+  LogInitTime <- gsub(" ","_",TimeStamp)
+
   if (!is.null(Suffix)) {
     LogFile <- paste0("Log_", Suffix, ".txt")
   } else {
     LogFile <- paste0("Log_", gsub(":", "_", LogInitTime), ".txt")
   }
-  sink(LogFile, append = TRUE)
-  cat(ModelState_ls$Scenario)
-  cat("\n")
-  cat(ModelState_ls$Description)
-  cat("\n")
-  cat(LogInitTime)
-  cat("\n\n")
-  sink()
-  setModelState(list(LogFile = LogFile))
-  TRUE
+  # Set up logger and threshold in the model environment
+  local( envir=getModelEnvironment(),
+    {
+      ve.logger <- "ve.logger"
+      if ( ! exists("ve.log.threshold") ) {
+        # ve.log.threshold set manually is preserved
+        if ( toupper(Threshold) %in% names(log.threshold) ) {
+          ve.log.threshold <- log.threshold[toupper(Threshold)]
+        }
+      }
+    }
+  }
+  # Create and provision the ve.logger
+  flog.appender(appender.tee(LogFile),name=ve.logger)
+  flog.threshold(ve.log.threshold, name=ve.logger)
+
+  # Log header
+  flog.layout( function(level,msg,...) cat(msg,...,"\n"), name=ve.logger )
+  # The following are not errors, but give them that log level to ensure they get out
+  flog.error("Model Run:",LogInitTime,name=ve.logger)
+  flog.error("Scenario:",ModelState_ls$Scenario,name=ve.logger)
+  flog.error("Description:",ModelState_ls$Description,name=ve.logger)
+
+  # Log standard format
+  flog.layout( layout.format("~t : (~l) ~m (~n::~f)"),name=ve.logger)
+
+  setModelState(list(LogFile=LogFile,ModelStart=TimeStamp),Save=FALSE) # defer saving
+  invisible(TRUE)
 }
 #initLog()
 
+# Internal log level translation table
+log.threshold <- c(
+    futile.logger::INFO,
+    futile.logger::TRACE,
+    futile.logger::DEBUG,
+    futile.logger::WARN,
+    futile.logger::ERROR,
+    futile.logger::FATAL
+  )
+log.function <- list(
+    INFO  = flog.info,
+    TRACE = flog.trace,
+    DEBUG = flog.debug,
+    WARN  = flog.warn,
+    ERROR = flog.error,
+    FATAL = flog.fatal
+  )
 
 #WRITE TO LOG
 #============
@@ -290,27 +441,32 @@ initLog <- function(Suffix = NULL) {
 #' \code{writeLog} a visioneval framework control function that writes a message
 #' to the run log.
 #'
-#' This function writes a message in the form of a string to the run log. It
-#' logs the time as well as the message to the run log.
+#' This function logs a message in the VisionEval log, which will be stdout
+#' (the console) if not running a model, and the model log file if a model
+#' is running.
 #'
 #' @param Msg A character string.
-#' @param Print logical (default: FALSE). If True Msg will be printed in
-#' additon to being added to log
-#' @return TRUE if the message is written to the log uccessfully.
+#' @param Level character string identifying log level
+#' @param Logger character string identifying where to send the log message
+#' @return TRUE if the message is written to the log successfully.
 #' It appends the time and the message text to the run log.
 #' @export
-writeLog <- function(Msg = "", Print = FALSE) {
-  LogFile <- unlist(getModelState("LogFile"))
-  Con <- file(LogFile, open = "a")
-  Time <- as.character(Sys.time())
-  Content <- paste(Time, ":", trimws(Msg))
-  writeLines(Content, Con) # appends "\n" by default
-  close(Con)
-  if (Print) {
-    print(gsub(" \n", "", Content))
+writeLog <- function(Msg = "", Level="Info", Logger="") {
+  if ( missing(Msg) || ! nzchar(Msg) ) {
+    message(
+      "writeLog(Msg,Level,Logger): No message supplied\n",
+      "Available Log Levels:\n",
+      paste(names(log.threshold),collapse=", ")
+    )
+  } else {
+    # empty Logger logs to ROOT (console, unless appender changed)
+    # named logger logs to that one, if defined, otherwise ROOT
+    # initLog will define ve.logger
+    if ( ! nzchar(Logger) && exists("ve.logger") ) Logger=ve.logger
+    log.function[[toupper(Level)]](Msg,name=Logger)
   }
+  invisible(Msg)
 }
-
 
 #LOAD SAVED DATASTORE
 #====================
@@ -403,13 +559,15 @@ loadDatastore <- function(FileToLoad, Dir="defs/", GeoFile, SaveDatastore = TRUE
 #'   metropolitan areas corresponding to the most detailed level of specified
 #'   geography (or 'None' no metropolitan area occupies any portion of the
 #'   zone.
+#' @param Save A logical (default=TRUE) indicating whether the model state
+#'   should be saved to the model state file, or just updated in ve.model environment
 #' @return The value TRUE is returned if the function is successful at reading
 #'   the file and the specifications are consistent. It stops if there are any
 #'   errors in the specifications. All of the identified errors are written to
 #'   the run log. A data frame containing the file entries is added to the
 #'   model state file as Geo_df'.
 #' @export
-readGeography <- function(Dir = "defs", GeoFile = "geo.csv") {
+readGeography <- function(Dir = "defs", GeoFile = "geo.csv", Save=TRUE) {
   #Check for errors in the geographic definitions file
   CheckResults_ls <- checkGeography(Dir, GeoFile)
   #Notify if any errors
@@ -423,7 +581,7 @@ readGeography <- function(Dir = "defs", GeoFile = "geo.csv") {
     writeLog("Geographical indices successfully read.")
   }
   #Update the model state file
-  setModelState(CheckResults_ls$Update)
+  setModelState(CheckResults_ls$Update,Save=Save)
   TRUE
 }
 
@@ -459,7 +617,7 @@ checkGeography <- function(Directory, Filename) {
     Geo_df <- read.csv(Filepath, colClasses = "character")
   } else {
     Message <- paste("Missing", Filename, "file in folder", Directory, ".")
-    writeLog(Message)
+    writeLog(Message,Level="error")
     stop(Message)
   }
   #Check that file has all required fields and extract field attributes
@@ -1290,7 +1448,7 @@ simDataTransactions <- function(AllSpecs_ls) {
   # getInventoryRef <- function(DstoreRef) {
   #   SplitRef_ <- unlist(strsplit(DstoreRef, "/"))
   #   RefHead <- paste(SplitRef_[-length(SplitRef_)], collapse = "/")
-  #   paste(RefHead, "ModelState.Rda", sep = "/")
+  #   paste(RefHead, getModelStateFile(), sep = "/")
   # }
   #
   # #Get datastore inventories for datastore references

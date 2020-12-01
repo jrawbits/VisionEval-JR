@@ -331,7 +331,7 @@ ve.init.model <- function(modelPath=NULL,modelName=NULL,install=TRUE,confirm=!in
 }
 
 log.level <- function(level) {
-  legal.levels <- list(
+  legal.levels <- c(
     "DEBUG"=futile.logger::DEBUG,
     "ERROR"=futile.logger::ERROR,
     "FATAL"=futile.logger::FATAL,

@@ -43,11 +43,8 @@
 #' @export
 listDatastoreRD <- function(DataListing_ls = NULL) {
   #Load the model state file
-  if (exists("ModelState_ls")) { # look in "ve.model" environment specifically
-    G <- getModelState()
-  } else {
-    G <- readModelState()
-  }
+  G <- readModelState() # will load from file if not already present in getModelEnvironment()
+
   #If no Datastore component, get from DatastoreListing.Rda
   if (is.null(G$Datastore)) {
     load(file.path(G$DatastoreName, "DatastoreListing.Rda"))
@@ -320,7 +317,7 @@ readFromTableRD <- function(Name, Table, Group, DstoreLoc = NULL, Index = NULL, 
   if (DstoreDir == "") {
     G <- getModelState()
   } else {
-    G <- readModelState(FileName = file.path(DstoreDir, "ModelState.Rda"))
+    G <- readModelState(FileName = file.path(DstoreDir, getModelStateFile()))
   }
   #If DstoreLoc is NULL get the name of the datastore from the model state
   if (is.null(DstoreLoc)) DstoreLoc <- G$DatastoreName
@@ -733,7 +730,7 @@ readFromTableH5 <- function(Name, Table, Group, DstoreLoc = NULL, Index = NULL, 
   if (DstoreDir == "") {
     G <- getModelState()
   } else {
-    G <- readModelState(FileName = file.path(DstoreDir, "ModelState.Rda"))
+    G <- readModelState(FileName = file.path(DstoreDir, getModelStateFile()))
   }
   #If DstoreLoc is NULL get the name of the datastore from the model state
   if (is.null(DstoreLoc)) DstoreLoc <- G$DatastoreName
@@ -870,16 +867,10 @@ assignDatastoreFunctions <- function(DstoreType) {
   if (DstoreType %in% AllowedDstoreTypes_) {
     DstoreFuncs_ <- lapply(paste0(DstoreNames_,DstoreType),function(x) get(x) ) # make a list of function objects
     names(DstoreFuncs_) <- DstoreNames_
-    if ( ! "ve.model" %in% search() ) {
-      # ve.model does not exist, so create and attach it
-      ve.model <- attach(DstoreFuncs_,name="ve.model")
-    } else {
-      # ve.model exists, so assign the DStoreFuncs_ to DstoreNames_ in that environment
-      lapply(DstoreNames_,function(n) assign(n,DstoreFuncs_[[n]],envir=as.environment("ve.model")))
-    }
+    lapply(DstoreNames_,function(n) assign(n,DstoreFuncs_[[n]],envir=modelEnvironment()))
   } else {
     Msg <-
-      paste0("Unknown 'DatastoreType' in the 'run_parameters.json' file - ",
+      paste0("Unknown 'DatastoreType' in 'run_parameters.json' - ",
              DstoreType,"\nRecognized Types:",
              paste(AllowedDstoreTypes_, collapse = ", "))
     stop(Msg)
@@ -1097,9 +1088,9 @@ getFromDatastore <- function(ModuleSpec_ls, RunYear, Geo = NULL, GeoIndex_ls = N
       SplitRef_ <- unlist(strsplit(DstoreRef, "/"))
       RefHead <- paste(SplitRef_[-length(SplitRef_)], collapse = "/")
       if (RefHead == "") {
-        ModelStateFile <- "ModelState.Rda"
+        ModelStateFile <- getModelStateFile()
       } else {
-        ModelStateFile <- paste(RefHead, "ModelState.Rda", sep = "/")
+        ModelStateFile <- paste(RefHead, getModelStateFile(), sep = "/")
       }
       readModelState(FileName = ModelStateFile)
     }
