@@ -8,6 +8,7 @@
 # Get rid of the global function references
 utils::globalVariables(c("initTable","writeToTable","ModelState_ls","listDatastore"))
 
+
 #CREATE R ENVIRONMENT FOR MODEL
 #==============================
 #' Attach an R environment to the search path for the active model
@@ -18,15 +19,16 @@ utils::globalVariables(c("initTable","writeToTable","ModelState_ls","listDatasto
 #' the Datastore access function aliases and related information. If create is
 #' \code{FALSE}, throw an error instead of creating a new environment.
 #'
-#' @param missingOK a logical indicating whether to create the environment
+#' @param Create a logical indicating whether a missing model environment
+#' should be created.
 #' @return an R environment attached to "ve.model" on the search path.
 #' @export
-modelEnvironment <- function(create=TRUE) {
+modelEnvironment <- function(Create=TRUE) {
   # export this function since it can be useful in the VEModel
   # package
   if ( ! "ve.model" %in% search() ) {
-    if ( ! create ) stop("Missing ve.model environment.")
-    ve.model <- attach(DstoreFuncs_,name="ve.model")
+    if ( ! Create ) stop("Missing ve.model environment.")
+    ve.model <- attach(NULL,name="ve.model")
   } else {
     ve.model <- as.environment("ve.model")
   }
@@ -37,22 +39,22 @@ modelEnvironment <- function(create=TRUE) {
 #========================
 #' Get end user API run mode.
 #'
-#' \code{getInitializeMode} a visioneval framework control function
+#' \code{getRunMode} a visioneval framework control function
 #' that controls how initializeModel and runModule/runScript/Stage
 #' operations are processed (see visioneval::initializeModel)
 #'
 #' The default for RunMode runs all steps.
 #'
 #' @param RunMode list of values identifying initialization steps.
-#' @value vector subset of c("Init","Load","Run")
-getInitializeMode <- function(RunMode=NULL) {
+#' @return vector subset of c("Init","Load","Run")
+getRunMode <- function(RunMode=NULL) {
   envir=modelEnvironment()
   runSteps <- c("Init","Load","Run")
   if ( ! is.null(RunMode) && length(RunMode)>0 && all(nzchar(RunMode)) ) {
-    mode <- runSteps[ runSteps %in% runMode ]
+    mode <- runSteps[ runSteps %in% RunMode ]
     if ( length(mode)>0 ) runSteps <- mode
   } else {
-    VEInitializeMode <- get0("runSteps",envir=envir,inherits=FALSE,ifnotfound=NULL)
+    VEInitializeMode <- get0("RunMode",envir=envir,inherits=FALSE,ifnotfound=NULL)
     if ( !is.null(VEInitializeMode) ) {
       runSteps <- VEInitializeMode
     }
@@ -113,7 +115,7 @@ initModelStateFile <-
     if (any(!ParamExists_)) {
       MissingParam_ <- RequiredParam_[!ParamExists_]
       Message <- paste0(
-        "Missing parameters in '",ParamFilePath,' file:\n",
+        "Missing parameters in '",ParamFilePath," file:\n",
         paste(MissingParam_, collapse = ", ")
       )
       stop( writeLog(Message,Level="error") )
@@ -166,16 +168,19 @@ loadModelState <- function(FileName=getModelStateFile(),envir=NULL) {
 #'
 #' Use this faster function inside of modules rather than readModelState, which
 #' can load the ModelState.Rda or work with different environments.
+#' Note that it just becomes a call to readModelState if any
+#' parameters are passed (see \code{readModelState}).
 #'
-#' @param FileName A string identifying the name of the file that contains
-#' the ModelState_ls list. The default name is 'ModelState.Rda'.
-#' @return TRUE if ModelState was loaded, FALSE if it could not be
-#  (invisibly)
+#' @param ... If there are any parameters, this quietly becomes a call to
+#' readModelState(...) which can subset, read a different file, load
+#' into an environment, etc.
+#' @return The model state list
 #' @export
-getModelState <- function() {
-  envir <- getModelEnvironment()
-  if ( ! "ModelState_ls" %in% ls(envir) ) stop("ModelState is not initialized.")
-  return get("ModelState_ls",envir=envir)
+getModelState <- function(...) {
+  if ( ! missing(...) ) return(readModelState(...))
+  envir <- modelEnvironment()
+  if ( ! "ModelState_ls" %in% ls(envir) ) stop("getModelState: ModelState is not initialized.")
+  return(envir$ModelState_ls)
 }
 
 #SET (UPDATE) MODEL STATE
@@ -200,32 +205,33 @@ getModelState <- function() {
 #' @return always TRUE
 #' @export
 setModelState <-
-  function(ChangeState_ls=list(), FileName = getModelStateFile(), Save=TRUE) {
-    # Get current ModelState (providing FileName will force a "Read")
-    changeModelState_ls <- readModelState(FileName=FileName)
-    envir=modelEnvironment()
+function(ChangeState_ls=list(), FileName = getModelStateFile(), Save=TRUE) {
+  # Get current ModelState (providing FileName will force a "Read")
+  changeModelState_ls <- readModelState(FileName=FileName)
+  envir=modelEnvironment()
 
-    # Make requested changes, if any
-    # (pass an empty list just to Save existing ModelState_Ls)
-    if ( (changes <- length(ChangeState_ls)) > 0 ) {
-      changeNames <- names(ChangeState_ls)
-      for (i in 1:changes) {
-        changeModelState_ls[[changeNames[i]]] <- ChangeState_ls[[i]]
-      }
-      changeModelState_ls$LastChanged <- Sys.time()
-      envir$ModelState_ls <- changeModelState_ls
+  # Make requested changes, if any
+  # (pass an empty list just to Save existing ModelState_Ls)
+  if ( (changes <- length(ChangeState_ls)) > 0 ) {
+    changeNames <- names(ChangeState_ls)
+    for (i in 1:changes) {
+      changeModelState_ls[[changeNames[i]]] <- ChangeState_ls[[i]]
     }
-
-    if ( Save ) {
-      result <- try(save("ModelState_ls",envir=envir,file=FileName))
-      if ( class(result) == 'try-error' ) {
-        Msg <- paste('Could not write ModelState:', FileName)
-        writeLog(Msg,Level="error")
-        writeLog(result,Level="error")
-        stop(msg,call.=FALSE)
-    }
-    invisible(TRUE)
+    changeModelState_ls$LastChanged <- Sys.time()
+    envir$ModelState_ls <- changeModelState_ls
   }
+
+  if ( Save ) {
+    result <- try(save("ModelState_ls",envir=envir,file=FileName))
+    if ( class(result) == 'try-error' ) {
+      Msg <- paste('Could not write ModelState:', FileName)
+      writeLog(Msg,Level="error")
+      writeLog(result,Level="error")
+      stop(Msg,call.=FALSE)
+    }
+  }
+  invisible(TRUE)
+}
 
 #IDENTIFY MODEL STATE FILE
 #=========================
@@ -242,7 +248,7 @@ setModelState <-
 getModelStateFile <- function() {
   envir <- modelEnvironment()
   # use the basename - not legal (yet) to specific any directory other than getwd()
-  if ( ! exists("ModelState_filename"), envir=envir, inherits=FALSE) {
+  if ( ! exists("ModelState_filename", envir=envir, inherits=FALSE) ) {
     # TODO: get the option from .VisionEval setup file - need a whole framework to
     # grab options from wherever they are set/over-ridden. Log the option source at
     # level "trace".
@@ -282,7 +288,7 @@ readModelState <- function(Names_ = "All", FileName=NULL, envir=NULL) {
     if ( ! loadModelState(FileName,envir) ) {
       Msg <- paste0("Could not load ModelState from",FileName)
       writeLog(Msg,Level="error")
-      stop(msg,call.=FALSE)
+      stop(Msg,call.=FALSE)
     }
   }
   State_ls <- get0("ModelState_ls",envir=envir,ifnotfound=list())
@@ -310,8 +316,8 @@ readModelState <- function(Names_ = "All", FileName=NULL, envir=NULL) {
 #' @return A character vector of the model run years.
 #' @export
 getYears <- function() {
-  BaseYear <- unlist(getModelState("BaseYear"))
-  Years <- unlist(getModelState("Years"))
+  BaseYear <- unlist(readModelState("BaseYear"))
+  Years <- unlist(readModelState("Years"))
   if (BaseYear %in% Years) {
     c(BaseYear, Years[!Years %in% BaseYear])
   } else {
@@ -319,6 +325,7 @@ getYears <- function() {
   }
 }
 
+# TODO: somewhere north of here, something is not closed properly...
 
 #RETRIEVE DEFAULT UNITS
 #======================
@@ -343,7 +350,6 @@ getUnits <- function(Type_) {
   if (any(is.na(Result_))) Result_ <- NA
   Result_
 }
-
 #getUnits("Bogus")
 #getUnits("currency")
 #getUnits("area")
@@ -361,6 +367,13 @@ getUnits <- function(Type_) {
 #' time. The log is initialized with the scenario name, scenario description and
 #' the date and time of initialization.
 #'
+#' @param TimeStamp Force the log message time stamp to this value
+#' (default: \code{Sys.time()})
+#' @param Threshold Logging threshold to display (see
+#' \code{writeLog()} for available levels). Messages below the
+#' threshold will be ignored. Default is "info" which shows a lot.
+#' "warn" is typical for running a model, and "error" for only the
+#' worst.
 #' @param Suffix A character string appended to the file name for the log file.
 #' For example, if the suffix is 'CreateHouseholds', the log file is named
 #' 'Log_CreateHouseholds.txt'. The default value is NULL in which case the
@@ -374,9 +387,8 @@ initLog <- function(TimeStamp = NULL, Threshold="info", Suffix = NULL) {
   # TODO: also ensure that it is backward compatible if just sourcing run_model.R
   # TODO: use ve.env to grab the active logger name
 
-  ModelState_ls <- getModelState()
   if (is.null(TimeStamp)) {
-    TimeStamp <- as.character(Sys.time()))
+    TimeStamp <- as.character(Sys.time())
   }
   LogInitTime <- gsub(" ","_",TimeStamp)
 
@@ -386,35 +398,47 @@ initLog <- function(TimeStamp = NULL, Threshold="info", Suffix = NULL) {
     LogFile <- paste0("Log_", gsub(":", "_", LogInitTime), ".txt")
   }
   # Set up logger and threshold in the model environment
-  local( envir=getModelEnvironment(),
-    {
-      ve.logger <- "ve.logger"
-      if ( ! exists("ve.log.threshold") ) {
-        # ve.log.threshold set manually is preserved
-        if ( toupper(Threshold) %in% names(log.threshold) ) {
-          ve.log.threshold <- log.threshold[toupper(Threshold)]
-        }
-      }
+  envir=modelEnvironment()
+  envir$ve.logger <- "ve.logger"
+  if ( ! exists("ve.log.threshold",envir=envir) ) {
+    # ve.log.threshold set manually is preserved
+    if ( toupper(Threshold) %in% names(log.threshold) ) {
+      envir$ve.log.threshold <- log.threshold[toupper(Threshold)]
     }
   }
+
   # Create and provision the ve.logger
-  flog.appender(appender.tee(LogFile),name=ve.logger)
-  flog.threshold(ve.log.threshold, name=ve.logger)
+  futile.logger::flog.appender(futile.logger::appender.tee(LogFile),name=envir$ve.logger)
+  futile.logger::flog.threshold(envir$ve.log.threshold, name=envir$ve.logger)
 
   # Log header
-  flog.layout( function(level,msg,...) cat(msg,...,"\n"), name=ve.logger )
+  futile.logger::flog.layout( function(level,msg,...) cat(msg,...,"\n"), name=envir$ve.logger )
   # The following are not errors, but give them that log level to ensure they get out
-  flog.error("Model Run:",LogInitTime,name=ve.logger)
-  flog.error("Scenario:",ModelState_ls$Scenario,name=ve.logger)
-  flog.error("Description:",ModelState_ls$Description,name=ve.logger)
+  futile.logger::flog.error("Model Run:",LogInitTime,name=envir$ve.logger)
 
   # Log standard format
-  flog.layout( layout.format("~t : (~l) ~m (~n::~f)"),name=ve.logger)
+  futile.logger::flog.layout( layout.visioneval,name=envir$ve.logger)
 
-  setModelState(list(LogFile=LogFile,ModelStart=TimeStamp),Save=FALSE) # defer saving
-  invisible(TRUE)
+  invisible(list(LogFile=LogFile,ModelStart=TimeStamp))
 }
 #initLog()
+
+# futile.logger layout for visioneval (adjusted from futile.logger::layout.simple)
+
+prepare_arg <- function(x) {
+  if (is.null(x) || length(x) == 0) return(deparse(x))
+  return(x)
+}
+
+layout.visioneval <- function(level, msg, id='', ...)
+{
+  the.time <- format(Sys.time(), "%Y-%m-%d %H:%M:%S")
+  if (length(list(...)) > 0) {
+    parsed <- lapply(list(...), prepare_arg)
+    msg <- do.call(sprintf, c(msg, parsed))
+  }
+  return( sprintf("[%s] %s : %s\n", substr(names(level),1,1), the.time, msg) )
+}
 
 # Internal log level translation table
 log.threshold <- c(
@@ -426,12 +450,12 @@ log.threshold <- c(
     futile.logger::FATAL
   )
 log.function <- list(
-    INFO  = flog.info,
-    TRACE = flog.trace,
-    DEBUG = flog.debug,
-    WARN  = flog.warn,
-    ERROR = flog.error,
-    FATAL = flog.fatal
+    INFO  = futile.logger::flog.info,
+    TRACE = futile.logger::flog.trace,
+    DEBUG = futile.logger::flog.debug,
+    WARN  = futile.logger::flog.warn,
+    ERROR = futile.logger::flog.error,
+    FATAL = futile.logger::flog.fatal
   )
 
 #WRITE TO LOG
@@ -441,11 +465,14 @@ log.function <- list(
 #' \code{writeLog} a visioneval framework control function that writes a message
 #' to the run log.
 #'
-#' This function logs a message in the VisionEval log, which will be stdout
+#' This function logs messages to the VisionEval log, which will be stdout
 #' (the console) if not running a model, and the model log file if a model
 #' is running.
 #'
-#' @param Msg A character string.
+#' A character vector may be provided for Msg, in which case each
+#' element of the vector will become one line in the log.
+#'
+#' @param Msg A character vector, whose first element must not be empty.
 #' @param Level character string identifying log level
 #' @param Logger character string identifying where to send the log message
 #' @return TRUE if the message is written to the log successfully.
@@ -462,8 +489,12 @@ writeLog <- function(Msg = "", Level="Info", Logger="") {
     # empty Logger logs to ROOT (console, unless appender changed)
     # named logger logs to that one, if defined, otherwise ROOT
     # initLog will define ve.logger
-    if ( ! nzchar(Logger) && exists("ve.logger") ) Logger=ve.logger
-    log.function[[toupper(Level)]](Msg,name=Logger)
+    Level <- toupper(Level)
+    if ( ! Level %in% names(log.function) ) Level="WARN"
+    if ( ! nzchar(Logger) && exists("ve.logger") ) Logger=get("ve.logger") # to avoid global name definition failure
+    for ( m in Msg ) {
+      log.function[[Level]](m,name=Logger)
+    }
   }
   invisible(Msg)
 }
@@ -522,7 +553,7 @@ loadDatastore <- function(FileToLoad, Dir="defs/", GeoFile, SaveDatastore = TRUE
     listDatastore()
   } else {
     Message <- paste("File", FileToLoad, "not found.")
-    writeLog(Message)
+    writeLog(Message,Level="error")
     stop(Message)
   }
   TRUE
@@ -573,12 +604,10 @@ readGeography <- function(Dir = "defs", GeoFile = "geo.csv", Save=TRUE) {
   #Notify if any errors
   Messages_ <- CheckResults_ls$Messages
   if (length(Messages_) > 0) {
-    for (message in Messages_) {
-      writeLog(message)
-    }
+    writeLog(Messages_,Level="error")
     stop(paste0("One or more errors in ", GeoFile, ". See log for details."))
   } else {
-    writeLog("Geographical indices successfully read.")
+    writeLog("Geographical indices successfully read.",Level="info")
   }
   #Update the model state file
   setModelState(CheckResults_ls$Update,Save=Save)
@@ -625,7 +654,7 @@ checkGeography <- function(Directory, Filename) {
   FieldNames_ <- c("Azone", "Bzone", "Czone", "Marea")
   if (!(all(names(Geo_df) %in% FieldNames_))) {
     Message <- "'geography.csv' is missing some required fields."
-    writeLog(Message)
+    writeLog(Message,Level="error")
     stop(Message)
   }
   #Check table entries
@@ -851,7 +880,7 @@ initDatastoreGeography <- function(GroupNames = NULL) {
   }
   #Write to log that complete
   Message <- "Geography sucessfully added to datastore."
-  writeLog(Message)
+  writeLog(Message,Level="info")
   TRUE
 }
 
@@ -878,14 +907,14 @@ initDatastoreGeography <- function(GroupNames = NULL) {
 #' @export
 loadModelParameters <- function(ModelParamFile = "model_parameters.json") {
   G <- getModelState()
-  writeLog("Loading model parameters file.")
+  writeLog("Loading model parameters file.",Level="info")
   ParamFile <- file.path("defs", ModelParamFile)
   if (!file.exists(ParamFile)) {
     ErrorMsg <- "Model parameters file (model_parameters.json) is missing."
-    writeLog(ErrorMsg)
+    writeLog(ErrorMsg,Level="error")
     return(FALSE)
   } else {
-    Param_df <- fromJSON(ParamFile)
+    Param_df <- jsonlite::fromJSON(ParamFile)
     Group <- "Global"
     initTable(Table = "Model", Group = "Global", Length = 1)
     for (i in 1:nrow(Param_df)) {
@@ -931,7 +960,7 @@ loadModelParameters <- function(ModelParamFile = "model_parameters.json") {
 #'   model run script is located.
 #' @param TestMode A logical identifying whether the function is to run in test
 #' mode. When in test mode the function returns the parsed script but does not
-#' change the model state or write results to the log.
+#' change the model state.
 #' @return A data frame containing information on the calls to 'runModule' in the
 #' order of the calls. Each row represents a module call in order. The columns
 #' identify the 'ModuleName', the 'PackageName', and the 'RunFor' value.
@@ -939,12 +968,11 @@ loadModelParameters <- function(ModelParamFile = "model_parameters.json") {
 parseModelScript <-
   function(FilePath = "Run_Model.R",
            TestMode = FALSE) {
-    if ( ! TestMode ) {
-      writeLog("Parsing model script")
-    }
+    writeLog("Parsing model script",Level="info")
     if (!file.exists(FilePath)) {
       Msg <-
         paste0("Specified model script file (", FilePath, ") does not exist.")
+      writeLog(Msg,Level="error")
       stop(Msg)
     }
     rawScript <- readLines(FilePath) # so we can extract requirePackage calls (see below)
@@ -1065,19 +1093,15 @@ parseModelScript <-
     }
     #If there are any errors, print error message
     if (length(Errors_) != 0) {
-      if (!TestMode) {
-        writeLog("One or more 'runModule' function calls have errors as follows:")
-        writeLog(Errors_)
-      }
+      writeLog("One or more 'runModule' function calls have errors as follows:",Level="error")
+      writeLog(Errors_,Level="error")
       stop(
         "One or more errors in model run script. Must fix before model initialization can be completed."
       )
     }
     ModuleCalls_df <-
       data.frame(do.call(rbind, Args_ls), stringsAsFactors = FALSE)
-    if (! TestMode) {
-      writeLog("Success parsing model script")
-    } 
+    writeLog("Success parsing model script",Level="info")
     return(list(ModuleCalls_df = ModuleCalls_df, RequiredVEPackages = RequiredVEPackages))
   }
 
@@ -1717,23 +1741,23 @@ simDataTransactions <- function(AllSpecs_ls) {
     } #End for loop through module calls
   } #End for loop through years
 
-  writeLog("Simulating model run.")
+  writeLog("Simulating model run.",Level="warn")
   if (length(Warnings_) != 0) {
     Msg <-
       paste0("Model run simulation had one or more warnings. ",
              "Datasets will be be overwritten when the model runs. ",
              "Check that this is what it intended. ")
-    writeLog(Msg)
-    writeLog(Warnings_)
+    writeLog(Msg,Level="warn")
+    writeLog(Warnings_,Level="warn")
   }
   if (length(Errors_) == 0) {
-    writeLog("Model run simulation completed without identifying any errors.")
+    writeLog("Model run simulation completed without identifying any errors.",Level="warn")
   } else {
     Msg <-
       paste0("Model run simulation has found one or more errors. ",
              "The following errors must be corrected before the model may be run.")
-    writeLog(Msg)
-    writeLog(Errors_)
-    stop(paste(Msg, "Check log for details."))
+    writeLog(Msg,Level="error")
+    writeLog(Errors_,Level="error")
+    stop(Msg, " Check log for details.")
   }
 }

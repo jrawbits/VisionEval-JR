@@ -1751,7 +1751,7 @@ processModuleInputs <-
       ParsingErrors_ <- unlist(lapply(ParsedNames_ls, function(x) x$Error))
       if (length(ParsingErrors_) != 0) {
         writeLog(
-          c("Input file field name errors as follows:", ParsingErrors_))
+          c("Input file field name errors as follows:", ParsingErrors_),Level="error")
         FileErr_ <- c(FileErr_, ParsingErrors_)
         FileErr_ls <- c(FileErr_ls, FileErr_)
         next()
@@ -2042,7 +2042,7 @@ processModuleInputs <-
             "Has one or more errors in the data inputs as follows:"
           )
         FileErr_ <- c(FileErr_, Msg, DataErr_ls$Errors)
-        writeLog(FileErr_)
+        writeLog(FileErr_,Level="error")
       }
       FileErr_ls <- c(FileErr_ls, FileErr_)
       if (length(DataErr_ls$Warnings) != 0) {
@@ -2053,7 +2053,7 @@ processModuleInputs <-
             "Has one or more warnings for the data inputs as follows:"
           )
         FileWarn_ <- c(FileWarn_, Msg, DataErr_ls$Warnings)
-        writeLog(FileWarn_)
+        writeLog(FileWarn_,Level="warn")
       }
       FileWarn_ls <- c(FileWarn_ls, FileWarn_)
     }#End loop through input files
