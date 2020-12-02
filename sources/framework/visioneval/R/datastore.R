@@ -253,7 +253,7 @@ initDatasetRD <- function(Spec_ls, Group) {
     Msg <- paste0("Specified table - ", Table, " - doesn't exist. ",
                   "The table must be initialized before the dataset can ",
                   "be initialized.")
-    writeLog(Msg)
+    writeLog(Msg,Level="error")
     stop(Msg)
   }
   #Get the table length
@@ -349,7 +349,7 @@ readFromTableRD <- function(Name, Table, Group, DstoreLoc = NULL, Index = NULL, 
           "One or more specified indicies for reading data from ",
           Table, " exceed ", AllowedLength
         )
-      writeLog(Message)
+      writeLog(Message,Level="error")
       stop(Message)
     } else {
       Dataset <- Dataset[Index]
@@ -431,7 +431,7 @@ writeToTableRD <- function(Data_, Spec_ls, Group, Index = NULL) {
           "One or more specified indicies for reading data from ",
           file.path(Group, Table, Name), " exceed the length of the dataset."
         )
-      writeLog(Message)
+      writeLog(Message,Level="error")
       stop(Message)
     } else {
       Dataset[Index] <- Data_
@@ -658,7 +658,7 @@ initDatasetH5 <- function(Spec_ls, Group) {
   } else {
     Message <- paste0("SIZE specification for dataset (", Name,
                       ") is not present.")
-    writeLog(Message)
+    writeLog(Message,Level="Error")
     stop(Message)
   }
   #Create the dataset
@@ -754,7 +754,7 @@ readFromTableH5 <- function(Name, Table, Group, DstoreLoc = NULL, Index = NULL, 
           "One or more specified indicies for reading data from ",
           Table, " exceed ", AllowedLength
         )
-      writeLog(Message)
+      writeLog(Message,Level="error")
       stop(Message)
     }
   }
@@ -818,7 +818,7 @@ writeToTableH5 <- function(Data_, Spec_ls, Group, Index = NULL) {
       paste0(
         "writeToTable passed NULL Data_ "
       )
-    writeLog(Message)
+    writeLog(Message,Level="error")
     stop(Message)
   }
   Data_[is.na(Data_)] <- Spec_ls$NAVALUE
@@ -1245,7 +1245,7 @@ setInDatastore <-
             "setInDatastore got NULL Data_ with arguments Group: ",
             Group, ", Table: ", Table, ", Name: ", Name
           )
-        writeLog(Message)
+        writeLog(Message,Level="error")
         stop(Message)
       }
       if (!is.null(attributes(Data_)$SIZE)) {
