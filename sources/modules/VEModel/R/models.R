@@ -8,11 +8,7 @@
 # https://www.tidyverse.org/blog/2019/11/roxygen2-7-0-0/#r6-documentation
 # https://roxygen2.r-lib.org/articles/rd.html#r6
 
-requireNamespace("jsonlite")
-requireNamespace("R6")
-requireNamespace("visioneval")
-requireNamespace("futile.logger")
-requireNamespace("tryCatchLog")
+self=private=NULL
 
 # Function: ve.model.path
 # Use the modelPath parameter to find run_model.R files
@@ -46,7 +42,7 @@ requireNamespace("tryCatchLog")
 
 ## Helper
 confirmDialog <- function(msg) {
-  conf <- askYesNo(msg,prompts="y/n/c")
+  conf <- utils::askYesNo(msg,prompts="y/n/c")
   if ( is.na(conf) ) conf<-FALSE # Cancel is the same as No
   return(conf)
 }
@@ -63,7 +59,7 @@ isAbsolutePath <- function(modelPath) {
 getModelRoots <- function(get.root=0) {
   roots <- c( getwd() )
   if ( exists("ve.runtime") ) {
-    roots <- c( ve.runtime, roots )
+    roots <- c( get("ve.runtime"), roots )
   }
   # VEModelPath is an optional directory in which to seek or put models
   # Hierarchy of places:
@@ -179,7 +175,9 @@ findStandardModel <- function( model ) {
   return(model)
 }
 
-## install a standard model either as a template (skeleton==TRUE) or a sample (skeleton==FALSE)
+## install a standard model either as a template (skeleton==TRUE) or
+## a sample (skeleton==FALSE)
+#  We're still expecting to distribute with standard models pre-installed
 #  Called automatically from findModel, where modelPath must be a bare model name
 #  Can install from other locations by calling this function with a more elaborate modelPath
 
@@ -193,7 +191,7 @@ installStandardModel <- function( modelName, confirm=TRUE, skeleton=!confirm ) {
 
   # Confirm installation if requested
   install <- TRUE
-  skeleton <- if ( skeleton ) "template" else "sample"
+  skeleton <- if ( skeleton ) "templ" else "samp"
   if ( confirm && interactive() ) {
     msg <- paste0("Install standard model '",modelName,"' as ",skeleton,"?\n")
     install <- confirmDialog(msg)
@@ -390,7 +388,7 @@ ve.model.run <- function(verbose=TRUE,path=NULL,stage=NULL,log="ERROR") {
           self$status <- "Stopped"
         }
         if (verbose) {
-          cat("Model Stage:",gsub(ve.runtime,"",stage),"\n")
+          cat("Model Stage:",gsub(get("ve.runtime"),"",stage),"\n")
           if ( self$status != "Complete" ) cat("Error:",self$status,"\n")
         }
         model.state.path <- file.path(self$modelPath[ms],"ModelState.Rda")
@@ -461,7 +459,7 @@ ve.model.clear <- function(force=FALSE,outputOnly=NULL,path=NULL,stage=NULL) {
     if ( interactive() ) {
       choices <- to.delete
       preselect <- if (force || outputOnly ) to.delete else character(0)
-      to.delete <- select.list(choices=choices,preselect=preselect,multiple=TRUE,title="Delete Select Outputs")
+      to.delete <- utils::select.list(choices=choices,preselect=preselect,multiple=TRUE,title="Delete Select Outputs")
       force <- length(to.delete)>0
     } else {
       force <- ( force || length(to.delete)>0 )
@@ -626,7 +624,8 @@ VEModel <- R6::R6Class(
 #'   The basic use of `openModel` is also described in the VisionEval Getting-Started
 #'   document on the VisionEval website (also in the VisionEval installer).
 #
-#' @section Model Path and Name
+#' @section Model Path and Name:
+#'
 #' The `modelPath` parameter locates a model object. When a model is opened, a
 #'   a relative modelPath will be sought in the user's runtime `models` directory.
 #'   An absolute path will be sought only in the user's file system.
@@ -644,7 +643,8 @@ VEModel <- R6::R6Class(
 #' An error will be raised if a model cannot be found or created with the indicated
 #'   modelPath and modelName.
 #'
-#' @section Standard Models
+#' @section Standard Models:
+#'
 #' If a model is indicated by a name with no path (e.g. `openModel('VERSPM')`) and it is
 #'   not found in the `models` directory, then a VisionEval standard model will be sought
 #'   by that name in the VEModel package and copied to the `models` directory. To skip that search,
@@ -653,7 +653,8 @@ VEModel <- R6::R6Class(
 #'   only skeleton `inputs` and `defs` will be copied (no actual data will ge supplied and the
 #'   model won't run until data is provided).
 #'
-#' @section Available Models
+#' @section Available Models:
+#'
 #' You can see the available models by providing an empty string for the `modelPath`.
 #'   A VEModelList (q.v.) object will be printed as a side-effect, and also returned invisibly.
 #'   You can open an installed model from the VEModelList using
@@ -665,10 +666,8 @@ VEModel <- R6::R6Class(
 #'     provided, prints a list of available standard models (see details)
 #' @param modelName Name displayed for this model (also used as basename for model copy);
 #'   defaults to `basename(modelPath)`
-#' @param installModel if TRUE (default), if the model path and name are not found,
-#'   look instead for `modelPath` as the name of a standard model and install
-#'   (copy) it to the `models` directory as modelName.
-#' @param installData if TRUE (default), install full sample data if modelPath installs a standard model (see details)
+#' @param install if TRUE (default), if model with that name is not found, install a skeleton for
+#'   the matching standard model name
 #' @return A VEModel object or a VEModelList of available models if no modelPath or modelName is
 #'   provided; see details and `vignette("VEModel")`
 #' @export
