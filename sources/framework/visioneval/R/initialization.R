@@ -986,7 +986,7 @@ initDatastoreGeography <- function(GroupNames = NULL) {
 loadModelParameters <- function() {
   G < getModelState()
   RunParam_ls <- G$RunParam_ls
-  ModelParamInfo <- c("ParamDir","ModelParamFile")
+  ModelParamInfo <- c("ParamDir","ModelParamFile","InputDir")
   missingParams <- ! ModelParamInfo %in% names(RunParam_ls)
   if ( any(missingParams) ) {
     stop(
@@ -1002,8 +1002,18 @@ loadModelParameters <- function() {
   writeLog("Loading model parameters file.",Level="info")
   ParamFile <- file.path(RunParam_ls$ParamDir, RunParam_ls$ModelParamFile)
   if (!file.exists(ParamFile)) {
-    ErrorMsg <- paste0("Model parameters file (",ParamFile,") is missing.")
-    stop( writeLog(ErrorMsg,Level="error") )
+    # Not Found: Try again looking this time in InputDir
+    ParamFile <- file.path(RunParam_ls$InputDir, RunParam_ls$ModelParamFile)
+    if (!file.exists(ParamFile)) {
+      # Still Not Found: Throw an error
+      ErrorMsg <- paste0(
+        "Model parameters file (",
+        ParamFile,
+        ") could not be located in ",
+        paste(RunParam_ls$ParamDir,RunParam_ls$InputDir,collapse=", ")
+      )
+      stop( writeLog(ErrorMsg,Level="error") )
+    }
   }
 
   Param_df <- jsonlite::fromJSON(ParamFile)

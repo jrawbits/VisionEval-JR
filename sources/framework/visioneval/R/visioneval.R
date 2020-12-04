@@ -53,6 +53,8 @@ utils::globalVariables(c("initDatastore","Year"))
 #' may be shared by several modules; set this in VisionEval.cnf. Note also that
 #' this file used to be sought in "defs", but will now first be sought in "inputs"
 #' with "defs" as the fallback location if not found in "inputs")
+#' SaveDatastore A logical identifying whether if an existing datastore
+#' should be renamed rather than removed.
 #'
 #' @param ModelScriptFile A string identifying the path to the file that contains
 #'   the steps in the model to run (i.e. the calls to \code{runModule})
@@ -61,11 +63,9 @@ utils::globalVariables(c("initDatastore","Year"))
 #' @param DatastoreName A string identifying the full path name of a datastore
 #' to load or NULL if an existing datastore in the working directory is to be
 #' loaded.
-#' @param SaveDatastore A logical identifying whether if an existing datastore
-#' in the working directory should be renamed rather than removed.
 #' @param SimulateRun A logical identifying whether the model run should be
 #' simulated: i.e. each step is checked to confirm that data of proper type
-#' will be present when the module is called.
+#' will be present when the module is called. JRaw says: Just do it
 #' @param RunMode An optional character string specifying the steps to perform
 #' during initializeModel. "Load" loads an existing ModelState (or creates a
 #' bare one in memory), "Run" performes the traditional operations.
@@ -81,7 +81,6 @@ function(
   ModelScriptFile = "run_model.R",
   LoadDatastore = FALSE,
   DatastoreName = NULL,
-  SaveDatastore = TRUE,
   SimulateRun = FALSE,
   RunMode = NULL,
   ...
@@ -116,7 +115,7 @@ function(
   #   performed automatically when a VEModel object is created.
   #
   #   "Run" will initialize the Datastore by loading an existing the "Datastore" (if LoadDatastore
-  #   is TRUE), or by creating a new blank Datastore. It will presume that ModelState in ve.model
+  #   is TRUE), or by creating a new bslank Datastore. It will presume that ModelState in ve.model
   #   is current. Once the "Run" initialization step is complete, the model can be run by
   #   executing runModule / runScript / Stage steps.
 
@@ -146,7 +145,7 @@ function(
   }
 
   currentModelStateName <- getModelStateFile()
-  saveModelState <- "Run" %in% runSteps)
+  saveModelState <- ("Run" %in% runSteps)
   # Subsequent setModelState calls should include "Save=saveModelState"
   # ModelState will not be saved in pure "Load" step (just manipulated in memory)
 
@@ -185,6 +184,7 @@ function(
     # RunParamFile = "run_parameters.json",
     # GeoFile = "geo.csv",
     # ModelParamFile = "model_parameters.json",
+    # SaveDatastore = TRUE
 
     initModelStateFile(Save=saveModelState,...)
     readGeography(Save=saveModelState) # will already have put path/geo file names into ModelState Run Parameters
@@ -197,6 +197,11 @@ function(
   if ( length(logState)>0 ) {
     setModelState(logState,Save=saveModelState)
   }
+
+  # Configure default for SaveDatastore run parameter
+  SaveDatastore <- if ( "SaveDatastore" %in% names(ve.model$ModelState_ls) ) {
+    ve.model$ModelState_ls$SaveDatastore
+  } else TRUE
 
   # Assign the correct datastore interaction functions
   assignDatastoreFunctions(ve.model$ModelState_ls$DatastoreType)
@@ -470,11 +475,10 @@ function(
 
     #Iterate through each module call and check availability and specifications
     #create combined list of all specifications
-    #JRaw: AllSpecs_ls is optionally used later to simulate the model run, then discarded
-    #      However, parsing the specs as we build AllSpecs_ls does critical error checking
-    #      SimulateRun does further checking on the sequence of calls
     # ModulesByPackage_df lists all modules available in the packages
     # ModuleCalls_df lists only modules that appear in runModule commands
+    # AllSpecs_ls is a list of processed specifications
+    # We refer to it later to find and load input files, and to simulate a model run
     Errors_ <- character(0)
     AllSpecs_ls <- list()
     for (i in 1:nrow(ModuleCalls_df)) {
