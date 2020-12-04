@@ -32,20 +32,30 @@ utils::globalVariables(c("initDatastore","Year"))
 #' 6) Checks all of the model input files to determine whether they they are
 #' complete and comply with specifications.
 #'
+#' @section Run Parameters:
+#' Values for the ... parameter are model configurations that are read from VisionEval.cnf
+#' in the user's runtime folder, then from VisionEval.cnf in the model folder, then in
+#' "defs/run_parameters.json", then from here (the last-found version of the value after
+#' checking those places will be used).
+#' Parameters that historically have appeared in ... are the following, but ... can include values
+#' for any of the parameters that might appear in VisionEval.cnf or in run_parameters.json:
+#' ParamDir (A string identifying the relative or absolute path to the
+#'   directory where the parameter and geography definition files are located.
+#'   The default value is "defs", relative to the run_model.R location),
+#' RunParamFile (A string identifying the name of a JSON-formatted text
+#' file that contains parameters needed to identify and manage the model run.
+#' The default value is "run_parameters.json"; set this in VisionEval.cnf)
+#' GeoFile (A string identifying the name of a text file in comma-separated values
+#' format that contains the geographic specifications for the model. The default value is
+#' "geo.csv"; set this in VisionEval.cnf)
+#' ModelParamFile (A string identifying the name of a JSON-formatted text
+#' file that contains global model parameters that are important to a model and
+#' may be shared by several modules; set this in VisionEval.cnf. Note also that
+#' this file used to be sought in "defs", but will now first be sought in "inputs"
+#' with "defs" as the fallback location if not found in "inputs")
+#'
 #' @param ModelScriptFile A string identifying the path to the file that contains
 #'   the steps in the model to run (i.e. the calls to \code{runModule})
-#' @param ParamDir A string identifying the relative or absolute path to the
-#'   directory where the parameter and geography definition files are located.
-#'   The default value is "defs".
-#' @param RunParamFile A string identifying the name of a JSON-formatted text
-#' file that contains parameters needed to identify and manage the model run.
-#' The default value is "run_parameters.json".
-#' @param GeoFile A string identifying the name of a text file in
-#' comma-separated values format that contains the geographic specifications
-#' for the model. The default value is "geo.csv".
-#' @param ModelParamFile A string identifying the name of a JSON-formatted text
-#' file that contains global model parameters that are important to a model and
-#' may be shared by several modules.
 #' @param LoadDatastore A logical identifying whether an existing datastore
 #' should be loaded.
 #' @param DatastoreName A string identifying the full path name of a datastore
@@ -57,10 +67,11 @@ utils::globalVariables(c("initDatastore","Year"))
 #' simulated: i.e. each step is checked to confirm that data of proper type
 #' will be present when the module is called.
 #' @param RunMode An optional character string specifying the steps to perform
-#' during initializeModel. "Init" creates a bare ModelState, "Load" loads an
-#' existing ModelState (or creates a bare one in memory), "Run" performes the
-#' traditional operations. Any or all can specified in a vector.
+#' during initializeModel. "Load" loads an existing ModelState (or creates a
+#' bare one in memory), "Run" performes the traditional operations.
 #' See \code{getRunMode} for some other ways to set this parameter.
+#' @param ... Additional named arguments that can override run parameters from
+#' VisonEval.cnf or from run_parameters.json. See Run Parameters section.
 #' @return None. The function prints to the log file messages which identify
 #' whether or not there are errors in initialization. It also prints a success
 #' message if initialization has been successful.
@@ -68,23 +79,18 @@ utils::globalVariables(c("initDatastore","Year"))
 initializeModel <-
 function(
   ModelScriptFile = "run_model.R",
-  ParamDir = "defs",
-  RunParamFile = "run_parameters.json",
-  GeoFile = "geo.csv",
-  ModelParamFile = "model_parameters.json",
   LoadDatastore = FALSE,
   DatastoreName = NULL,
   SaveDatastore = TRUE,
   SimulateRun = FALSE,
-  RunMode = NULL
+  RunMode = NULL,
+  ...
 ) {
-  # TODO: I think this is done. Need to test carefully (walk through the
-  # logic (step through it in RStudio).
+  # TODO:Walk through the logic (step through it in RStudio)
   
   # NOTE: This function expects to have getwd() be the same directory that the
-  # ModelState and Datastore will be created in (the model run/scenario). The
-  # actual run_model.R script can be elsewhere, as can the inputs, run_parameters,
-  # model_parameters, defs, etc.
+  # ModelState and Datastore will be created in (the model/scenario location)
+  # The actual run_model.R script can be elsewhere
 
   # Determine which initialization steps to run (supports VEModel end user
   # API). Default is to run all three, reproducing original initializeModel
@@ -99,20 +105,15 @@ function(
   #
   #   Empty and replace the ve.model environment.
   #
-  #   "Init" will create a new ModelState. Any existing ModelState will be moved aside. An
-  #   existing Datastore will be moved aside if SaveDatastore is TRUE and it is not being
-  #   reloaded. A new ModelState will be created with basic model run type settings in place (Name,
-  #   Log, etc.). The ve.model environment will be reinitialized. Then "Load" will always be
-  #   performed. 
-  #
   #   "Load" will load an existing ModelState and check that the model has everything it needs to
-  #   run, updating ModelState as needed. "Load" will perform "Init" first if no ModelState file
-  #   exists, but it will build the ModelState_ls without saving it. We'll only save it when "Run"
-  #   is processed. It will clear the ve.model environment, load the ModelState, parse the
-  #   run_model.R script, check presence of files, check specifications, etc. ModelState_ls
-  #   remains in the ve.model environment. "Load" will be performed if ModelState is not present
-  #   in ve.model when we try to "Run". "Load" will also be performed automatically when a VEModel
-  #   object is created.
+  #   run, updating ModelState as needed. "Load" will perform an in-memory "Init" first if no
+  #   ModelState file exists so the parsed elements of run_model.R are available for inspection, but
+  #   it will not save the ModelState_ls. The ModelState_ls will only be saved when "Run" is
+  #   processed (and it will be loaded again first). This function will clear the ve.model environment,
+  #   load the ModelState, parse the run_model.R script, check presence of files, check
+  #   specifications, etc. ModelState_ls remains in the ve.model environment. "Load" will be
+  #   performed if ModelState is not present in ve.model when we try to "Run". "Load" will also be
+  #   performed automatically when a VEModel object is created.
   #
   #   "Run" will initialize the Datastore by loading an existing the "Datastore" (if LoadDatastore
   #   is TRUE), or by creating a new blank Datastore. It will presume that ModelState in ve.model
@@ -145,7 +146,7 @@ function(
   }
 
   currentModelStateName <- getModelStateFile()
-  saveModelState <- any(c("Init","Run") %in% runSteps)
+  saveModelState <- "Run" %in% runSteps)
   # Subsequent setModelState calls should include "Save=saveModelState"
   # ModelState will not be saved in pure "Load" step (just manipulated in memory)
 
@@ -172,18 +173,27 @@ function(
       savedPreviousModelState <- file.rename(currentModelStateName, previousModelStateName)
     }
 
-    # TODO: rationalize the initializeModel arguments versus .VisionEval environment
+    # TODO: rationalize the initializeModel arguments versus VisionEval.cnf environment
     # versus RunParamFile. Should verify existence of the run_model.R file at this
-    # point - we can invoke initialize without 
+    # point (specified as an argument). Probably should actively manage run_model.R
+    # directory (for all the relative directors for defs, inputs, etc.). Then
+    # initializeModel won't even need to be part of run_model.R, except we'll need to
+    # ensure that we have initialized when we get to the first runModule call.x
 
-    initModelStateFile(Dir = ParamDir, ParamFile = RunParamFile, Save=saveModelState)
-    readGeography(Dir = ParamDir, GeoFile = GeoFile, Save=saveModelState)
+    # Here are some parameters that might come in through "..." (backward compatible)
+    # ParamDir = "defs",
+    # RunParamFile = "run_parameters.json",
+    # GeoFile = "geo.csv",
+    # ModelParamFile = "model_parameters.json",
+
+    initModelStateFile(Save=saveModelState,...)
+    readGeography(Save=saveModelState) # will already have put path/geo file names into ModelState Run Parameters
   } else { # ModelState file exists and doing a pure "Load"
     # open the existing model state
     loadModelState(currentModelStateName)
   }
   # log got initialized earlier but there may not have been a ModelState
-  # Now save its parameters in the ModelState if the model is running
+  # Now save log parameters in the ModelState if the model is running
   if ( length(logState)>0 ) {
     setModelState(logState,Save=saveModelState)
   }
@@ -362,11 +372,13 @@ function(
     parsedScript <- parseModelScript(ModelScriptFile)
 
     # Create required package list, adding from previous ModelState if available
+    AlreadyInitialized_ <- character(0) # required (initialized packages) from loaded datastore
     RequiredPkg_ <- parsedScript$RequiredVEPackages
     if ( LoadDatastore ) {
       # We already set up the model state for the loaded datastore above
       # Copy over the required packages part of the previous model state
       if ( "RequiredVEPackages" %in% names(LoadEnv$ModelState_ls) ) {
+        AlreadyInitialized_ <- LoadEnv$ModelState_ls$RequiredVEPackages
         RequiredPkg_ <- unique(c(RequiredPkg_, LoadEnv$ModelState_ls$RequiredVEPackages))
       }
     }
@@ -402,7 +414,9 @@ function(
     }
     #Check for 'Initialize' module in each package if so add to ModuleCalls_df
     Add_ls <- list()
-    for (Pkg in unique(ModuleCalls_df$PackageName)) {
+    # Do not add Initialize if the package was required in an earlier model stage
+    # Results of Initialization in that case will already be in the Datastore
+    for (Pkg in unique(setdiff(ModuleCalls_df$PackageName,AlreadyInitialized_))) {
       PkgData <- data(package = Pkg)$results[,"Item"]
       if ("InitializeSpecifications" %in% PkgData) {
         Add_df <-
@@ -477,8 +491,7 @@ function(
         next()
       }
       #Load and check the module specifications
-      Specs_ls <-
-      processModuleSpecs(getModuleSpecs(ModuleName, PackageName))
+      Specs_ls <- processModuleSpecs(getModuleSpecs(ModuleName, PackageName))
       Err <- checkModuleSpecs(Specs_ls, ModuleName)
       if (length(Err) > 0) {
         Errors_ <- c(Errors_, Err)
@@ -607,10 +620,8 @@ function(
     }
 
     #----------------------------------------
-    #Load datastore if specified (at runtime)
+    #Load datastore if specified (in "Run" step)
     #----------------------------------------
-    # JRaw::LoadDatastore
-    #       Should already have trapped missing Datastore to load
     # TODO: Rationalize this for the two use cases:
     #   (1) Loading (continuing) the existing Datastore
     #   (2) Loading a Datastore from a previous stage (or another run)
@@ -647,7 +658,7 @@ function(
       # not loading, so make a new Datastore
       initDatastore()
       initDatastoreGeography()
-      loadModelParameters(ModelParamFile = ModelParamFile) # Puts them in the Datastore
+      loadModelParameters()
     }
 
     #===============================
@@ -656,17 +667,41 @@ function(
     #Set up a list to store processed inputs for all modules
     ProcessedInputs_ls <- list()
     #Process inputs for all modules and add results to list
-    for (i in 1:nrow(ModuleCalls_df)) {
-      Module <- ModuleCalls_df$ModuleName[i]
-      Package <- ModuleCalls_df$PackageName[i]
+    # ORIGINAL VERSION:
+      #     for (i in 1:nrow(ModuleCalls_df)) {
+      #       Module <- ModuleCalls_df$ModuleName[i]
+      #       Package <- ModuleCalls_df$PackageName[i]
+      #       EntryName <- paste(Package, Module, sep = "::")
+      #       ModuleSpecs_ls <- processModuleSpecs(getModuleSpecs(Module, Package))
+      #       #If there are inputs, process them
+      #       if (!is.null(ModuleSpecs_ls$Inp)) {
+      #         ProcessedInputs_ls[[EntryName]] <- processModuleInputs(ModuleSpecs_ls, Module)
+      #         #If module is Initialize process inputs with Initialize function
+      #         if (Module == "Initialize") {
+      #           if (length(ProcessedInputs_ls[[Module]]$Errors) == 0) {
+      #             initFunc <- eval(parse(text = paste(Package, Module, sep = "::")))
+      #             InitData_ls <- ProcessedInputs_ls[[EntryName]]
+      #             InitializedInputs_ls <- initFunc(InitData_ls)
+      #             ProcessedInputs_ls[[EntryName]]$Data <- InitializedInputs_ls$Data
+      #             ProcessedInputs_ls[[EntryName]]$Errors <- InitializedInputs_ls$Errors
+      #             if (length(InitializedInputs_ls$Warnings > 0)) {
+      #               writeLog(InitializedInputs_ls$Warnings,Level="warn")
+      #             }
+      #           }
+      #         }
+      #       }
+      #     }
+    for (Spec in AllSpecs_ls) {
+      Module <- Spec$ModuleName
+      Package <- Spec$PackageName
       EntryName <- paste(Package, Module, sep = "::")
-      ModuleSpecs_ls <- processModuleSpecs(getModuleSpecs(Module, Package))
+      ModuleSpecs_ls <- (Spec$Specs)
       #If there are inputs, process them
       if (!is.null(ModuleSpecs_ls$Inp)) {
         ProcessedInputs_ls[[EntryName]] <- processModuleInputs(ModuleSpecs_ls, Module)
-        #If module is Initialize process inputs with Initialize function
+        # Process inputs with Initialize function
         if (Module == "Initialize") {
-          if (length(ProcessedInputs_ls[[Module]]$Errors) == 0) {
+          if (length(ProcessedInputs_ls[[EntryName]]$Errors) == 0) {
             initFunc <- eval(parse(text = paste(Package, Module, sep = "::")))
             InitData_ls <- ProcessedInputs_ls[[EntryName]]
             InitializedInputs_ls <- initFunc(InitData_ls)
@@ -692,13 +727,40 @@ function(
 
     #Load model inputs into the datastore
     #------------------------------------
-    for (i in 1:nrow(ModuleCalls_df)) {
+    # Original Process
+      #     for (i in 1:nrow(ModuleCalls_df)) {
+      #       #Get information on the inputs
+      #       Module <- ModuleCalls_df$ModuleName[i]
+      #       Package <- ModuleCalls_df$PackageName[i]
+      #       EntryName <- paste(Package, Module, sep = "::")
+      #       ModuleSpecs_ls <- processModuleSpecs(getModuleSpecs(Module, Package))
+      #       #Eliminate writing any new input table to Global group if it already exists
+      #       if (!is.null(ModuleSpecs_ls$NewInpTable)) {
+      #         NewInpTableSpecs_ls <- ModuleSpecs_ls$NewInpTable
+      #         GlobalTableExists_ <- unlist(lapply(NewInpTableSpecs_ls, function(x) {
+      #           if (x$GROUP == "Global") {
+      #             checkTableExistence(x$TABLE, "Global", ve.model$ModelState_ls$Datastore)
+      #           } else {
+      #             FALSE
+      #           }
+      #         }))
+      #         if (all(GlobalTableExists_)) {
+      #           ModuleSpecs_ls$NewInpTable <- NULL
+      #         } else {
+      #           ModuleSpecs_ls$NewInpTable <- NewInpTableSpecs_ls[!GlobalTableExists_]
+      #         }
+      #       }
+      #       #Load inputs to datastore
+      #       if (!is.null(ModuleSpecs_ls$Inp)) {
+      #         inputsToDatastore(ProcessedInputs_ls[[EntryName]], ModuleSpecs_ls, Module)
+      #       }
+      #     }
+    for (Spec in AllSpecs_ls) {
       #Get information on the inputs
-      Module <- ModuleCalls_df$ModuleName[i]
-      Package <- ModuleCalls_df$PackageName[i]
+      Module <- Spec$ModuleName
+      Package <- Spec$PackageName
       EntryName <- paste(Package, Module, sep = "::")
-      ModuleSpecs_ls <-
-      processModuleSpecs(getModuleSpecs(Module, Package))
+      ModuleSpecs_ls <- (Spec$Specs)
       #Eliminate writing any new input table to Global group if it already exists
       if (!is.null(ModuleSpecs_ls$NewInpTable)) {
         NewInpTableSpecs_ls <- ModuleSpecs_ls$NewInpTable
@@ -758,8 +820,7 @@ requirePackage <- function(Module) TRUE
 #==========
 #' Run module.
 #'
-#' \code{runModule} a visioneval framework model user function that
-#' runs a module.
+#' \code{runModule} a visioneval framework model user function that runs a module.
 #'
 #' This function runs a module for a specified year.
 #'

@@ -46,10 +46,10 @@ modelEnvironment <- function(Create=TRUE) {
 #' The default for RunMode runs all steps.
 #'
 #' @param RunMode list of values identifying initialization steps.
-#' @return vector subset of c("Init","Load","Run")
+#' @return vector subset of c("Load","Run")
 getRunMode <- function(RunMode=NULL) {
   envir=modelEnvironment()
-  runSteps <- c("Init","Load","Run")
+  runSteps <- c("Load","Run")
   if ( ! is.null(RunMode) && length(RunMode)>0 && all(nzchar(RunMode)) ) {
     mode <- runSteps[ runSteps %in% RunMode ]
     if ( length(mode)>0 ) runSteps <- mode
@@ -75,63 +75,123 @@ getRunMode <- function(RunMode=NULL) {
 #' recorded in the 'parameters.json' file into the model state list. It also
 #' optionally saves the model state list in a file (ModelState.Rda).
 #'
-#' @param Dir A string identifying the name of the directory where the global
-#' parameters, deflator, and default units files are located. The default value
-#' is defs.
-#' @param ParamFile A string identifying the name of the global parameters file.
-#' The default value is parameters.json.
-#' @param DeflatorFile A string identifying the name of the file which contains
-#' deflator values by year (e.g. consumer price index). The default value is
-#' deflators.csv.
-#' @param UnitsFile A string identifying the name of the file which contains
-#' default units for complex data types (e.g. currency, distance, speed, etc.).
-#' The default value is units.csv.
 #' @param Save A logical (default=TRUE) indicating whether the model state file
-#' should be written out.
+#'   should be written out.
+#' @param ... Additional named parameters that will override VisionEval.cnf or
+#'   run_parameters.json. These historically include:
+#' Dir [A string identifying the name of the directory where the global
+#' parameters, deflator, and default units files are located. The default value
+#' is defs.]
+#' ParamFile [A string identifying the name of the global parameters file.
+#' The default value is run_parameters.json.]
+#' DeflatorFile [A string identifying the name of the file which contains
+#' deflator values by year (e.g. consumer price index). The default value is
+#' deflators.csv.]
+#' UnitsFile [A string identifying the name of the file which contains
+#' default units for complex data types (e.g. currency, distance, speed, etc.).
+#' The default value is units.csv.]
+
 #' @return TRUE if the model state list is created and file is saved, FALSE if
 #' the model state file was not saved.
 #' @export
 #' @import jsonlite
-initModelStateFile <-
-  function(Dir = "defs",
-           ParamFile = "run_parameters.json",
-           DeflatorFile = "deflators.csv",
-           UnitsFile = "units.csv",
-           Save=TRUE
-         ) {
-  ParamFilePath <- file.path(Dir,  ParamFile)
-  DeflatorFilePath <- file.path(Dir, DeflatorFile)
-  UnitsFilePath <- file.path(Dir, UnitsFile)
-  if (!file.exists(ParamFilePath)) {
-    Message <- paste("Missing", ParamFilePath, "file.")
-    stop( writeLog(Message,Level="error") )
-  } else {
-    RunParam_ls <- jsonlite::fromJSON(ParamFilePath)
-    RequiredParam_ <- c(
-      "Model", "Scenario", "Description", "Region", "BaseYear", "Years",
-      "DatastoreName", "Seed"
-    )
-    ParamExists_ <- RequiredParam_ %in% names(RunParam_ls)
-    if (any(!ParamExists_)) {
-      MissingParam_ <- RequiredParam_[!ParamExists_]
-      Message <- paste0(
-        "Missing parameters in '",ParamFilePath," file:\n",
-        paste(MissingParam_, collapse = ", ")
-      )
-      stop( writeLog(Message,Level="error") )
-    } else {
-      newModelState_ls <- jsonlite::fromJSON(ParamFilePath)
-      newModelState_ls$LastChanged <- Sys.time()
-      newModelState_ls$Deflators <- read.csv(DeflatorFilePath, as.is = TRUE)
-      newModelState_ls$Units <- read.csv(UnitsFilePath, as.is = TRUE)
-      envir = modelEnvironment()
-      envir$ModelState_ls <- newModelState_ls
-      if ( Save) save(ModelState_ls, envir=envir, file = getModelStateFile())
+initModelStateFile <- function(Save=TRUE,...) {
+  #   Obtain run parameters values RunParam_ls in ve.model environment (if it already exists),
+  #   otherwise create a new empty list of run parameters. VEModel API creates ve.model and for
+  #   backward compatibility, the modelEnvironment() function will create it if it does not exist.
+  #   The VEModel API will set InitialValues from VisionEval.cnf in ve.runtime
+  #   VEModel API will override values using VisionEval.cnf in the run_model.R folder
+  #   This function furnishes default values for the Dir/ParamDir and ParamFile if they are not
+  #   defined already in RunParam_ls (maps Dir into ParamDir) or not in list(...)
+  #   This function opens ParamDir/ParamFile and adds run parameters found there
+  RunParam_ls <- get0("RunParam_ls",envir=modelEnvironment(),inherits=FALSE,ifnotfound=list())
+  dotParams_ls <- list(...)
+  # Replace any items in RunParam_ls from items in dotParams_ls
+  RunParam_ls[ names(dotParams_ls) ] <- dotParams_ls
+  if ( ! "ParamDir" %in% names(RunParam_ls) ) {
+    if ( "Dir" %in% names(RunParam_ls) ) {
+      RunParam_ls$ParamDir = RunParam_ls$Dir
     }
   }
+  ParamLocations <- c("ParamFile","ParamDir")
+  defined <- ParamLocations %in% names(RunParam_ls)
+  if ( ! all( defined ) ) {
+    # Set parameter file default values
+    RunParam_ls[ ! defined ] <- list(ParamFile="run_parameters.json",ParamDir="defs")[ ! defined ]
+  }
+
+  # Check for existence of run_parameters.json
+  # Eventually, we'll make its non-existence NOT an error
+  # Though we will still need all the required elements defined somewhere else.
+  ParamFilePath <- file.path(RunParam_ls$ParamDir,  RunParam_ls$ParamFile)
+  if ( ! file.exists(ParamFilePath) ) {
+    Message <- paste("Missing parameter file: ", ParamFilePath)
+    stop( writeLog(Message,Level="error") )
+  }
+
+  # Override elements not defined in dots with elements from ParamFile_ls
+  # May replace elements defined in VisionEval.conf or otherwise in ve.model$RunParam_ls
+  # Also can't override ParamLocations (we've already used them so it's too late)
+  ParamFile_ls <- jsonlite::fromJSON(ParamFilePath)
+  ParamFile_ls <- ParamFile_ls[ names(ParamFile_ls)[ ! ( names(ParamFile_ls) %in% c(ParamLocations, names(dotParams_ls)) ) ]
+  RunParam_ls[ names(ParamFile_ls) ] <- (ParamFile_ls)
+
+  #   Furnish default values for DeflatorFile, UnitsFile, ModelParamFile and GeoFile if not defined
+  #   in list(...). The default for InputDir is backward compatible. The VEModel$run function will
+  #   set it to a vector of places to look (effectively a PATH) - when an input file is sought,
+  #   the first version of the file encountered on the list of directories will be used.
+  DefFiles  <- list( # a named list, not a character vector
+    DeflatorFile   = "deflators.csv",
+    UnitsFile      = "units.csv",
+    GeoFile        = "geo.csv",
+    ModelParamFile = "model_parameters.json",
+    InputDir       = "inputs"
+  )
+  missingDefs <- ! names(DefFiles) %in% names(RunParam_ls)
+  RunParam_ls[ names(DefFiles)[missingDefs] ] <- DefFiles[missingDefs]
+  
+  # The required parameters will be the initial elements for the ModelState
+  # Other RunParam_ls elements will be placed in ModelState_ls$RunParam_ls
+  RequiredParam_ <- c(
+    "Model", "Scenario", "Description", "Region", "BaseYear", "Years",
+    "DatastoreName", "Seed"
+  )
+  ParamExists_ <- RequiredParam_ %in% names(RunParam_ls)
+  if (any(!ParamExists_)) {
+    MissingParam_ <- RequiredParam_[!ParamExists_]
+    Message <- c(
+      "Missing model run parameters (not set in VisionEval.cnf or run_parameters.json or call to initializeModel):",
+      paste(MissingParam_, collapse = ", ")
+    )
+    stop( writeLog(Message,Level="error") )
+  } 
+  # Now install the parameters - the required parameters become the foundation for
+  # ModelState_ls. Other parameters are placed in newModelState_ls$RunParameters,
+  # (including things like ParamDir, UnitsFile, etc.)
+  newModelState_ls <- RunParam_ls[RequiredParam_]
+  newModelState_ls$RunParam_ls <- RunParam_ls[ ! (names(RunParam_ls) %in% RequiredParam_) ] ]
+  newModelState_ls$LastChanged <- Sys.time()
+
+  DeflatorFilePath <- file.path(RunParam_ls$ParamDir, RunParam_ls$DeflatorFile)
+  if ( ! file.exists(DeflatorFilePath) ) {
+    stop( writeLog(paste("Could not locate DeflatorFile:",DeflatorFilePath),Level="error") )
+  }
+  newModelState_ls$Deflators <- read.csv(DeflatorFilePath, as.is = TRUE)
+
+  UnitsFilePath <- file.path(RunParam_ls$ParamDir, RunParam_ls$UnitsFile)
+  if ( ! file.exists(UnitsFilePath) ) {
+    stop( writeLog(paste("Could not locate DeflatorFile:",UnitsFilePath),Level="error") )
+  }
+  newModelState_ls$Units <- read.csv(UnitsFilePath, as.is = TRUE)
+
+  envir = modelEnvironment()
+  envir$ModelState_ls <- newModelState_ls
+  envir$RunParam_ls <- RunParam_ls
+  if ( Save) save(ModelState_ls, envir=envir, file = getModelStateFile())
+
   return(Save) 
 }
-#initModelStateFile(Dir = "tests/defs")
+#initModelStateFile(ParamDir = "tests/defs")
 
 #LOAD MODEL STATE
 #================
@@ -578,10 +638,15 @@ loadDatastore <- function(FileToLoad, Dir="defs/", GeoFile, SaveDatastore = TRUE
 #' execution stops. If no errors are found, the geographic specifications are
 #' added to the model state file.
 #'
-#' @param Dir A string identifying the path to the geographic
+#' @param Save A logical (default=TRUE) indicating whether the model state
+#'   should be saved to the model state file, or just updated in ve.model environment
+#' @param ... Additional named arguments may explicitly override ParamDir and GeoFile
+#'   (otherwise these will be sought in the ModelState after having been set in
+#'   VisionEval.cnf or in run_parameters.json).
+#' ParamDir [A string identifying the path to the geographic
 #'   specifications file. Note: don't include the final separator in the
-#'   path name 'e.g. not defs/'.
-#' @param GeoFile A string identifying the name of the geographic
+#'   path name 'e.g. not defs/'.]
+#' GeoFile [A string identifying the name of the geographic
 #'   specifications file. This is a csv-formatted text file which contains
 #'   columns named 'Azone', 'Bzone', 'Czone', and 'Marea'. The 'Azone' column
 #'   must have zone names in all rows. The 'Bzone' and 'Czone' columns can be
@@ -589,18 +654,46 @@ loadDatastore <- function(FileToLoad, Dir="defs/", GeoFile, SaveDatastore = TRUE
 #'   The 'Marea' column (referring to metropolitan areas) identifies
 #'   metropolitan areas corresponding to the most detailed level of specified
 #'   geography (or 'None' no metropolitan area occupies any portion of the
-#'   zone.
-#' @param Save A logical (default=TRUE) indicating whether the model state
-#'   should be saved to the model state file, or just updated in ve.model environment
+#'   zone.]
 #' @return The value TRUE is returned if the function is successful at reading
 #'   the file and the specifications are consistent. It stops if there are any
 #'   errors in the specifications. All of the identified errors are written to
 #'   the run log. A data frame containing the file entries is added to the
 #'   model state file as Geo_df'.
 #' @export
-readGeography <- function(Dir = "defs", GeoFile = "geo.csv", Save=TRUE) {
+readGeography <- function(Save=TRUE,...) {
   #Check for errors in the geographic definitions file
-  CheckResults_ls <- checkGeography(Dir, GeoFile)
+
+  #Read in geographic definitions if file exists, otherwise error
+  #--------------------------------------------------------------
+  params <- list(...)
+  Params_ls < readModelState()$RunParam_ls
+  paramNames <- c("ParamDir","GeoFile")
+  defined <- paramNames %in% Params_ls
+  Params_ls <- Params_ls[paramNames[defined]] # sub-list of relevant parameters (possibly empty)
+  if ( length(params) > 0 ) {
+    override <- paramNames %in% params
+    if ( any(override) ) {
+      Params_ls[paramNames[override]] <- params[paramNames[override]]
+      defined <- paramNames %in% Params_ls
+    }
+  }
+  if ( ! all(defined) ) {
+    Message <- paste("Missing file location elements for readGeograpy: ",paste(paramNames[!defined],collapse=","))
+    writeLog(Message,Level="error")
+    stop(Message)
+  }
+
+  Filepath <- file.path(Params_ls$ParamDir, Params_ls$GeoFile)
+  if (file.exists(Filepath)) {
+    Geo_df <- read.csv(Filepath, colClasses = "character")
+  } else {
+    Message <- paste("Missing", Params_ls$GeoFile, "in folder", Params_ls$ParamDir, ".")
+    writeLog(Message,Level="error")
+    stop(Message)
+  }
+
+  CheckResults_ls <- checkGeography(Geo_df)
   #Notify if any errors
   Messages_ <- CheckResults_ls$Messages
   if (length(Messages_) > 0) {
@@ -626,10 +719,7 @@ readGeography <- function(Dir = "defs", GeoFile = "geo.csv", Save=TRUE) {
 #' model and checks the file entries to determine whether they are internally
 #' consistent. This function is called by the readGeography function.
 #'
-#' @param Directory A string identifying the path to the geographic
-#'   specifications file.
-#' @param Filename A string identifying the name of the geographic
-#'   specifications file.
+#' @param Geo_df A data.frame containing a model geography description
 #' @return A list having two components. The first component, 'Messages',
 #' contains a string vector of error messages. It has a length of 0 if there are
 #' no error messages. The second component, 'Update', is a list of components to
@@ -638,17 +728,7 @@ readGeography <- function(Dir = "defs", GeoFile = "geo.csv", Save=TRUE) {
 #' logical identifying whether Bzones are specified; and CzoneSpecified, a
 #' logical identifying whether Czones are specified.
 #' @export
-checkGeography <- function(Directory, Filename) {
-  #Read in geographic definitions if file exists, otherwise error
-  #--------------------------------------------------------------
-  Filepath <- file.path(Directory, Filename)
-  if (file.exists(Filepath)) {
-    Geo_df <- read.csv(Filepath, colClasses = "character")
-  } else {
-    Message <- paste("Missing", Filename, "file in folder", Directory, ".")
-    writeLog(Message,Level="error")
-    stop(Message)
-  }
+checkGeography <- function(Geo_df) {
   #Check that file has all required fields and extract field attributes
   #--------------------------------------------------------------------
   FieldNames_ <- c("Azone", "Bzone", "Czone", "Marea")
@@ -900,44 +980,58 @@ initDatastoreGeography <- function(GroupNames = NULL) {
 #' 'Global' group and stores the values of the appropriate type in the 'Model'
 #' group.
 #'
-#' @param ModelParamFile A string identifying the name of the parameter file.
-#' The default value is 'model_parameters.json'.
 #' @return The function returns TRUE if the model parameters file exists and
 #' its values are sucessfully written to the datastore.
 #' @export
-loadModelParameters <- function(ModelParamFile = "model_parameters.json") {
-  G <- getModelState()
+loadModelParameters <- function() {
+  G < getModelState()
+  RunParam_ls <- G$RunParam_ls
+  ModelParamInfo <- c("ParamDir","ModelParamFile")
+  missingParams <- ! ModelParamInfo %in% names(RunParam_ls)
+  if ( any(missingParams) ) {
+    stop(
+      writeLog(
+        paste(
+          "Missing parameter names:",
+          paste(ModelParamInfo[missingParams],collapse=",")
+        )
+        Level="error"
+      )
+    )
+  }
   writeLog("Loading model parameters file.",Level="info")
-  ParamFile <- file.path("defs", ModelParamFile)
+  ParamFile <- file.path(RunParam_ls$ParamDir, RunParam_ls$ModelParamFile)
   if (!file.exists(ParamFile)) {
-    ErrorMsg <- "Model parameters file (model_parameters.json) is missing."
-    writeLog(ErrorMsg,Level="error")
-    return(FALSE)
-  } else {
-    Param_df <- jsonlite::fromJSON(ParamFile)
-    Group <- "Global"
-    initTable(Table = "Model", Group = "Global", Length = 1)
-    for (i in 1:nrow(Param_df)) {
-      Type <- Param_df$TYPE[i]
-      if (Type == "character") {
-        Value <- Param_df$VALUE[i]
-      } else {
-        Value <- as.numeric(Param_df$VALUE[i])
-      }
-      Spec_ls <-
-        list(NAME = Param_df$NAME[i],
-             TABLE = "Model",
-             TYPE = Type,
-             UNITS = Param_df$UNITS[i],
-             NAVALUE = ifelse(Param_df$TYPE[i] == "character", "NA", -9999),
-             SIZE = ifelse(Param_df$TYPE[i] == "character",
-                           nchar(Param_df$VALUE[i]),
-                           0),
-             LENGTH = 1,
-             MODULE = G$Model)
-      writeToTable(Value, Spec_ls, Group = "Global", Index = NULL)
-      rm(Spec_ls, Type, Value)
+    ErrorMsg <- paste0("Model parameters file (",ParamFile,") is missing.")
+    stop( writeLog(ErrorMsg,Level="error") )
+  }
+
+  Param_df <- jsonlite::fromJSON(ParamFile)
+  Group <- "Global"
+  initTable(Table = "Model", Group = "Global", Length = 1)
+  for (i in 1:nrow(Param_df)) {
+    Type <- Param_df$TYPE[i]
+    if (Type == "character") {
+      Value <- Param_df$VALUE[i]
+    } else {
+      Value <- as.numeric(Param_df$VALUE[i])
     }
+    Spec_ls <-
+      list(
+        NAME    = Param_df$NAME[i],
+        TABLE   = "Model",
+        TYPE    = Type,
+        UNITS   = Param_df$UNITS[i],
+        NAVALUE = ifelse(Param_df$TYPE[i] == "character", "NA", -9999),
+        SIZE    = ifelse(
+          Param_df$TYPE[i] == "character",
+          nchar(Param_df$VALUE[i]),
+          0
+        ),
+        LENGTH  = 1,
+        MODULE  = G$Model
+      )
+    writeToTable(Value, Spec_ls, Group = "Global", Index = NULL)
   }
 }
 
@@ -1271,40 +1365,44 @@ expandSpec <- function(SpecToExpand_ls, ComponentName) {
 #' returns a list of all the Inp specifications that meet these criteria.
 #'
 #' @param InpSpecs_ls A standard specifications list for Inp specifications.
-#' @param InputDir The path to the input directory.
+#' @param InputDir A vector of paths in which to seek input files;
+#'   the first path containing the named file will be used.
 #' @return A list containing the Inp specification components that meet the
-#' criteria of either not being optional or being optional and the specified
-#' input file is present.
+#'   criteria of being optional and present or being not optional. If
+#'   the file is not optional and not present, throw an error and stop.
+#'   The FILE element will be expanded to file.path(InputDir,$FILE) in
+#'   the spec that is returned.
 #' @export
-doProcessInpSpec <- function(InpSpecs_ls, InputDir = "inputs") {
+doProcessInpSpec <- function(InpSpecs_ls, InputDir) {
   #Define function to check an individual specification
-  #Return TRUE if specification is to be used
+  #Return TRUE if missing file is not an error
   checkOptional <- function(SpecToCheck_ls) {
-    DoProcess <- TRUE
     IsOptional <- FALSE
     if (!is.null(SpecToCheck_ls$OPTIONAL)) {
       if (SpecToCheck_ls$OPTIONAL == TRUE) {
         IsOptional <- TRUE
       }
     }
-    if (IsOptional) {
-      if (file.exists(file.path(InputDir, SpecToCheck_ls$FILE))) {
-        DoProcess <- TRUE
-      } else {
-        DoProcess <- FALSE
-      }
-    }
-    DoProcess
+    IsOptional
   }
   #Return all input specifications that must be processed
   Out_ls <- list()
   j <- 1
   for (i in 1:length(InpSpecs_ls)) {
     Spec_ls <- InpSpecs_ls[[i]]
-    if (checkOptional(Spec_ls)) {
-      Out_ls[[j]] <- Spec_ls
-      j <- j + 1
+    File <- file.path(InputDir, Spec_ls$FILE) # might be a vector
+    FileExists <- file.exists(File)
+    ( ! any(FileExists) ) {
+      if ( checkOptional(Spec_ls) ) {
+        next # Do not add to Out_ls; continue to next InpSpec
+      } else {
+        Spec_ls$INPUTDIR <- NA # Required, but missing; trap later
+      }
+    } else {
+      Spec_ls$INPUTDIR <- InputDir[FileExists][1]
     }
+    Out_ls[[j]] <- Spec_ls
+    j <- j + 1
   }
   Out_ls
 }
@@ -1355,7 +1453,12 @@ processModuleSpecs <- function(Spec_ls) {
     Out_ls$NewSetTable <- Spec_ls$NewSetTable
   }
   if (!is.null(Spec_ls$Inp)) {
-    FilteredInpSpec_ls <- doProcessInpSpec(Spec_ls$Inp)
+    InputDir <- if ( "InputDir" %in% names(G$RunParam_ls) ) {
+      (G$RunParam_ls$InputDir)  # May be a vector; first matching file will be used
+    } else { # backward compatible
+      normalizePath("inputs",winslash="/",mustWork=FALSE)
+    }
+    FilteredInpSpec_ls <- doProcessInpSpec(Spec_ls$Inp, InputDir)
     if (length(FilteredInpSpec_ls) > 0) {
       Out_ls$Inp <- processComponent(FilteredInpSpec_ls, "Inp")
     }

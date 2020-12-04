@@ -653,10 +653,10 @@ testModule <-
       writeLog("Datastore loaded.", Level="warn")
     } else {
       writeLog("Attempting to initialize datastore.", Level="warn")
-      initDatastore()
-      readGeography(Dir = ParamDir, GeoFile = GeoFile)
+      initDatastore(ParamDir = ParamDir, GeoFile = GeoFile, ModelParamFile = ModelParamFile)
+      readGeography()
       initDatastoreGeography()
-      loadModelParameters(ModelParamFile = ModelParamFile)
+      loadModelParameters()
       writeLog("Datastore initialized.", Level="warn")
     }
 
