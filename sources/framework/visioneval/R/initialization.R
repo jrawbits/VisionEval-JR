@@ -17,7 +17,10 @@ utils::globalVariables(c("initTable","writeToTable","ModelState_ls","listDatasto
 #' the environment for elements of the active model, creating it and placing it
 #' on the search path if necessary. That environment contains the ModelState,
 #' the Datastore access function aliases and related information. If create is
-#' \code{FALSE}, throw an error instead of creating a new environment.
+#' \code{FALSE}, throw an error instead of creating a new environment
+#' if it does not already exist. The environment should be emptied and
+#' recreated whenever a new model is initialized, either to load or run
+#' it.
 #'
 #' @param Create a logical indicating whether a missing model environment
 #' should be created.
@@ -59,8 +62,7 @@ getRunMode <- function(RunMode=NULL) {
       runSteps <- VEInitializeMode
     }
   }
-  envir$runSteps <- runSteps
-  runSteps
+  return ( envir$runSteps <- runSteps )
 }
 
 #INITIALIZE MODEL STATE
@@ -133,7 +135,7 @@ initModelStateFile <- function(Save=TRUE,...) {
   # May replace elements defined in VisionEval.conf or otherwise in ve.model$RunParam_ls
   # Also can't override ParamLocations (we've already used them so it's too late)
   ParamFile_ls <- jsonlite::fromJSON(ParamFilePath)
-  ParamFile_ls <- ParamFile_ls[ names(ParamFile_ls)[ ! ( names(ParamFile_ls) %in% c(ParamLocations, names(dotParams_ls)) ) ]
+  ParamFile_ls <- ParamFile_ls[ names(ParamFile_ls)[ ! ( names(ParamFile_ls) %in% c(ParamLocations, names(dotParams_ls)) ) ] ]
   RunParam_ls[ names(ParamFile_ls) ] <- (ParamFile_ls)
 
   #   Furnish default values for DeflatorFile, UnitsFile, ModelParamFile and GeoFile if not defined
@@ -169,7 +171,7 @@ initModelStateFile <- function(Save=TRUE,...) {
   # ModelState_ls. Other parameters are placed in newModelState_ls$RunParameters,
   # (including things like ParamDir, UnitsFile, etc.)
   newModelState_ls <- RunParam_ls[RequiredParam_]
-  newModelState_ls$RunParam_ls <- RunParam_ls[ ! (names(RunParam_ls) %in% RequiredParam_) ] ]
+  newModelState_ls$RunParam_ls <- RunParam_ls[ ! (names(RunParam_ls) %in% RequiredParam_) ]
   newModelState_ls$LastChanged <- Sys.time()
 
   DeflatorFilePath <- file.path(RunParam_ls$ParamDir, RunParam_ls$DeflatorFile)
@@ -187,7 +189,7 @@ initModelStateFile <- function(Save=TRUE,...) {
   envir = modelEnvironment()
   envir$ModelState_ls <- newModelState_ls
   envir$RunParam_ls <- RunParam_ls
-  if ( Save) save(ModelState_ls, envir=envir, file = getModelStateFile())
+  if ( Save) save(ModelState_ls, envir=envir, file = getModelStateFileName())
 
   return(Save) 
 }
@@ -207,7 +209,7 @@ initModelStateFile <- function(Save=TRUE,...) {
 #' @return TRUE if ModelState was loaded, FALSE if it could not be
 #  (invisibly)
 #' @export
-loadModelState <- function(FileName=getModelStateFile(),envir=NULL) {
+loadModelState <- function(FileName=getModelStateFileName(),envir=NULL) {
   if ( is.null(envir) ) envir = modelEnvironment()
   # TODO: do some error checking on what "envir" is
   # TODO: use a function to find default ModelState FileName
@@ -265,7 +267,7 @@ getModelState <- function(...) {
 #' @return always TRUE
 #' @export
 setModelState <-
-function(ChangeState_ls=list(), FileName = getModelStateFile(), Save=TRUE) {
+function(ChangeState_ls=list(), FileName = getModelStateFileName(), Save=TRUE) {
   # Get current ModelState (providing FileName will force a "Read")
   changeModelState_ls <- readModelState(FileName=FileName)
   envir=modelEnvironment()
@@ -293,30 +295,65 @@ function(ChangeState_ls=list(), FileName = getModelStateFile(), Save=TRUE) {
   invisible(TRUE)
 }
 
+#GET A VISIONEVAL OPTION FROM CONFIGURATION
+#==========================================
+#' Fetch a VisionEval option (providing a default)
+#'
+#' \code{getVEOption} a visioneval framework control function that
+#' locates and returns the value for a VisionEval option
+#'
+#' @param OptionName a character string naming an option
+#' @param OptionDefault an R object providing a default value for the
+#'   option if it is not set
+#' @param SetOption a logical; if TRUE, remember the option in ve.model$VEOptions
+#' @return the value of the option (or its default value)
+#' @export
+getVEOption <- function(OptionName=NULL,OptionDefault=NULL,SetOption=FALSE) {
+  # TODO: Look in the following places (use first one found)
+  # Existing value in R option at paste0("visioneval.",OptionName)
+  # Existing option value from VEOptions in "ve.model" environment
+  # VisionEval.ini in RunDirectory/getwd()
+  #   (side effect: load any not already set in ve.model$VEOptions)
+  # VisionEval.ini in ve.runtime
+  #   (side effect: load any not already set in ve.model$VEOptions)
+  # OptionDefault
+
+  # TODO: create a setVEOption (where OptionName may be a vector,
+  #   in which case OptionDefault must be a named list of the same length)
+  #   OptionName[n] is set to OptionDefault[[OptionName]]
+  #   Could also just pull OptionName from names(OptionDefault)
+  #   Or create a separate function called setVEOption
+  # TODO: allow setVEOption to create a VisionEval.ini file
+
+  Option <- OptionDefault
+  if ( SetOption) {
+    # create ve.model$VEOptions if it doesn't exist
+    # assign ve.model$VEOptions[[OptionName]]
+  }
+  return(Option)
+}
+
 #IDENTIFY MODEL STATE FILE
 #=========================
 #' Get model state file name and attach attribute saying if it exists
 #'
-#' \code{getModelStateFile} a visioneval framework control function that
+#' \code{getModelStateFileName} a visioneval framework control function that
 #' reports the (user-configurable model state file name and reports
 #' whether the files exists (\code{attribute("exists")})
 #'
 #' @return a character string containing the standard ModelState (base)name and an
 #' attribute \code{"exists"} saying if it exists.
 #' @export
-
-getModelStateFile <- function() {
+getModelStateFileName <- function() {
+  # TODO: manage the complete model state path
   envir <- modelEnvironment()
-  # use the basename - not legal (yet) to specific any directory other than getwd()
-  if ( ! exists("ModelState_filename", envir=envir, inherits=FALSE) ) {
-    # TODO: get the option from .VisionEval setup file - need a whole framework to
-    # grab options from wherever they are set/over-ridden. Log the option source at
-    # level "trace".
-    envir$ModelState_filename <- basename(getOption("visioneval.ModelStateName", "ModelState.Rda"))
-  }
-  modelStateName <- envir$ModelState_filename
-  # The exists attribute is fluid: file is sought in working directory.
-  attr(modelStateName,"exists") <- file.exists(modelStateName)
+  # use the basename - not legal (yet) to specific any directory
+  # other than getwd()
+  modelStateName <- get0(
+    "ModelStateName", envir=envir, inherits=FALSE,
+    ifnotfound={ envir$ModelStateName <- basename(getVEOption("ModelStateName", "ModelState.Rda")) }
+  )
+  # The exists attribute is fluid
   return(modelStateName)
 }
 
@@ -344,7 +381,7 @@ readModelState <- function(Names_ = "All", FileName=NULL, envir=NULL) {
   # Load from FileName if we explicitly provide it, or if we do not already
   # have a ModelState_ls in the environment
   if ( !is.null(FileName) || ! exists("ModelState_ls",envir=envir,inherits=FALSE) ) {
-    if ( is.null(FileName) ) FileName <- getModelStateFile()
+    if ( is.null(FileName) ) FileName <- getModelStateFileName()
     if ( ! loadModelState(FileName,envir) ) {
       Msg <- paste0("Could not load ModelState from",FileName)
       writeLog(Msg,Level="error")
@@ -698,7 +735,7 @@ readGeography <- function(Save=TRUE,...) {
   Messages_ <- CheckResults_ls$Messages
   if (length(Messages_) > 0) {
     writeLog(Messages_,Level="error")
-    stop(paste0("One or more errors in ", GeoFile, ". See log for details."))
+    stop(paste0("One or more errors in ", Params_ls$GeoFile, ". See log for details."))
   } else {
     writeLog("Geographical indices successfully read.",Level="info")
   }
@@ -984,7 +1021,7 @@ initDatastoreGeography <- function(GroupNames = NULL) {
 #' its values are sucessfully written to the datastore.
 #' @export
 loadModelParameters <- function() {
-  G < getModelState()
+  G <- getModelState()
   RunParam_ls <- G$RunParam_ls
   ModelParamInfo <- c("ParamDir","ModelParamFile","InputDir")
   missingParams <- ! ModelParamInfo %in% names(RunParam_ls)
@@ -994,7 +1031,7 @@ loadModelParameters <- function() {
         paste(
           "Missing parameter names:",
           paste(ModelParamInfo[missingParams],collapse=",")
-        )
+        ),
         Level="error"
       )
     )
@@ -1402,7 +1439,7 @@ doProcessInpSpec <- function(InpSpecs_ls, InputDir) {
     Spec_ls <- InpSpecs_ls[[i]]
     File <- file.path(InputDir, Spec_ls$FILE) # might be a vector
     FileExists <- file.exists(File)
-    ( ! any(FileExists) ) {
+    if ( ! any(FileExists) ) {
       if ( checkOptional(Spec_ls) ) {
         next # Do not add to Out_ls; continue to next InpSpec
       } else {
@@ -1585,7 +1622,7 @@ simDataTransactions <- function(AllSpecs_ls) {
   # getInventoryRef <- function(DstoreRef) {
   #   SplitRef_ <- unlist(strsplit(DstoreRef, "/"))
   #   RefHead <- paste(SplitRef_[-length(SplitRef_)], collapse = "/")
-  #   paste(RefHead, getModelStateFile(), sep = "/")
+  #   paste(RefHead, getModelStateFileName(), sep = "/")
   # }
   #
   # #Get datastore inventories for datastore references

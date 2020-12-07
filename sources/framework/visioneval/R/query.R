@@ -67,7 +67,7 @@ prepareForDatastoreQuery <- function(DstoreLocs_, DstoreType) {
   }
   #Get listing for each datastore
   Prep_ls$Listing <- lapply(DstoreLocs_, function(x) {
-    return( readModelState(FileName = file.path(dirname(x),getModelStateFile())) )
+    return( readModelState(FileName = file.path(dirname(x),getModelStateFileName())) )
   })
   names(Prep_ls$Listing) <- DstoreLocs_
 
