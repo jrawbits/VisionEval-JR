@@ -58,6 +58,8 @@ utils::globalVariables(c("initDatastore","Year"))
 #'
 #' @param ModelScriptFile A string identifying the path to the file that contains
 #'   the steps in the model to run (i.e. the calls to \code{runModule})
+#' @param RunDirectory A character string containing a path (relative to \code{getwd()}
+#'   or absolute) specifying where to look for ModelState.Rda and the Datastore.
 #' @param LoadDatastore A logical identifying whether an existing datastore
 #' should be loaded.
 #' @param DatastoreName A string identifying the full path name of a datastore
@@ -79,6 +81,7 @@ utils::globalVariables(c("initDatastore","Year"))
 initializeModel <-
 function(
   ModelScriptFile = "run_model.R",
+  RunDirectory = getwd(),
   LoadDatastore = FALSE,
   DatastoreName = NULL,
   SimulateRun = FALSE,
@@ -127,16 +130,16 @@ function(
   ve.model <- modelEnvironment()
   rm( list=ls(envir=ve.model, all.names=TRUE), envir=ve.model )
 
-  # Prepare to locate any existing ModelState
+  # Set up model state transition parameters
   previousModelState <- NULL
   previousModelStateName <- ""
   savedPreviousModelState <- FALSE
   Timestamp <- gsub(":","-",gsub(" ", "_",Sys.time())) # Suitable for use in file name
-  previousTimestamp <- (Timestamp) # changed below if there is a previous ModelState
+  previousTimestamp <- (Timestamp) # changed below if a previous ModelState already exists
 
   # If "Run" step is explicitly invoked, start the current model run log file
-  # If not running, all messages are just logged to the "ve.logger"
-  # (which in turn defaults to the default ROOT logger)
+  # If not running, all messages are just logged to "ve.logger"
+  # (defaulting to the ROOT logger, which appends to the console by default)
   if ( "Run" %in% runSteps ) {
     logState <- initLog(Timestamp) # start/reset the model run logger
   } else {
@@ -144,20 +147,24 @@ function(
     logState <- list()
   }
 
-  currentModelStateName <- getModelStateFile()
+  # Get (just) the name of the current model's model state
+  # We expect to find it in getwd() - need to manage the directory better
+  # NOTE: if RunDirectory is missing, it will still have getwd() as its default value
+  RunDirectory <- if( missing(RunDirectory) ) getVEOption("RunDirectory",RunDirectory)
+  currentModelStateName <- getModelStateFileName()
+  currentModelStateExists <- file.exists(currentModelStateName) # TODO: relative to RunDirectory
   saveModelState <- ("Run" %in% runSteps)
-  # Subsequent setModelState calls should include "Save=saveModelState"
-  # ModelState will not be saved in pure "Load" step (just manipulated in memory)
+  # "Load" does not save the model state - it just builds it in memory
 
   # Install ModelState_ls in ve.model environment
   if (
     saveModelState || # always make a new one if doing Init or Run
-    ! attr(currentModelStateName,"exists") ) # if doing Load, initialize one (in memory)
+    ! currentModelStateExists ) # if doing Load, initialize one (in memory)
   {
     writeLog("Initializing Model. This may take a while",Level="warn")
 
     # If a ModelState.Rda file exists and this one is to be saved, rename it
-    if (attr(currentModelStateName,"exists") && saveModelState) {
+    if (currentModelStateExists && saveModelState) {
       # Read the model state to see if it has a "LastChanged" flag
       previousModelState <- readModelState(FileName=currentModelStateName,envir=new.env())
 
@@ -218,8 +225,8 @@ function(
   DstoreConflicts <- character(0)
   InfoMsg <- character(0)
 
-  #Normalized path name of the datastore from the ModelState
-  #DatastoreName is probably relative, and we need to find it in getwd()
+  #Normalized path name of the datastore from the ModelState (TODO: relative to RunDirectory)
+  #TODO: DatastoreName is probably relative, and we need to find it relative to RunDirectory
   RunDstoreName <- normalizePath(ve.model$ModelState_ls$DatastoreName, winslash = "/", mustWork = FALSE)
   RunDstoreDir <- dirname(RunDstoreName)
 
@@ -358,7 +365,7 @@ function(
     # Will only happen if performing "Init" or "Run"
     if ( nzchar(previousModelStateName) && savedPreviousModelState ) {
       unlink(currentModelStateName)
-      if (file.exists(previousModelStateName)) {
+      if (file.exists(previousModelStateName)) { # TODO: relative to RunDirectory
         file.rename(previousModelStateName, currentModelStateName)
       }
     }
@@ -620,7 +627,7 @@ function(
       file.copy(RunDstoreName, ArchiveDstoreName, recursive = TRUE)
       #Copy the previous model state file into the directory
       file.copy(previousModelStateName,
-        file.path(ArchiveDstoreName, getModelStateFile()))
+        file.path(ArchiveDstoreName, getModelStateFileName()))
     }
 
     #----------------------------------------
@@ -813,11 +820,11 @@ function(
 #' dependency explicitly to support internal Module calls that do not
 #' explicitly name a package.
 #'
-#' @param Module During parsing, module is added to the list of
+#' @param Package During parsing, package is added to the list of
 #'   packages to be searched for modules. Otherwise ignored.
 #' @return TRUE. The function returns TRUE.
 #' @export
-requirePackage <- function(Module) TRUE
+requirePackage <- function(Package) TRUE
 
 #==========
 #RUN MODULE
@@ -1244,7 +1251,7 @@ runScript <- function(Module, Specification=NULL, RunYear, writeDatastore = FALS
   #Log and print ending message
   #----------------------------
   Msg <-
-    paste0("Finish module '", ModuleFunction,
+    paste0("Finish module '", ModuleName,
            "' for year '", RunYear, "'.")
   writeLog(Msg,Level="warn")
   print(Msg)

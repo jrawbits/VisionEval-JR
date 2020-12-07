@@ -317,7 +317,7 @@ readFromTableRD <- function(Name, Table, Group, DstoreLoc = NULL, Index = NULL, 
   if (DstoreDir == "") {
     G <- getModelState()
   } else {
-    G <- readModelState(FileName = file.path(DstoreDir, getModelStateFile()))
+    G <- readModelState(FileName = file.path(DstoreDir, getModelStateFileName()))
   }
   #If DstoreLoc is NULL get the name of the datastore from the model state
   if (is.null(DstoreLoc)) DstoreLoc <- G$DatastoreName
@@ -730,7 +730,7 @@ readFromTableH5 <- function(Name, Table, Group, DstoreLoc = NULL, Index = NULL, 
   if (DstoreDir == "") {
     G <- getModelState()
   } else {
-    G <- readModelState(FileName = file.path(DstoreDir, getModelStateFile()))
+    G <- readModelState(FileName = file.path(DstoreDir, getModelStateFileName()))
   }
   #If DstoreLoc is NULL get the name of the datastore from the model state
   if (is.null(DstoreLoc)) DstoreLoc <- G$DatastoreName
@@ -1088,9 +1088,9 @@ getFromDatastore <- function(ModuleSpec_ls, RunYear, Geo = NULL, GeoIndex_ls = N
       SplitRef_ <- unlist(strsplit(DstoreRef, "/"))
       RefHead <- paste(SplitRef_[-length(SplitRef_)], collapse = "/")
       if (RefHead == "") {
-        ModelStateFile <- getModelStateFile()
+        ModelStateFile <- getModelStateFileName()
       } else {
-        ModelStateFile <- paste(RefHead, getModelStateFile(), sep = "/")
+        ModelStateFile <- paste(RefHead, getModelStateFileName(), sep = "/")
       }
       readModelState(FileName = ModelStateFile)
     }
