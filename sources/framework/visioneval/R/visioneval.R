@@ -813,7 +813,7 @@ function(
 #===============
 #' Require package.
 #'
-#' \code{requireModule} a visioneval control function that
+#' \code{requirePackage} a visioneval control function that
 #' introduces a package dependency.
 #'
 #' This function simply returns TRUE. It is used to state a module
@@ -1032,28 +1032,31 @@ runModule <- function(ModuleName, PackageName, RunFor, RunYear, StopOnErr = TRUE
 #' \code{runScript} a visioneval framework module developer function that runs a function in
 #' run_model.R as if it were a packaged module.
 #'
-#' This function runs a function based module for a specified year. The module function can be
-#' passed as an R function, the name of a script file, or as an (exported) module name from a
-#' package - the last will reproduce runModule functionality, except that you can provide a
-#' revised specification list. If a script file is passed, it is expected to have the same
+#' This function runs a function based module for a specified year. The module function can be passed
+#' as an R function, than name of an R function, the name of a script file, or as an (exported)
+#' module name from a package - the last will reproduce runModule functionality, except that you can
+#' provide a revised specification list. If a script file is passed, it is expected to have the same
 #' components (at least module function and module specifications) as a package-based module. The
 #' script will be run during the "initializeModel" process, so if it has estimation code included,
 #' that will be run before the rest of the model.
 #'
 #' This function does NOT write to the Datastore by default. run_model.R can capture the returned
 #' output structure. The function will run "standalone" provided a compatible ModelState and
-#' Datastore have been loaded (exist in ve.model).
+#' Datastore have been loaded (exist in ve.model). Do VEModel$run to set that up, for example.
 #'
 #' @param Module An R function or character string function name (or string identifying a
 #'   file to source) containing module code
 #' @param Specification An R specification list or NULL (default), in which case a list
 #'   will be sought using the name 
+#' @param RunFor A string identifying whether to run the module for all years
+#' "AllYears", only the base year "BaseYear", or for all years except the base
+#' year "NotBaseYear".
 #' @param RunYear A string identifying the run year.
 #' @param writeDatastore A logical indicating whether or not to write the results into
 #'   the current Datastore, or just to return them
 #' @return (invisible) The list of results returned by the module
 #' @export
-runScript <- function(Module, Specification=NULL, RunYear, writeDatastore = FALSE) {
+runScript <- function(Module, Specification=NULL, RunFor, RunYear, writeDatastore = FALSE) {
   #Locate the Module function and Specification
   #  Substitute/Deparse to get the object/name passed as "Module"
   ModuleSource <- substitute(Module)

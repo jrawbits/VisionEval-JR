@@ -28,8 +28,8 @@
 #' \code{listDatastoreRD} a visioneval framework datastore connection function
 #' that lists the contents of an RData (RD) type datastore.
 #'
-#' This function lists the contents of a datastore for an RData (RD) type
-#' datastore.
+#' This function writes a listing of the contents of a datastore for
+#'   an RData (RD) type ' datastore.
 #'
 #' @param DataListing_ls a list containing named elements describing a new data
 #' item being added to the datastore listing and the model state file. The list

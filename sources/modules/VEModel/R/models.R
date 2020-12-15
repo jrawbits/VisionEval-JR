@@ -184,17 +184,6 @@ installStandardModel <- function( modelName, modelPath, confirm, skeleton ) {
   model <- findStandardModel( modelName )
   if ( is.null(modelName) || ! nzchar(modelName) ) return(model) # Vector of available standard model names
 
-  # Confirm installation if requested
-  install <- TRUE
-  skeleton <- if ( skeleton ) "templ" else "samp"
-  if ( confirm && interactive() ) {
-    msg <- paste0("Install standard model '",modelName,"' (",SampleModelDataFormat[skeleton],") in ",modelPath,"?\n")
-    install <- confirmDialog(msg)
-  }
-
-  if ( ! install ) stop("Model ",modelName," not installed.",call.=FALSE)
-  message("Installing ",modelName," from ",model," as ",SampleModelDataFormat[skeleton])
-
   # Set up destination modelPath
   root <- getModelRoots(1)
   if ( missing(modelPath) || is.null(modelPath) ) modelPath <- modelName
@@ -202,8 +191,21 @@ installStandardModel <- function( modelName, modelPath, confirm, skeleton ) {
     installPath <- normalizePath(file.path(root,modelPath),winslash="/",mustWork=FALSE)
   }
   if ( dir.exists(installPath) ) {
-    installPath <- getUniqueName( dirname(modelPath), basename(modelPath) )
+    installPath <- getUniqueName( dirname(installPath), basename(modelPath) )
   }
+
+  # Confirm installation if requested
+  install <- TRUE
+  skeleton <- if ( skeleton ) "templ" else "samp"
+  if ( confirm && interactive() ) {
+    msg <- paste0("Install standard model '",modelName,"' (",SampleModelDataFormat[skeleton],") in ",installPath,"?\n")
+    install <- confirmDialog(msg)
+  }
+
+  if ( ! install ) stop("Model ",modelName," not installed.",call.=FALSE)
+
+  # Now do the installation
+  message("Installing ",modelName," from ",model," as ",SampleModelDataFormat[skeleton])
   dir.create(installPath)
 
   # Locate the model and data source files
@@ -214,7 +216,6 @@ installStandardModel <- function( modelName, modelPath, confirm, skeleton ) {
   if ( ! dir.exists(data.path) ) stop("No ",SampleModelDataFormat[skeleton]," available for ",modelName)
   data.files <- dir(data.path,full.names=TRUE)
 
-  message(installPath)
   file.copy(model.files,installPath,recursive=TRUE) # Copy standard model into modelPath
   file.copy(data.files,installPath,recursive=TRUE) # Copy skeleton data into modelPath
   message("Installed ",modelName," in ",installPath)
@@ -689,7 +690,7 @@ openModel <- function(modelPath="", modelName = NULL) {
 #'   just do it.
 #' @return A VEModel object of the model that was just installed
 #' @export
-installModel <- function(modelName=NULL, modelPath=NULL, skeleton=!confirm, confirm=TRUE) {
+installModel <- function(modelName=NULL, modelPath=NULL, skeleton=FALSE, confirm=!skeleton) {
   model <- installStandardModel(modelName, modelPath, confirm, skeleton)
   if ( is.list(model) ) {
     return( VEModel$new( modelPath=model$modelPath, modelName=model$modelName ) )
