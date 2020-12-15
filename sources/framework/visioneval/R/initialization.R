@@ -1082,33 +1082,157 @@ loadModelParameters <- function() {
   }
 }
 
-
 #PARSE MODEL SCRIPT
 #==================
 #' Parse model script.
 #'
-#' \code{parseModel} a visioneval framework control function that reads and
+#' \code{parseModelScript} a visioneval framework control function that reads and
 #' parses the model script to identify the sequence of module calls and the
 #' associated call arguments.
 #'
 #' This function reads in the model run script and parses the script to
-#' identify the sequence of module calls. It extracts each call to 'runModule'
+#' identify the sequence of VisionEval modelelement calls. It extracts each call
 #' and identifies the values assigned to the function arguments. It creates a
 #' list of the calls with their arguments in the order of the calls in the
 #' script.
 #'
-#' @param FilePath A string identifying the relative or absolute path to the
-#'   model run script is located.
-#' @param TestMode A logical identifying whether the function is to run in test
-#' mode. When in test mode the function returns the parsed script but does not
-#' change the model state.
-#' @return A data frame containing information on the calls to 'runModule' in the
-#' order of the calls. Each row represents a module call in order. The columns
-#' identify the 'ModuleName', the 'PackageName', and the 'RunFor' value.
+#' The calls include all the legal VisionEval model elements: runModule, runScript, modelStage,
+#' initializeModel, and requirePackage. The return from this function is a list of parameters
+#' for each element; data.frames for runModule, runScript, modelStage, a list for initializeModel
+#' and a vector of package names for requirePackage. See \code{initializeModel} for details on
+#' how those return values are used.
+#' 
+#' @param FilePath A string identifying the model run script file
+#' @return A list of parsed parameters for each of the VisionEval model elements found in the script.
 #' @export
-parseModelScript <-
-  function(FilePath = "Run_Model.R",
-           TestMode = FALSE) {
+parseModelScript <- function(FilePath) {
+  writeLog("Parsing model script",Level="info")
+  if (!file.exists(FilePath)) {
+    Msg <- paste0("Specified model script file (", FilePath, ") does not exist.")
+    stop( writeLog(Msg,Level="error") )
+  }
+
+  Elements <- extractModelElements(parse(FilePath))
+  # Shortcut to extract an elementType from the parsed list of VE model elements
+  extractElement <- function(elementType) {
+    Elements[sapply(
+      Elements,
+      function(s,seek){seek %in% names(s)},
+      seek=elementType
+    )]
+  }
+
+  ModuleCalls_df <- do.call(
+    rbind.data.frame,
+    lapply(
+      extractElement("runModule"),
+      function(x) normalizeElementFields(x$runModule,ModuleCallNames)
+    )
+  )
+
+  ScriptCalls_df <- do.call(
+    rbind.data.frame,
+    lapply(
+      extractElement("runScript"),
+      function(x) normalizeElementFieleds(x$runScript,ScriptCallNames)
+    )
+  )
+
+  Stages_df <- do.call(
+    rbind.data.frame,
+    lapply(
+      extractElement("Stage"),
+      function(x) normalizeElementFields(x$Stage,StageCallNames)
+    )
+  )
+  
+  InitParams_ls      <- lapply(extractElement("initializeModel"),function(x)x$initializeModel)[[1]] # Ignore more than one
+  RequiredVEPackages <- sapply(extractElement("requirePackage"),function(x)x$requirePackage$Package) # Vector of package names
+
+  return(
+    list(
+      AllCalls_ls        = Elements,
+      ModuleCalls_df     = ModuleCalls_df,
+      ScriptCalls_df     = ScriptCalls_df,
+      Stages_df          = Stages_df,
+      RequiredVEPackages = RequiredVEPackages,
+      InitParams_ls      = InitParams_ls
+    )
+  )
+}
+
+# VisionEval Model Elements that we know how to parse
+ModelElementNames <- c(
+  "runModule",
+  "runScript",
+  "initializeModel",
+  "requirePackage",
+  "modelStage"
+)
+ModelElementsRegex <- paste(ModelElementNames,collapse="|")
+
+ModuleCallNames <- c("ModuleName","PackageName","RunFor")
+ScriptCallNames <- c("Module","Specification","RunFor","ModuleType")
+StageCallNames  <- c("Name","Sequence")
+
+normalizeElementFields <- function(Elements_ls,NeededNames) {
+  missingNames <- setdiff(NeededNames,names(Elements_ls)) # names needed but not found
+  for ( name in missingNames ) Elements_ls[[name]] <- NA
+  return(Elements_ls) # return a list with all and only NeededNames
+}
+
+# Locate VisionEval functions for match.call
+normalizeModelElement <- function(ModelElementName,ElementCall) {
+  return(
+    match.call(
+      eval(parse(text=paste0("visioneval::",ModelElementName))),
+      ElementCall
+    )
+  )
+}
+
+# screenTypes turns odd R call argument types (like "symbol") into character strings
+# the ones named here are things we would like to keep their original type
+screenTypes <- function(x) {
+  if ( ! mode(x) %in% c("logical","numeric","character","NULL") ) as.character(x) else x
+}
+
+# extractModelElements returns a list of length-one named lists
+# The inner named lists are named after their model element and their value is a nested list of arguments
+# The list of arguments is rectified with match.call so all possible arguments are accounted for
+#    Missing or defaulted named arguments will be provided.
+#    Additional arguments destined for ... will be expanded to their name or position
+extractModelElements <- function(test.expr,depth=0) {
+  # use 'grep' to find the calls to VE Model Elements in test.expr
+  ve.elements <- grep(ModelElementsRegex,sapply(test.expr,function(s) all.names(s)))
+
+  parsed.calls <- list()
+  for ( v in ve.elements ) { # iterate through matching elements
+    r <- test.expr[[v]]
+    r.char <- as.character(r)
+    called <- sub("^visioneval::","",r.char[1]) # handle namespace (optional)
+    if ( called %in% ModelElementNames ) {
+      # top level call has a VE element: add it to the parse list
+      r <- normalizeModelElement(called,r)
+      parsed.call <- list(lapply(as.list(r[-1]),screenTypes))
+      names(parsed.call) <- called
+      attr(parsed.call,"Call") <- deparse(r,width.cutoff=80L)
+      parsed.calls[[length(parsed.calls)+1]] <- parsed.call
+    } else {
+      # call contains other calls that have a VE element (arguments or sub-expressions)
+      # handle that by recursing into this function
+      for ( deeper.call in Recall(r,depth=depth+1) ) {
+        parsed.calls[[length(parsed.calls)+1]] <- deeper.call
+      }
+    }
+  }
+  return(parsed.calls)
+}
+# library(visioneval)
+# parsed <- parseModelScript("run_model.R")
+
+parseModelScriptOld <-
+  function(FilePath = "Run_Model.R") {
     writeLog("Parsing model script",Level="info")
     if (!file.exists(FilePath)) {
       Msg <-
