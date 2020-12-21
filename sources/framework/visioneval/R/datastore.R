@@ -101,7 +101,7 @@ listDatastoreRD <- function(DataListing_ls = NULL) {
 #' listDatastore function which adds a listing of the datastore contents to the
 #' model state file.
 #' @export
-#' @import filesstrings stats utils
+#' @import stats utils
 initDatastoreRD <- function(AppendGroups = NULL) {
   G <- getModelState()
   DatastoreName <- G$DatastoreName
@@ -109,7 +109,7 @@ initDatastoreRD <- function(AppendGroups = NULL) {
   if (is.null(AppendGroups)) {
     #If datastore exists, delete
     if (file.exists(DatastoreName)) {
-      dir.remove(DatastoreName)
+      unlink(DatastoreName,recursive=TRUE)
     }
     #Create datastore
     dir.create(DatastoreName)

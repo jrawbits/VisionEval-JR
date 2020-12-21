@@ -194,7 +194,7 @@ function(
     # SaveDatastore = TRUE
 
     initModelStateFile(Save=saveModelState,...)
-    readGeography(Save=saveModelState) # will already have put path/geo file names into ModelState Run Parameters
+    readGeography(Save=saveModelState,...) # will already have path/geo file names into ModelState Run Parameters
   } else { # ModelState file exists and doing a pure "Load"
     # open the existing model state
     loadModelState(currentModelStateName)
@@ -211,7 +211,7 @@ function(
   } else TRUE
 
   # Assign the correct datastore interaction functions
-  assignDatastoreFunctions(ve.model$ModelState_ls$DatastoreType)
+  assignDatastoreFunctions(ve.model$ModelState_ls$RunParam_ls$DatastoreType)
 
   #=======================================
   #CHECK CONFLICTS WITH EXISTING DATASTORE
@@ -285,12 +285,9 @@ function(
       )
     }
   } else if ( SaveDatastore ) {
-    InfoMsg <- c(InfoMsg,
-      paste(
-        "Run parameter SaveDatastore=TRUE, but there is ",
-        "no existing Datastore at ",RunDstoreName,".\n",
-        "SaveDatastore will be ignored."
-      )
+    InfoMsg <- c(
+      InfoMsg,
+      "Ignored run parameter SaveDatastore=TRUE, as there is no Datastore to save."
     )
     SaveDatastore <- FALSE
   }
@@ -436,7 +433,7 @@ function(
           ModuleName = "Initialize",
           PackageName = Pkg,
           RunFor = "AllYears",
-          Year = "Year"
+          RunYear = "Year"
         )
         Add_ls[[Pkg]] <- Add_df
       }

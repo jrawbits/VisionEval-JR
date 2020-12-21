@@ -27,7 +27,6 @@ Depends: R (>= 2.10)
 Imports:
     jsonlite,
     stringr,
-    filesstrings,
     rhdf5,
     knitr,
     futile.logger
