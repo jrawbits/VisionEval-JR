@@ -65,8 +65,8 @@ getRunMode <- function(RunMode=NULL) {
   return ( envir$runSteps <- runSteps )
 }
 
-#INITIALIZE MODEL STATE
-#======================
+#INITIALIZE MODEL STATE FILE
+#===========================
 #' Initialize model state.
 #'
 #' \code{initModelStateFile} a visioneval framework control function that loads
@@ -106,33 +106,35 @@ initModelStateFile <- function(Save=TRUE,...) {
   #   This function furnishes default values for the Dir/ParamDir and ParamFile if they are not
   #   defined already in RunParam_ls (maps Dir into ParamDir) or not in list(...)
   #   This function opens ParamDir/ParamFile and adds run parameters found there
-  RunParam_ls <- get0("RunParam_ls",envir=modelEnvironment(),inherits=FALSE,ifnotfound=list())
+  model.env <- modelEnvironment()
+  RunParam_ls <- get0("RunParam_ls",envir=model.env,inherits=FALSE,ifnotfound=list())
   dotParams_ls <- list(...)
   # Replace any items in RunParam_ls from items in dotParams_ls
   RunParam_ls[ names(dotParams_ls) ] <- dotParams_ls
   if ( ! "ParamDir" %in% names(RunParam_ls) ) {
     if ( "Dir" %in% names(RunParam_ls) ) {
-      RunParam_ls$ParamDir = RunParam_ls$Dir
+      RunParam_ls$ParamDir <- RunParam_ls$Dir
     }
   }
-  ParamLocations <- c("ParamFile","ParamDir")
+  ParamLocations <- c("RunParamFile","ParamDir")
   defined <- ParamLocations %in% names(RunParam_ls)
   if ( ! all( defined ) ) {
     # Set parameter file default values
-    RunParam_ls[ ! defined ] <- list(ParamFile="run_parameters.json",ParamDir="defs")[ ! defined ]
+    # 
+    RunParam_ls[ ! defined ] <- list(RunParamFile="run_parameters.json",ParamDir="defs")[ ! defined ]
   }
 
   # Check for existence of run_parameters.json
   # Eventually, we'll make its non-existence NOT an error
   # Though we will still need all the required elements defined somewhere else.
-  ParamFilePath <- file.path(RunParam_ls$ParamDir,  RunParam_ls$ParamFile)
+  ParamFilePath <- file.path(RunParam_ls$ParamDir,  RunParam_ls$RunParamFile)
   if ( ! file.exists(ParamFilePath) ) {
     Message <- paste("Missing parameter file: ", ParamFilePath)
     stop( writeLog(Message,Level="error") )
   }
 
   # Override elements not defined in dots with elements from ParamFile_ls
-  # May replace elements defined in VisionEval.conf or otherwise in ve.model$RunParam_ls
+  # May override elements defined in VisionEval.conf or otherwise pre-loaded into ve.model$RunParam_ls
   # Also can't override ParamLocations (we've already used them so it's too late)
   ParamFile_ls <- jsonlite::fromJSON(ParamFilePath)
   ParamFile_ls <- ParamFile_ls[ names(ParamFile_ls)[ ! ( names(ParamFile_ls) %in% c(ParamLocations, names(dotParams_ls)) ) ] ]
@@ -280,7 +282,11 @@ function(ChangeState_ls=list(), FileName = getModelStateFileName(), Save=TRUE) {
       changeModelState_ls[[changeNames[i]]] <- ChangeState_ls[[i]]
     }
     changeModelState_ls$LastChanged <- Sys.time()
-    envir$ModelState_ls <- changeModelState_ls
+    if ( "ModelState_ls" %in% ls(envir) ) {
+      envir$ModelState_ls <- changeModelState_ls
+    } else {
+      stop(writeLog("No ModelState_ls in model environment",Level="error"),call.=FALSE)
+    }
   }
 
   if ( Save ) {
@@ -704,15 +710,15 @@ readGeography <- function(Save=TRUE,...) {
   #Read in geographic definitions if file exists, otherwise error
   #--------------------------------------------------------------
   params <- list(...)
-  Params_ls < readModelState()$RunParam_ls
+  Params_ls <- readModelState()$RunParam_ls
   paramNames <- c("ParamDir","GeoFile")
-  defined <- paramNames %in% Params_ls
+  defined <- paramNames %in% names(Params_ls)
   Params_ls <- Params_ls[paramNames[defined]] # sub-list of relevant parameters (possibly empty)
   if ( length(params) > 0 ) {
-    override <- paramNames %in% params
+    override <- paramNames %in% names(params)
     if ( any(override) ) {
       Params_ls[paramNames[override]] <- params[paramNames[override]]
-      defined <- paramNames %in% Params_ls
+      defined <- paramNames %in% names(Params_ls)
     }
   }
   if ( ! all(defined) ) {
