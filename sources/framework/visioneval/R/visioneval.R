@@ -193,7 +193,7 @@ function(
     # ModelParamFile = "model_parameters.json",
     # SaveDatastore = TRUE
 
-    initModelStateFile(Save=saveModelState,...)
+    initModelState(Save=saveModelState,...)
     readGeography(Save=saveModelState,...) # will already have path/geo file names into ModelState Run Parameters
   } else { # ModelState file exists and doing a pure "Load"
     # open the existing model state
