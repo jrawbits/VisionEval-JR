@@ -225,7 +225,6 @@ listDatasets <- function(Table, Group, QueryPrep_ls) {
 #' functions for listing and read the datastore(s).
 #' @return a logical identifying whether the archive file has been saved.
 #' @export
-#' @import filesstrings
 documentDatastoreTables <- function(SaveArchiveName, QueryPrep_ls) {
   GroupNames_ <- QueryPrep_ls$Listing$Datastore$Datastore$groupname
   Groups_ <- GroupNames_[-grep("/", GroupNames_)]

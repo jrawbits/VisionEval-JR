@@ -443,7 +443,7 @@ ve.run.model <- function(verbose=TRUE,path=NULL,stage=NULL,lastStage=NULL,log="E
         msg <- as.character(e)
         if ( ! nzchar(msg) ) msg <- "Stopped."
         self$status <- "Error"
-        writeLog(c(remark,msg),Level="error")
+        visioneval::writeLog(c(remark,msg),Level="error")
         self$runStatus[ms] <- "Failed"
       },
       finally =
@@ -455,7 +455,7 @@ ve.run.model <- function(verbose=TRUE,path=NULL,stage=NULL,lastStage=NULL,log="E
           self$status <- "Stopped"
         }
         if (verbose) {
-          writeLog(
+          visioneval::writeLog(
             c(
               paste("Model Stage:",stage),
               self$status
@@ -724,12 +724,12 @@ VEModel <- R6::R6Class(
 #'
 #' @param modelPath Directory containing a VisionEval model; if an empty character string is
 #'     provided, prints a list of available models (see details)
-#' @param modelName Name displayed for this model; defaults to `basename(modelPath)`
 #' @return A VEModel object or a VEModelList of available models if no modelPath or modelName is
 #'   provided; see details and `vignette("VEModel")`
 #' @export
 openModel <- function(modelPath="") {
   if ( missing(modelPath) || !nzchar(modelPath) ) {
+    runtime <- get0("ve.runtime",ifnotfound=getwd())
     Param_ls <- visioneval::loadConfiguration(ModelRun=FALSE) # system/user profiles only
     return(dir(file.path(runtime,visioneval::getRunParameter("ModelDir",Param_ls=Param_ls,Default="models"))))
   } else {
