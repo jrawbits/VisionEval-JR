@@ -102,7 +102,7 @@ getRunParameter <- function(Parameter,Param_ls=NULL,Default=NA) {
 #READ CONFIGURATION FILE
 #=======================
 #'
-#' \code{getConfiguration} a visioneval control function to load Run Parameters from a
+#' \code{readConfigurationFil} a visioneval control function to load Run Parameters from a
 #' configuration file. The files are in JSON format (like defs/run_parameters.json in a
 #' typical model).
 #'
@@ -116,19 +116,22 @@ getRunParameter <- function(Parameter,Param_ls=NULL,Default=NA) {
 #' ParamDir, throw an error. If ParamFile is not supplied and no configuration file is
 #' found, return an empty list. Otherwise return the list of parameters found in the file.
 #' @export
-getConfiguration <- function(ParamDir,ParamFile) {
+readConfigurationFile <- function(ParamDir,ParamFile) {
   # If ParamFile is provided, throw an error if it doesn't exist
   # Otherwise, check for candidate files and return an empty list if none found in ParamDir
   if ( missing(ParamFile) ) {
-    ParamFiles <- paste("^",paste("visioneval.cnf",".visioneval","visioneval.json","run_parameters.json",sep="|"),"$",sep="")
-    ParamFiles <- gsub("\\.","\\.",ParamFiles) # quote literal periods in file name candidates
-    candidates <- dir(ParamDir,pattern=ParamFiles,ignore.case=TRUE) # find any matching files
+    ParamFiles   <- c("visioneval.cnf",".visioneval","visioneval.json","run_parameters.json")
+    ParamPattern <- sapply(ParamFiles,function(x) paste0("(",x,")"))
+    ParamPattern <- paste("^",paste(ParamPattern,collapse="|"),"$",sep="")
+    ParamPattern <- gsub("\\.","\\.",ParamPattern) # quote literal periods in file name candidates
+    candidates <- dir(ParamDir,pattern=ParamPattern,all=TRUE,no..=TRUE,ignore.case=TRUE) # find any matching files
     candidates <- ParamFiles[ ParamFiles %in% candidates ] # get the search order right
     if ( length(candidates)==0 ) {
       return(list())
     }
     ParamFile <- candidates[1]
   }
+  ParamFilePath <- file.path(ParamDir,ParamFile)
   if ( ! file.exists(ParamFilePath) ) {
     stop(
       writeLog(
@@ -197,6 +200,7 @@ loadConfiguration <- function(ModelRun=TRUE,...) {
   RunParam_ls <- list()
   attr(RunParam_ls,"cnf") <- character(0)
   ve.runtime <- normalizePath(get0("ve.runtime",ifnotfound=getwd()),winslash="/")
+  browser()
 
   # helper function to update a set of run parameters and their source
   updateConfiguration <- function(RunParam_ls,newParam_ls,message) {
@@ -215,11 +219,11 @@ loadConfiguration <- function(ModelRun=TRUE,...) {
 
   # Look for parameters in ve.runtime
   siteParam_ls <- readConfigurationFile(ParamDir=ve.runtime)
-  RunParam_ls <- updateConfiguration(RunParam_ls, siteParam_ls,)
+  RunParam_ls <- updateConfiguration(RunParam_ls, siteParam_ls)
 
   # Can change default ModelDir in site configuration file
   modelDir <- getRunParameter("ModelDir",Param_ls=RunParam_ls,Default="models")
-  userParam_ls <- readConfigurationFile(ParamDir=file.path(ve.runtime,RunParamFile=modelDir))
+  userParam_ls <- readConfigurationFile(ParamDir=file.path(ve.runtime,modelDir))
   RunParam_ls <- updateConfiguration(RunParam_ls,userParam_ls)
 
   # Update site configuration with Model parameters if running
@@ -258,7 +262,7 @@ loadConfiguration <- function(ModelRun=TRUE,...) {
     # The following should throw an error if the file does not exist
     paramFile_ls <- readConfigurationFile(
       ParamDir=file.path(ve.model.path,RunParam_ls$ParamDir),
-      RunParamFile=RunParam_ls$RunParamFile
+      ParamFile=RunParam_ls$RunParamFile
     )
     
     # don't replace any parameters that were defined in dotParams_ls
@@ -346,7 +350,7 @@ loadConfiguration <- function(ModelRun=TRUE,...) {
 #' @import jsonlite
 initModelState <- function(Save=TRUE,...) {
   # Initialize the ModelState file
-  model.env <- modelEnvironment()
+  model.env <- modelEnvironment() # Create if missing; needed for loadConfiguration etc.
   RunParam_ls <- loadConfiguration(...) # keep anything already defined
   # note that 
   
@@ -1341,7 +1345,7 @@ parseModelScript <- function(FilePath) {
     rbind.data.frame,
     lapply(
       extractElement("runScript"),
-      function(x) normalizeElementFieleds(x$runScript,ScriptCallNames)
+      function(x) normalizeElementFields(x$runScript,ScriptCallNames)
     )
   )
 

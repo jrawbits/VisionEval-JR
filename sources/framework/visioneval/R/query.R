@@ -244,7 +244,7 @@ documentDatastoreTables <- function(SaveArchiveName, QueryPrep_ls) {
     }
   }
   zip(paste0(SaveArchiveName, ".zip"), TempDir)
-  remove_dir(TempDir)
+  unlink(TempDir,recursive=TRUE)
   TRUE
 }
 # #Example
