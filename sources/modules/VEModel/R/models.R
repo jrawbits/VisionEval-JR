@@ -665,7 +665,7 @@ VEModel <- R6::R6Class(
     modelPath=NULL,
     stagePaths=NULL,
     stageCount=NULL,
-    runParam_ls=NULL,
+    RunParam_ls=NULL,
     runStatus=NULL,
     status="Uninitialized",                 # used to be a function
 
