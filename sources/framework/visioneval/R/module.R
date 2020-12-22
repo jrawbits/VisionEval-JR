@@ -584,7 +584,7 @@ testModule <-
     #Initialize model state and log files
     #------------------------------------
     Msg <- paste0("Testing ", ModuleName, ".")
-    initModelStateFile(Dir = ParamDir, ParamFile = RunParamFile)
+    initModelState(Dir = ParamDir, ParamFile = RunParamFile)
     initLog(ModuleName)
     writeLog(Msg,Level="warn")
     rm(Msg)

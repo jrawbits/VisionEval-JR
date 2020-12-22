@@ -65,17 +65,264 @@ getRunMode <- function(RunMode=NULL) {
   return ( envir$runSteps <- runSteps )
 }
 
-#INITIALIZE MODEL STATE FILE
-#===========================
+#GET VISIONEVAL RUN PARAMETER
+#============================
+#'
+#' \code{getRunParameter} a visioneval control function to find the current definition for
+#' a runtime parameter, using the currently loaded specification. May be called as the
+#' configurations are being loaded, so earlier site configuration can help find later
+#' locations for additional configuration information (e.g. model run_parameters in a
+#' non-standard model directory).
+#'
+#' @param Parameter character vector (length one) naming Parameter to retrieve
+#' @param Param_ls a list of run parameters to look within (otherwise runParam_ls from
+#' "ve.model" environment if it exists, and if not then in and above
+#' \code{parent.frame()})
+#' @param Default is the value to provide if Parameter is not found in runParam_ls
+#' @return A parameter value or its default if not set
+#' @export
+getRunParameter <- function(Parameter,Param_ls=NULL,Default=NA) {
+  if ( is.list(Param_ls) ) { # look only there
+    runParam_ls <- Param_ls
+  } else {
+    envir <- if ( "ve.model" %in% search() ) {
+      as.environment("ve.model")
+    } else {
+      envir <- parent.frame()
+    }
+    runParam_ls <- get0("runParam_ls",envir=envir,ifnotfound=list())
+  }
+  if ( length(runParam_ls)==0 || ! Parameter %in% names(runParam_ls) ) {
+    return( Default )
+  } else {
+    return( runParam_ls[[Parameter]] )
+  }
+}
+
+#READ CONFIGURATION FILE
+#=======================
+#'
+#' \code{getConfiguration} a visioneval control function to load Run Parameters from a
+#' configuration file. The files are in JSON format (like defs/run_parameters.json in a
+#' typical model).
+#'
+#' Configuration files can be called anything from this list: visioneval.cnf,
+#' .visioneval, 
+#'
+#' @param ParamDir directory in which to seek a configuration file
+#' @param ParamFile (optional) is the name of a file to seek. If it is not found, throw
+#' an error.
+#' @return A list of Run Parameters. If ParamFile is supplied and it does not exist in
+#' ParamDir, throw an error. If ParamFile is not supplied and no configuration file is
+#' found, return an empty list. Otherwise return the list of parameters found in the file.
+#' @export
+getConfiguration <- function(ParamDir,ParamFile) {
+  # If ParamFile is provided, throw an error if it doesn't exist
+  # Otherwise, check for candidate files and return an empty list if none found in ParamDir
+  if ( missing(ParamFile) ) {
+    ParamFiles <- paste("^",paste("visioneval.cnf",".visioneval","visioneval.json","run_parameters.json",sep="|"),"$",sep="")
+    ParamFiles <- gsub("\\.","\\.",ParamFiles) # quote literal periods in file name candidates
+    candidates <- dir(ParamDir,pattern=ParamFiles,ignore.case=TRUE) # find any matching files
+    candidates <- ParamFiles[ ParamFiles %in% candidates ] # get the search order right
+    if ( length(candidates)==0 ) {
+      return(list())
+    }
+    ParamFile <- candidates[1]
+  }
+  if ( ! file.exists(ParamFilePath) ) {
+    stop(
+      writeLog(
+        paste("Missing required parameter file:",ParamFilePath),
+        Level="error"
+      )
+    )
+  }
+  ParamFile_ls <- jsonlite::fromJSON(ParamFilePath)
+  attr(ParamFile_ls,"cnf") <- ParamFilePath
+  return(ParamFile_ls)
+}
+
+#LOAD VISIONEVAL CONFIGURATION
+#=============================
+#' Load model configuration parameters
+#'
+#' \code{loadConfiguration} a visioneval framework control function that visits
+#' configuration files to build up the environment for running a model. Thes function
+#' preserves backward compatibility with the rather odd distribution of configuration
+#' parameters between run_parameters.json in the model's "defs" directory and the command
+#' line parameters passed to initializeModel. It also creates a more complete set of
+#' directory specifications for inputs and outputs. The defaults do just what
+#' VisionEval always did when a run_model.R file is sourced.
+#'
+#' @section Details
+#'
+#' If \code{ModelRun} is \code{TRUE}, defs/run_parameters.json will be sought (using
+#' directory parameters that are either the classic defaults or drawn from the
+#' configuration files). Otherwise, only the system and user configurations will be loaded
+#' (and optionally parameters defined in an existing \code{RunParam_ls}).
+#'
+#' @section Configuration Files
+#'
+#' VisionEval configuration files are sought in the following order. If an element is
+#' missing, it is silently skipped and the next location is sought.
+#' \itemize{
+#'     \item{ve.runtime/VisionEval.cnf}{System Profile, if ve.runtime is defined}
+#'     \item{ve.runtime/VEModelDir/VisionEval.cnf}{Profile for all models, if ve.runtime is
+#'     defined}
+#'     \item{getwd()/Visioneval.cnf}{Profile for this model, if modelRun==TRUE and
+#'     different from the above paths}
+#'     \item{<InputDir>/<ParamDir>/<RunParamFile>}{If modelRun==TRUE, traditional profile}
+#'     \item{...}{If modelRun==TRUE, named parameters passed to this function, if any}
+#'     \item{runParam_ls}{If modelRun==TRUE, and it already exists in or above \code{parent.frame()}}
+#' }
+#'
+#' Even though the list of configuration files suggests they are called "VisionEval.cnf",
+#' you can also call them ".visioneval" or ".VisionEval" or "visioneval.json" or even
+#' "run_parameters.json" (names are case-insensitive). All of these files are in JSON
+#' format (like the original run_parameters.json) for consistency and ease of processing.
+#' If multiple configuration files are defined, the are sought in this order: .cnf,
+#' .visioneval, visioneval.json, run_parameters.json
+#'
+#' @param ModelRun A logical (default TRUE) which if FALSE says only to load system and
+#'   user configurations.
+#' @param ... Additional named parameters passed in from earlier function invocations
+#'
+#' @return A named list of parameter values providing runParam_ls elements used to
+#' create a ModelState_ls structure. The "cnf" attribute of that list provides a
+#' character vector listing (in order) the specific files and locations that were loaded
+#' to create runParam_ls
+#' @export
+loadConfiguration <- function(ModelRun=TRUE,...) {
+  dotParams_ls <- list(...)
+  RunParam_ls <- list()
+  attr(RunParam_ls,"cnf") <- character(0)
+  ve.runtime <- normalizePath(get0("ve.runtime",ifnotfound=getwd()),winslash="/")
+
+  # helper function to update a set of run parameters and their source
+  updateConfiguration <- function(RunParam_ls,newParam_ls,message) {
+    if ( is.list(newParam_ls) && length(newParam_ls)>0 ) {
+      newParamSource <- deparse(substitute(newParam_ls))
+      if ( missing(message) ) message <- attr(newParam_ls,"cnf") # file path probably
+      if ( is.null(message) ) message <- newParamSource; # R object providing newParam_ls in parent.frame()
+      RunParam_ls[ names(newParam_ls) ] <- newParam_ls
+      attr(RunParam_ls,"cnf") <- c(
+        attr(RunParam_ls,"cnf"),
+        paste(paste0(message,":"),paste(names(newParam_ls),collapse=","))
+      )
+    }
+    return(RunParam_ls)
+  }
+
+  # Look for parameters in ve.runtime
+  siteParam_ls <- readConfigurationFile(ParamDir=ve.runtime)
+  RunParam_ls <- updateConfiguration(RunParam_ls, siteParam_ls,)
+
+  # Can change default ModelDir in site configuration file
+  modelDir <- getRunParameter("ModelDir",Param_ls=RunParam_ls,Default="models")
+  userParam_ls <- readConfigurationFile(ParamDir=file.path(ve.runtime,RunParamFile=modelDir))
+  RunParam_ls <- updateConfiguration(RunParam_ls,userParam_ls)
+
+  # Update site configuration with Model parameters if running
+  if ( ModelRun ) {
+    ve.model.path <- normalizePath(getwd(),winslash="/")
+    if ( ve.runtime != ve.model.path ) {
+      # if running a model, look in current directory (probably VEModel::modelPath)
+      modelParam_ls <- readConfigurationFile(ParamDir=ve.model.path)
+      RunParam_ls <- updateConfiguration(RunParam_ls,modelParam_ls)
+    }
+
+    # Now find the run_parameters.json for the model
+    # We expect it to exist because there are parameters that are properly defined there
+    # such as geo.csv etc.
+    if ( ! "ParamDir" %in% names(RunParam_ls) ) {
+      if ( "Dir" %in% names(RunParam_ls) ) {
+        RunParam_ls$ParamDir <- RunParam_ls$Dir
+      }
+    }
+    ParamLocations <- c("RunParamFile","ParamDir")
+    defined <- ParamLocations %in% names(RunParam_ls)
+    if ( ! all( defined ) ) {
+      # Set parameter file default values
+      RunParam_ls[ ! defined ] <- list(RunParamFile="run_parameters.json",ParamDir="defs")[ ! defined ]
+      RunParam_ls <- updateConfiguration(
+        RunParam_ls,
+        list(RunParamFile="run_parameters.json",ParamDir="defs")[ ! defined ],
+        message="Undefined Parameter Locations"
+      )
+    }
+
+    if ( length(dotParams_ls)>0 ) {
+      RunParam_ls <- updateConfiguration(RunParam_ls,dotParams_ls,message="... parameters")
+    }
+
+    # The following should throw an error if the file does not exist
+    paramFile_ls <- readConfigurationFile(
+      ParamDir=file.path(ve.model.path,RunParam_ls$ParamDir),
+      RunParamFile=RunParam_ls$RunParamFile
+    )
+    
+    # don't replace any parameters that were defined in dotParams_ls
+    ParamFile_ls <- ParamFile_ls[ names(ParamFile_ls)[ ! ( names(ParamFile_ls) %in% c(ParamLocations, names(dotParams_ls)) ) ] ]
+    RunParam_ls <- updateConfiguration(RunParam_ls,ParamFile_ls)
+
+    # Add in user's local specifications
+    # Often these will be set up by VEModel or VEScenario prior to running the model
+    # Things like InputPath for alternate input locations or adding in ScenarioRoot
+    EnvParam_ls <- get0("RunParam_ls",envir=parent.frame(),ifnotfound=list())
+    # Store the ones that are not already in RunParam_ls
+    alreadyThere <- names(EnvParam_ls) %in% names(RunParam_ls)
+    UserParam_ls <- EnvParam_ls[ ! alreadyThere ]
+    if ( length(UserParam_ls)>0 ) {
+      RunParam_ls <- updateConfiguration(
+        RunParam_ls,
+        UserParam_ls,
+        message=paste("User RunParam_ls added from",find("RunParam_ls")[1])
+      )
+    }
+    UpdateParam_ls <- EnvParam_ls[ alreadyThere ]
+    different <- unlist(sapply( names(UpdateParam_ls),function(n) RunParam_ls[[n]]!=UpdateParam_ls[[n]] ))
+    if ( ! is.logical(different) ) browser()
+    UpdateParam_ls <- UpdateParam_ls[ different ]
+    if ( length(UpdateParam_ls)>0 ) {
+      RunParam_ls <- updateConfiguration(
+        RunParam_ls,
+        UpdateParam_ls,
+        message=paste("User RunParam_ls Override from",find("RunParam_ls")[1])
+      )
+    }
+    
+    # Finally, provide values for DeflatorFile, UnitsFile, ModelParamFile and GeoFile if not defined
+    # Defaults here force backward compatibility
+    DefFiles  <- list( # a named list, not a character vector
+      DeflatorFile   = "deflators.csv",
+      UnitsFile      = "units.csv",
+      GeoFile        = "geo.csv",
+      ModelParamFile = "model_parameters.json",
+      InputDir       = "inputs"
+    )
+    missingDefs <- ! names(DefFiles) %in% names(RunParam_ls)
+    if ( any(missingDefs) ) {
+      RunParam_ls <- updateConfiguration(RunParam_ls,DefFiles[missingDefs],message="Supplied Defaults"
+    }
+  }
+  return(RunParam_ls)
+}
+# MyParams <- loadConfiguration(modelRun=FALSE) # to get just the system configuration elements
+# attr(MyParams,"cnf") # to see where they came from
+
+#INITIALIZE MODEL STATE
+#======================
 #' Initialize model state.
 #'
-#' \code{initModelStateFile} a visioneval framework control function that loads
-#' model run parameters into the model state list in the global workspace and
-#' optionally saves it as file.
+#' \code{initModelState} a visioneval framework control function that builds creates
+#' a new ModelState_ls structure in the model environment, optionally saving it to
+#' ModelState.rda.
 #'
-#' This function creates the model state list and loads model run parameters
-#' recorded in the 'parameters.json' file into the model state list. It also
-#' optionally saves the model state list in a file (ModelState.Rda).
+#' Parameters are can be supplied from run_parameters.json or from the function
+#' invocation (the latter mostly for backwards compatibility). The new structure of
+#' runtime parameters moves environmental parameters to configuration files outside the
+#' model (e.g. DatastoreType) and reserves model specific elements for
+#' run_parameters.json (Model, BaseYear, Years). See \code{loadConfiguration}.
 #'
 #' @param Save A logical (default=TRUE) indicating whether the model state file
 #'   should be written out.
@@ -92,67 +339,16 @@ getRunMode <- function(RunMode=NULL) {
 #' UnitsFile [A string identifying the name of the file which contains
 #' default units for complex data types (e.g. currency, distance, speed, etc.).
 #' The default value is units.csv.]
-
+#'
 #' @return TRUE if the model state list is created and file is saved, FALSE if
 #' the model state file was not saved.
 #' @export
 #' @import jsonlite
-initModelStateFile <- function(Save=TRUE,...) {
-  #   Obtain run parameters values RunParam_ls in ve.model environment (if it already exists),
-  #   otherwise create a new empty list of run parameters. VEModel API creates ve.model and for
-  #   backward compatibility, the modelEnvironment() function will create it if it does not exist.
-  #   The VEModel API will set InitialValues from VisionEval.cnf in ve.runtime
-  #   VEModel API will override values using VisionEval.cnf in the run_model.R folder
-  #   This function furnishes default values for the Dir/ParamDir and ParamFile if they are not
-  #   defined already in RunParam_ls (maps Dir into ParamDir) or not in list(...)
-  #   This function opens ParamDir/ParamFile and adds run parameters found there
+initModelState <- function(Save=TRUE,...) {
+  # Initialize the ModelState file
   model.env <- modelEnvironment()
-  RunParam_ls <- get0("RunParam_ls",envir=model.env,inherits=FALSE,ifnotfound=list())
-  dotParams_ls <- list(...)
-  # Replace any items in RunParam_ls from items in dotParams_ls
-  RunParam_ls[ names(dotParams_ls) ] <- dotParams_ls
-  if ( ! "ParamDir" %in% names(RunParam_ls) ) {
-    if ( "Dir" %in% names(RunParam_ls) ) {
-      RunParam_ls$ParamDir <- RunParam_ls$Dir
-    }
-  }
-  ParamLocations <- c("RunParamFile","ParamDir")
-  defined <- ParamLocations %in% names(RunParam_ls)
-  if ( ! all( defined ) ) {
-    # Set parameter file default values
-    # 
-    RunParam_ls[ ! defined ] <- list(RunParamFile="run_parameters.json",ParamDir="defs")[ ! defined ]
-  }
-
-  # Check for existence of run_parameters.json
-  # Eventually, we'll make its non-existence NOT an error
-  # Though we will still need all the required elements defined somewhere else.
-  ParamFilePath <- file.path(RunParam_ls$ParamDir,  RunParam_ls$RunParamFile)
-  if ( ! file.exists(ParamFilePath) ) {
-    Message <- paste("Missing parameter file: ", ParamFilePath)
-    stop( writeLog(Message,Level="error") )
-  }
-
-  # Override elements not defined in dots with elements from ParamFile_ls
-  # May override elements defined in VisionEval.conf or otherwise pre-loaded into ve.model$RunParam_ls
-  # Also can't override ParamLocations (we've already used them so it's too late)
-  ParamFile_ls <- jsonlite::fromJSON(ParamFilePath)
-  ParamFile_ls <- ParamFile_ls[ names(ParamFile_ls)[ ! ( names(ParamFile_ls) %in% c(ParamLocations, names(dotParams_ls)) ) ] ]
-  RunParam_ls[ names(ParamFile_ls) ] <- (ParamFile_ls)
-
-  #   Furnish default values for DeflatorFile, UnitsFile, ModelParamFile and GeoFile if not defined
-  #   in list(...). The default for InputDir is backward compatible. The VEModel$run function will
-  #   set it to a vector of places to look (effectively a PATH) - when an input file is sought,
-  #   the first version of the file encountered on the list of directories will be used.
-  DefFiles  <- list( # a named list, not a character vector
-    DeflatorFile   = "deflators.csv",
-    UnitsFile      = "units.csv",
-    GeoFile        = "geo.csv",
-    ModelParamFile = "model_parameters.json",
-    InputDir       = "inputs"
-  )
-  missingDefs <- ! names(DefFiles) %in% names(RunParam_ls)
-  RunParam_ls[ names(DefFiles)[missingDefs] ] <- DefFiles[missingDefs]
+  RunParam_ls <- loadConfiguration(...) # keep anything already defined
+  # note that 
   
   # The required parameters will be the initial elements for the ModelState
   # Other RunParam_ls elements will be placed in ModelState_ls$RunParam_ls
@@ -164,18 +360,22 @@ initModelStateFile <- function(Save=TRUE,...) {
   if (any(!ParamExists_)) {
     MissingParam_ <- RequiredParam_[!ParamExists_]
     Message <- c(
-      "Missing model run parameters (not set in VisionEval.cnf or run_parameters.json or call to initializeModel):",
+      "Missing model run parameters (not set in VisionEval configuration or function call):",
       paste(MissingParam_, collapse = ", ")
     )
     stop( writeLog(Message,Level="error") )
   } 
-  # Now install the parameters - the required parameters become the foundation for
+
+  # Install the parameters - the required parameters become the foundation for
   # ModelState_ls. Other parameters are placed in newModelState_ls$RunParameters,
   # (including things like ParamDir, UnitsFile, etc.)
   newModelState_ls <- RunParam_ls[RequiredParam_]
-  newModelState_ls$RunParam_ls <- RunParam_ls[ ! (names(RunParam_ls) %in% RequiredParam_) ]
+  # ModelState version of RunParam_ls now also includes the required parameters
+  # Formerly: newModelState_ls$RunParam_ls <- RunParam_ls[ ! (names(RunParam_ls) %in% RequiredParam_) ]
+  newModelState_ls$RunParam_ls <- RunParam_ls
   newModelState_ls$LastChanged <- Sys.time()
 
+  # Actually load the deflators and units files
   DeflatorFilePath <- file.path(RunParam_ls$ParamDir, RunParam_ls$DeflatorFile)
   if ( ! file.exists(DeflatorFilePath) ) {
     stop( writeLog(paste("Could not locate DeflatorFile:",DeflatorFilePath),Level="error") )
@@ -188,14 +388,14 @@ initModelStateFile <- function(Save=TRUE,...) {
   }
   newModelState_ls$Units <- read.csv(UnitsFilePath, as.is = TRUE)
 
-  envir = modelEnvironment()
-  envir$ModelState_ls <- newModelState_ls
-  envir$RunParam_ls <- RunParam_ls
-  if ( Save) save(ModelState_ls, envir=envir, file = getModelStateFileName())
+  # Establish the ModelState in model.env (and optionally, "ModelState.rda")
+  model.env$ModelState_ls <- newModelState_ls
+  model.env$RunParam_ls <- RunParam_ls; # Includes all the run Parameters, including "required"
+  if ( Save) save(ModelState_ls, envir=model.env, file = getModelStateFileName())
 
   return(Save) 
 }
-#initModelStateFile(ParamDir = "tests/defs")
+#initModelState(ParamDir = "tests/defs")
 
 #LOAD MODEL STATE
 #================
@@ -352,6 +552,7 @@ getVEOption <- function(OptionName=NULL,OptionDefault=NULL,SetOption=FALSE) {
 #' @export
 getModelStateFileName <- function() {
   # TODO: manage the complete model state path
+  # We'll look in envir$RunParam_ls for name and path information
   envir <- modelEnvironment()
   # use the basename - not legal (yet) to specific any directory
   # other than getwd()
