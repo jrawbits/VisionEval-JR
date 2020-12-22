@@ -154,14 +154,14 @@ getConfiguration <- function(ParamDir,ParamFile) {
 #' directory specifications for inputs and outputs. The defaults do just what
 #' VisionEval always did when a run_model.R file is sourced.
 #'
-#' @section Details
+#' @section Details:
 #'
 #' If \code{ModelRun} is \code{TRUE}, defs/run_parameters.json will be sought (using
 #' directory parameters that are either the classic defaults or drawn from the
 #' configuration files). Otherwise, only the system and user configurations will be loaded
 #' (and optionally parameters defined in an existing \code{RunParam_ls}).
 #'
-#' @section Configuration Files
+#' @section Configuration Files:
 #'
 #' VisionEval configuration files are sought in the following order. If an element is
 #' missing, it is silently skipped and the next location is sought.
@@ -302,7 +302,7 @@ loadConfiguration <- function(ModelRun=TRUE,...) {
     )
     missingDefs <- ! names(DefFiles) %in% names(RunParam_ls)
     if ( any(missingDefs) ) {
-      RunParam_ls <- updateConfiguration(RunParam_ls,DefFiles[missingDefs],message="Supplied Defaults"
+      RunParam_ls <- updateConfiguration(RunParam_ls,DefFiles[missingDefs],message="Supplied Defaults")
     }
   }
   return(RunParam_ls)
