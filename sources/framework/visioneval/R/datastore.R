@@ -709,7 +709,7 @@ initDatasetH5 <- function(Spec_ls, Group) {
 #' @param Group a string representation of the name of the datastore group the
 #' data is to be read from.
 #' @param DstoreLoc a string representation of the file path of the datastore.
-#' NULL if the datastore is the current directory.
+#' NULL if the datastore is for the current model.
 #' @param Index A numeric vector identifying the positions the data is to be
 #'   written to. NULL if the entire dataset is to be read.
 #' @param ReadAttr A logical identifying whether to return the attributes of
@@ -721,18 +721,22 @@ initDatasetH5 <- function(Spec_ls, Group) {
 readFromTableH5 <- function(Name, Table, Group, DstoreLoc = NULL, Index = NULL, ReadAttr = TRUE) {
   #Get the directory where the datastore is located from DstoreLoc
   if (is.null(DstoreLoc)) {
-    DstoreDir <- ""
+    DstoreDir <- NULL
   } else {
-    ParseDstoreLoc_ <- unlist(strsplit(DstoreLoc, "/"))
-    DstoreDir <- paste(ParseDstoreLoc_[-length(ParseDstoreLoc_)], collapse = "/")
+    DstoreDir <- dirname(DstoreLoc)
   }
   #Load the model state file
-  if (DstoreDir == "") {
+  if ( is.null(DstoreDir) ) {
     G <- getModelState()
   } else {
-    G <- readModelState(FileName = file.path(DstoreDir, getModelStateFileName()))
+    G <- readModelState(FileName = file.path(DstoreDir, getModelStateFileName()),envir=new.env())
   }
-  #If DstoreLoc is NULL get the name of the datastore from the model state
+  #If DstoreLoc is NULL get the name of the datastore from the model
+  #state
+  # JRaw TODO: Model state should save path of Datastore
+  # TODO: Keep rethinking how we track the Datastore location
+  # (relative/absolute). Need the ModelState to work relative to the
+  # Datastore if we copy all of them to a different absolute location.
   if (is.null(DstoreLoc)) DstoreLoc <- G$DatastoreName
   #Check that dataset exists to read from
   DatasetExists <- checkDataset(Name, Table, Group, G$Datastore)
@@ -873,7 +877,7 @@ assignDatastoreFunctions <- function(DstoreType) {
       paste0("Unknown 'DatastoreType' in 'run_parameters.json' - ",
              DstoreType,"\nRecognized Types:",
              paste(AllowedDstoreTypes_, collapse = ", "))
-    stop(Msg)
+    stop(writeLog(Msg,Level="error"))
   }
 }
 
@@ -1044,6 +1048,8 @@ getFromDatastore <- function(ModuleSpec_ls, RunYear, Geo = NULL, GeoIndex_ls = N
     Type <- Spec_ls$TYPE
     #Identify datastore files and groups to get data from
     if (Group == "Global") {
+      # JRaw TODO: get this to support "Loaded" Datastores that have
+      # not been copied.
       DstoreGroup <- "Global"
       if (!is.null(G$DatastoreReferences$Global)) {
         Files_ <- c(G$DatastoreName, G$DatastoreReferences$Global)
@@ -1085,14 +1091,8 @@ getFromDatastore <- function(ModuleSpec_ls, RunYear, Geo = NULL, GeoIndex_ls = N
     }
     #Fetch the data and add to the input list
     getModelListing <- function(DstoreRef) {
-      SplitRef_ <- unlist(strsplit(DstoreRef, "/"))
-      RefHead <- paste(SplitRef_[-length(SplitRef_)], collapse = "/")
-      if (RefHead == "") {
-        ModelStateFile <- getModelStateFileName()
-      } else {
-        ModelStateFile <- paste(RefHead, getModelStateFileName(), sep = "/")
-      }
-      readModelState(FileName = ModelStateFile)
+      ModelStateFile <- paste(dirname(DstoreRef), getModelStateFileName(), sep = "/")
+      return( readModelState(FileName = ModelStateFile, envir=new.env()) )
     }
     for (File in Files_) {
       DstoreListing_ls <- getModelListing(DstoreRef = File)$Datastore
@@ -1137,7 +1137,7 @@ getFromDatastore <- function(ModuleSpec_ls, RunYear, Geo = NULL, GeoIndex_ls = N
     rm(Spec_ls, Group, Table, Name, Type, DstoreGroup, Files_)
   }
   #Return the list
-  L
+  return( L )
 }
 
 
