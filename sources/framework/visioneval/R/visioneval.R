@@ -66,8 +66,6 @@ utils::globalVariables(c("initDatastore","Year"))
 #' @param SimulateRun A logical identifying whether the model run should be
 #' simulated: i.e. each step is checked to confirm that data of proper type
 #' will be present when the module is called. JRaw says: Just do it
-#' @param RunModel If FALSE, loads an existing ModelState (or creates a
-#' bare one in memory), If TRUE, performs the traditional operations.
 #' @param ... Additional named arguments that can override run parameters from
 #' VisonEval.cnf or from run_parameters.json. See Run Parameters section.
 #' @return None. The function prints to the log file messages which identify
@@ -79,14 +77,11 @@ function(
   LoadDatastore = FALSE,
   DatastoreName = NULL,
   SimulateRun = FALSE,
-  RunModel = TRUE,
   ...
 ) {
-  # TODO:Walk through the logic (step through it in RStudio)
-  
   # NOTE: This function expects to have getwd() be the same directory that the
   # ModelState and Datastore will be created in (the model/scenario location)
-  # The actual run_model.R script can be elsewhere
+  # The actual run_model.R script can be elsewhere ("ModelScriptFile")
 
   # Performs the following operations
   #
@@ -105,12 +100,12 @@ function(
   #   current. Once initializeModel(RunModel=TRUE,...) completes, runModule / runScript / runStage
   #   steps can be performed.
 
-  # Clear the current ve.model environment (and create if missing)
+  # Access the model environment and check for RunModel condition
   ve.model <- modelEnvironment()
-  rm( list=ls(envir=ve.model, all.names=TRUE), envir=ve.model )
+  RunModel <- modelRunning()
 
   # Process configuration including anything sent in through dots
-  ve.model$RunParam_ls <- loadConfiguration(RunModel=RunModel,...)
+  RunParam_ls <- ve.model$RunParam_ls <- loadConfiguration(RunModel=RunModel,...)
 
   # Set up model state transition parameters
   previousModelState <- NULL
@@ -160,8 +155,8 @@ function(
       savedPreviousModelState <- file.rename(currentModelStatePath, previousModelStateName)
     }
 
-    initModelState(Save=RunModel)
-    readGeography(Save=RunModel) # will already have path/geo file names into ModelState Run Parameters
+    initModelState(Save=RunModel,Param_ls=RunParam_ls)
+    readGeography(Save=RunModel,Param_ls=RunParam_ls) # will already have path/geo file names into ModelState Run Parameters
   } else { # ModelState file exists and doing a pure "Load"
     # open the existing model state
     loadModelState(currentModelStatePath)
@@ -178,7 +173,7 @@ function(
   } else TRUE # Save by default
 
   # Assign the correct datastore interaction functions
-  assignDatastoreFunctions(ve.model$ModelState_ls$RunParam_ls$DatastoreType)
+  assignDatastoreFunctions(RunParam_ls$DatastoreType)
 
   #=======================================
   #CHECK CONFLICTS WITH EXISTING DATASTORE
@@ -274,7 +269,7 @@ function(
       } # else the current model state already has the previous contents
     } else {
       # Load model state from the directory containing the other Datastore
-      modelStatePath <- file.path(LoadDstoreDir,basename(currentModelStateName))
+      modelStatePath <- file.path(LoadDstoreDir,basename(currentModelStatePath))
       if ( ! loadModelState(modelStatePath,envir=LoadEnv) ) {
         stop(writeLog(paste("Unable to open ModelState:",modelStatePath),Level="error"),call.=FALSE)
       }
@@ -331,225 +326,221 @@ function(
     # Restore previous model state if we had moved it out of the way
     # Will only happen if performing "Init" or "Run"
     if ( nzchar(previousModelStateName) && savedPreviousModelState ) {
-      unlink(currentModelStateName)
+      unlink(currentModelStatePath)
       if (file.exists(previousModelStateName)) { # TODO: relative to RunDirectory
-        file.rename(previousModelStateName, currentModelStateName)
+        file.rename(previousModelStateName, basename(currentModelStatePath))
       }
     }
     stop("Datastore configuration error: See log messages.",call.=FALSE)
   }
 
-  if ( any(c("Load","Run") %in% (runSteps)) )  {
-    # Perform the guts of the "Load" run step
-    # We should already have ve.model$ModelState_ls in place
+  #===========================================================================
+  #PARSE SCRIPT TO MAKE TABLE OF ALL THE MODULE CALLS, CHECK AND COMBINE SPECS
+  #===========================================================================
 
-    #===========================================================================
-    #PARSE SCRIPT TO MAKE TABLE OF ALL THE MODULE CALLS, CHECK AND COMBINE SPECS
-    #===========================================================================
+  #Parse script and make data frame of modules that are called directly
+  parsedScript <- parseModelScript(RunParam_ls$ModelScriptFile)
 
-    #Parse script and make data frame of modules that are called directly
-    parsedScript <- parseModelScript(ModelScriptFile)
-
-    # Create required package list, adding from previous ModelState if available
-    AlreadyInitialized_ <- character(0) # required (initialized packages) from loaded datastore
-    RequiredPkg_ <- parsedScript$RequiredVEPackages
-    if ( LoadDatastore ) {
-      # We already set up the model state for the loaded datastore above
-      # Copy over the required packages part of the previous model state
-      if ( "RequiredVEPackages" %in% names(LoadEnv$ModelState_ls) ) {
-        AlreadyInitialized_ <- LoadEnv$ModelState_ls$RequiredVEPackages
-        RequiredPkg_ <- unique(c(RequiredPkg_, LoadEnv$ModelState_ls$RequiredVEPackages))
-      }
+  # Create required package list, adding from previous ModelState if available
+  AlreadyInitialized_ <- character(0) # required (initialized packages) from loaded datastore
+  RequiredPkg_ <- parsedScript$RequiredVEPackages
+  if ( LoadDatastore ) {
+    # We already set up the model state for the loaded datastore above
+    # Copy over the required packages part of the previous model state
+    if ( "RequiredVEPackages" %in% names(LoadEnv$ModelState_ls) ) {
+      AlreadyInitialized_ <- LoadEnv$ModelState_ls$RequiredVEPackages
+      RequiredPkg_ <- unique(c(RequiredPkg_, LoadEnv$ModelState_ls$RequiredVEPackages))
     }
-    setModelState(
-      list(ModuleCalls_df=parsedScript$ModuleCalls_df), # Full list of calls
-      Save=RunModel
-    )
+  }
+  setModelState(
+    list(ModuleCalls_df=parsedScript$ModuleCalls_df), # Full list of calls
+    Save=RunModel
+  )
 
-    # All the rest of what we need to do with module calls should have them unique
-    ModuleCalls_df <- unique(parsedScript$ModuleCalls_df)
+  # All the rest of what we need to do with module calls should have them unique
+  ModuleCalls_df <- unique(parsedScript$ModuleCalls_df)
 
-    # Report any required packages that are not also in module calls
-    umc <- unique(ModuleCalls_df$PackageName)
-    explicitRequired_ <- unique(RequiredPkg_)
-    if ( any( not.in.umc <- ! (explicitRequired_ %in% umc) ) ) {
-      for ( p in explicitRequired_[not.in.umc] ) {
-        writeLog(paste("Package",p,"is required"),Level="warn")
-      }
+  # Report any required packages that are not also in module calls
+  umc <- unique(ModuleCalls_df$PackageName)
+  explicitRequired_ <- unique(RequiredPkg_)
+  if ( any( not.in.umc <- ! (explicitRequired_ %in% umc) ) ) {
+    for ( p in explicitRequired_[not.in.umc] ) {
+      writeLog(paste("Package",p,"is required"),Level="warn")
     }
-    RequiredPkg_ <- c(umc,explicitRequired_)
+  }
+  RequiredPkg_ <- c(umc,explicitRequired_)
 
-    #Get list of installed packages
-    #Check that all module packages are in list of installed packages
-    InstalledPkgs_ <- rownames(installed.packages())
-    MissingPkg_ <- RequiredPkg_[!(RequiredPkg_ %in% InstalledPkgs_)]
-    if (length(MissingPkg_ != 0)) {
-      Msg <-
-      paste0("One or more required packages need to be installed in order ",
-        "to run the model. Following are the missing package(s): ",
-        paste(MissingPkg_, collapse = ", "), ".")
-      writeLog(Msg,Level="error")
-      stop(Msg)
-    }
-    #Check for 'Initialize' module in each package if so add to ModuleCalls_df
-    Add_ls <- list()
-    # Do not add Initialize if the package was required in an earlier model stage
-    # Results of Initialization in that case will already be in the Datastore
-    for (Pkg in unique(setdiff(ModuleCalls_df$PackageName,AlreadyInitialized_))) {
-      PkgData <- data(package = Pkg)$results[,"Item"]
-      if ("InitializeSpecifications" %in% PkgData) {
-        Add_df <-
-        data.frame(
-          ModuleName = "Initialize",
-          PackageName = Pkg,
-          RunFor = "AllYears",
-          RunYear = "Year"
-        )
-        Add_ls[[Pkg]] <- Add_df
-      }
-    }
-    #Insert Initialize module entries into ModuleCalls_df
-    Pkg_ <- names(Add_ls)
-    for (Pkg in Pkg_) {
-      Idx <- head(grep(Pkg, ModuleCalls_df$PackageName), 1)
-      End <- nrow(ModuleCalls_df)
-      ModuleCalls_df <- rbind(
-        ModuleCalls_df[1:(Idx - 1),],
-        Add_ls[[Pkg]],
-        ModuleCalls_df[Idx:End,]
+  #Get list of installed packages
+  #Check that all module packages are in list of installed packages
+  InstalledPkgs_ <- rownames(installed.packages())
+  MissingPkg_ <- RequiredPkg_[!(RequiredPkg_ %in% InstalledPkgs_)]
+  if (length(MissingPkg_ != 0)) {
+    Msg <-
+    paste0("One or more required packages need to be installed in order ",
+      "to run the model. Following are the missing package(s): ",
+      paste(MissingPkg_, collapse = ", "), ".")
+    writeLog(Msg,Level="error")
+    stop(Msg)
+  }
+  #Check for 'Initialize' module in each package if so add to ModuleCalls_df
+  Add_ls <- list()
+  # Do not add Initialize if the package was required in an earlier model stage
+  # Results of Initialization in that case will already be in the Datastore
+  for (Pkg in unique(setdiff(ModuleCalls_df$PackageName,AlreadyInitialized_))) {
+    PkgData <- data(package = Pkg)$results[,"Item"]
+    if ("InitializeSpecifications" %in% PkgData) {
+      Add_df <-
+      data.frame(
+        ModuleName = "Initialize",
+        PackageName = Pkg,
+        RunFor = "AllYears",
+        RunYear = "Year"
       )
+      Add_ls[[Pkg]] <- Add_df
     }
-
-    #Identify all modules and datasets in required packages
-    Datasets_df <-
-    data.frame(
-      do.call(
-        rbind,
-        lapply(RequiredPkg_, function(x) {
-          data(package = x)$results[,c("Package", "Item")]
-        })
-      ), stringsAsFactors = FALSE
+  }
+  #Insert Initialize module entries into ModuleCalls_df
+  Pkg_ <- names(Add_ls)
+  for (Pkg in Pkg_) {
+    Idx <- head(grep(Pkg, ModuleCalls_df$PackageName), 1)
+    End <- nrow(ModuleCalls_df)
+    ModuleCalls_df <- rbind(
+      ModuleCalls_df[1:(Idx - 1),],
+      Add_ls[[Pkg]],
+      ModuleCalls_df[Idx:End,]
     )
-    WhichAreModules_ <- grep("Specifications", Datasets_df$Item)
-    ModulesByPackage_df <- Datasets_df[WhichAreModules_,]
-    ModulesByPackage_df$Module <-
-    gsub("Specifications", "", ModulesByPackage_df$Item)
-    ModulesByPackage_df$Item <- NULL
-    DatasetsByPackage_df <- Datasets_df[-WhichAreModules_,]
-    names(DatasetsByPackage_df) <- c("Package", "Dataset")
-    #Save the modules and datasets lists in the model state
-    setModelState(
-      list (
-        ModulesByPackage_df = ModulesByPackage_df,
-        DatasetsByPackage_df = DatasetsByPackage_df,
-        RequiredVEPackages = RequiredPkg_
-      ),
-      Save=RunModel
-    )
+  }
 
-    #Iterate through each module call and check availability and specifications
-    #create combined list of all specifications
-    # ModulesByPackage_df lists all modules available in the packages
-    # ModuleCalls_df lists only modules that appear in runModule commands
-    # AllSpecs_ls is a list of processed specifications
-    # We refer to it later to find and load input files, and to simulate a model run
-    Errors_ <- character(0)
-    AllSpecs_ls <- list()
-    for (i in 1:nrow(ModuleCalls_df)) {
-      AllSpecs_ls[[i]] <- list()
-      ModuleName <- ModuleCalls_df$ModuleName[i]
-      AllSpecs_ls[[i]]$ModuleName <- ModuleName
-      PackageName <- ModuleCalls_df$PackageName[i]
-      AllSpecs_ls[[i]]$PackageName <- PackageName
-      AllSpecs_ls[[i]]$RunFor <- ModuleCalls_df$RunFor[i]
-      #Check module availability
-      Err <- checkModuleExists(ModuleName, PackageName, InstalledPkgs_)
-      if (length(Err) > 0) {
-        Errors_ <- c(Errors_, Err)
-        next()
-      }
-      #Load and check the module specifications
-      Specs_ls <- processModuleSpecs(getModuleSpecs(ModuleName, PackageName))
-      Err <- checkModuleSpecs(Specs_ls, ModuleName)
-      if (length(Err) > 0) {
-        Errors_ <- c(Errors_, Err)
-        next()
-      } else {
-        AllSpecs_ls[[i]]$Specs <- Specs_ls
-      }
-      #If the 'Call' spec is not null and is a list, check the called module
-      if (!is.null(Specs_ls$Call) && is.list(Specs_ls$Call)) {
-        #Iterate through module calls
-        for (j in 1:length(Specs_ls$Call)) {
-          Call_ <- unlist(strsplit(Specs_ls$Call[[j]], "::"))
-          #Check module availability
-          if (length(Call_) == 2) { # package explicitly specified
-            Err <-
-            checkModuleExists(
-              Call_[2],
-              Call_[1],
-              InstalledPkgs_,
-              c(Module = ModuleName, Package = PackageName))
-          } else  {
-            if (length(Call_) == 1) { # only module name is provided
-              if (! any(Call_ %in% ModulesByPackage_df$Module) ) {
-                Err <- c(
-                  paste0("Error in runModule call for module ", Call_,"."),
-                  "It is not present in any package already identified in the model run script.",
-                  "Please add requirePackage(<package-with-module>) to the script."
-                )
-              } else {
-                callPkgs_ <- ModuleCalls_df$PackageName[Call_ %in% ModuleCalls_df$ModuleName]
-                if ( length(callPkgs_)==1 ) { # use existing explicit call to module
-                  Call_ <- c( callPkgs_, Call_ )
-                } else  { # callPkgs_ is probably length 0, but could also have more than 1
-                  Pkg <- ModulesByPackage_df$Package[ModulesByPackage_df$Module == Call_]
-                  Call_ <- c(unique(Pkg), Call_)
-                  if (length(Call_) > 2 ) { # More than one package contains the module
-                    callPkgs_ <- Call_[-length(Call_)]
-                    callModule_ <- Call_[length(Call_)]
-                    testPkgs_ <- callPkgs_[callPkgs_ %in% explicitRequired_]
-                    if ( length(testPkgs_) == 0 ) testPkgs_ <- callPkgs_  # No explicit required package
-                    if ( length(testPkgs_) > 1 ) { # Could not resolve by explicit required package
-                      Msg_ <- paste("Providing module",callModule_,"from package",testPkgs_[1])
-                      Warn_ <- c(
-                        Msg_,
-                        paste("Also present in: ", paste(testPkgs_[2:length(testPkgs_)],collapse=", ")),
-                        "Use requirePackage() to force selection."
-                      )
-                      writeLog(Warn_,Level="warn")
-                    } else { # Resolved to exactly one package with the module
-                      writeLog(paste("Provided module",callModule_,"from Package",testPkgs_[1]),Level="info")
-                    }
-                    Call_ <- c(testPkgs_[1],callModule_) # Use the first package found, unless explicit
+  #Identify all modules and datasets in required packages
+  Datasets_df <-
+  data.frame(
+    do.call(
+      rbind,
+      lapply(RequiredPkg_, function(x) {
+        data(package = x)$results[,c("Package", "Item")]
+      })
+    ), stringsAsFactors = FALSE
+  )
+  WhichAreModules_ <- grep("Specifications", Datasets_df$Item)
+  ModulesByPackage_df <- Datasets_df[WhichAreModules_,]
+  ModulesByPackage_df$Module <-
+  gsub("Specifications", "", ModulesByPackage_df$Item)
+  ModulesByPackage_df$Item <- NULL
+  DatasetsByPackage_df <- Datasets_df[-WhichAreModules_,]
+  names(DatasetsByPackage_df) <- c("Package", "Dataset")
+  #Save the modules and datasets lists in the model state
+  setModelState(
+    list (
+      ModulesByPackage_df = ModulesByPackage_df,
+      DatasetsByPackage_df = DatasetsByPackage_df,
+      RequiredVEPackages = RequiredPkg_
+    ),
+    Save=RunModel
+  )
+
+  #Iterate through each module call and check availability and specifications
+  #create combined list of all specifications
+  # ModulesByPackage_df lists all modules available in the packages
+  # ModuleCalls_df lists only modules that appear in runModule commands
+  # AllSpecs_ls is a list of processed specifications
+  # We refer to it later to find and load input files, and to simulate a model run
+  Errors_ <- character(0)
+  AllSpecs_ls <- list()
+  for (i in 1:nrow(ModuleCalls_df)) {
+    AllSpecs_ls[[i]] <- list()
+    ModuleName <- ModuleCalls_df$ModuleName[i]
+    AllSpecs_ls[[i]]$ModuleName <- ModuleName
+    PackageName <- ModuleCalls_df$PackageName[i]
+    AllSpecs_ls[[i]]$PackageName <- PackageName
+    AllSpecs_ls[[i]]$RunFor <- ModuleCalls_df$RunFor[i]
+    #Check module availability
+    Err <- checkModuleExists(ModuleName, PackageName, InstalledPkgs_)
+    if (length(Err) > 0) {
+      Errors_ <- c(Errors_, Err)
+      next()
+    }
+    #Load and check the module specifications
+    Specs_ls <- processModuleSpecs(getModuleSpecs(ModuleName, PackageName))
+    Err <- checkModuleSpecs(Specs_ls, ModuleName)
+    if (length(Err) > 0) {
+      Errors_ <- c(Errors_, Err)
+      next()
+    } else {
+      AllSpecs_ls[[i]]$Specs <- Specs_ls
+    }
+    #If the 'Call' spec is not null and is a list, check the called module
+    if (!is.null(Specs_ls$Call) && is.list(Specs_ls$Call)) {
+      #Iterate through module calls
+      for (j in 1:length(Specs_ls$Call)) {
+        Call_ <- unlist(strsplit(Specs_ls$Call[[j]], "::"))
+        #Check module availability
+        if (length(Call_) == 2) { # package explicitly specified
+          Err <-
+          checkModuleExists(
+            Call_[2],
+            Call_[1],
+            InstalledPkgs_,
+            c(Module = ModuleName, Package = PackageName))
+        } else  {
+          if (length(Call_) == 1) { # only module name is provided
+            if (! any(Call_ %in% ModulesByPackage_df$Module) ) {
+              Err <- c(
+                paste0("Error in runModule call for module ", Call_,"."),
+                "It is not present in any package already identified in the model run script.",
+                "Please add requirePackage(<package-with-module>) to the script."
+              )
+            } else {
+              callPkgs_ <- ModuleCalls_df$PackageName[Call_ %in% ModuleCalls_df$ModuleName]
+              if ( length(callPkgs_)==1 ) { # use existing explicit call to module
+                Call_ <- c( callPkgs_, Call_ )
+              } else  { # callPkgs_ is probably length 0, but could also have more than 1
+                Pkg <- ModulesByPackage_df$Package[ModulesByPackage_df$Module == Call_]
+                Call_ <- c(unique(Pkg), Call_)
+                if (length(Call_) > 2 ) { # More than one package contains the module
+                  callPkgs_ <- Call_[-length(Call_)]
+                  callModule_ <- Call_[length(Call_)]
+                  testPkgs_ <- callPkgs_[callPkgs_ %in% explicitRequired_]
+                  if ( length(testPkgs_) == 0 ) testPkgs_ <- callPkgs_  # No explicit required package
+                  if ( length(testPkgs_) > 1 ) { # Could not resolve by explicit required package
+                    Msg_ <- paste("Providing module",callModule_,"from package",testPkgs_[1])
+                    Warn_ <- c(
+                      Msg_,
+                      paste("Also present in: ", paste(testPkgs_[2:length(testPkgs_)],collapse=", ")),
+                      "Use requirePackage() to force selection."
+                    )
+                    writeLog(Warn_,Level="warn")
+                  } else { # Resolved to exactly one package with the module
+                    writeLog(paste("Provided module",callModule_,"from Package",testPkgs_[1]),Level="info")
                   }
+                  Call_ <- c(testPkgs_[1],callModule_) # Use the first package found, unless explicit
                 }
               }
-            } else {
-              Err <- paste("Cannot fathom Call specification:",Specs_ls$Call[[j]])
             }
+          } else {
+            Err <- paste("Cannot fathom Call specification:",Specs_ls$Call[[j]])
           }
+        }
+        if (length(Err) > 0) {
+          Errors_ <- c(Errors_, Err)
+          next()
+        }
+        # Load and check the module specifications and add Get specs if
+        # there are no specification errors
+        for (i in 1:(length(Call_)-1)) { # Code above forces length(Call_) always to be 2 or fail
+          CallSpecs_ls <-
+          processModuleSpecs(getModuleSpecs(Call_[length(Call_)], Call_[i]))
+          Err <- checkModuleSpecs(CallSpecs_ls, Call_[length(Call_)])
           if (length(Err) > 0) {
             Errors_ <- c(Errors_, Err)
             next()
-          }
-          # Load and check the module specifications and add Get specs if
-          # there are no specification errors
-          for (i in 1:(length(Call_)-1)) { # Code above forces length(Call_) always to be 2 or fail
-            CallSpecs_ls <-
-            processModuleSpecs(getModuleSpecs(Call_[length(Call_)], Call_[i]))
-            Err <- checkModuleSpecs(CallSpecs_ls, Call_[length(Call_)])
-            if (length(Err) > 0) {
-              Errors_ <- c(Errors_, Err)
-              next()
-            } else {
-              AllSpecs_ls[[i]]$Specs$Get <-
-              c(AllSpecs_ls[[i]]$Specs$Get <- Specs_ls$Get)
-            }            
-          }
+          } else {
+            AllSpecs_ls[[i]]$Specs$Get <-
+            c(AllSpecs_ls[[i]]$Specs$Get <- Specs_ls$Get)
+          }            
         }
       }
     }
+
     #If any errors, print to log and stop execution
     if (length(Errors_) > 0) {
       Msg <-
@@ -568,7 +559,7 @@ function(
     }
   }
 
-  if ( "Run" %in% runSteps ) {
+  if ( RunModel ) {
     # perform the "Run" step
 
     #==============================================================
@@ -764,7 +755,7 @@ function(
 
   #Report done with initialization
   #-------------------------------
-  if ( saveModelState ) {
+  if ( RunModel ) {
     writeLog(
       c(
         paste("Scenario:",ve.model$ModelState_ls$Scenario),
@@ -773,6 +764,26 @@ function(
     )
   }
   writeLog("Model successfully initialized.", Level = "warn")
+}
+
+#=================
+#IS MODEL RUNNING?
+#=================
+#' Check if model is running
+#'
+#' \code{modelRunning} returns TRUE if the model is running; otherwise
+#' the run_model.R script is executed as a "dry run"
+#'
+#' @return TRUE if ve.model$RunModel is TRUE, otherwise FALSE
+#' @export
+modelRunning <- function() {
+  if ( ! "ve.model" %in% search() ) { # have not performed initializeModel
+    return(FALSE)
+  } else if ( "RunModel" %in% ls(ve.model) ) { # VEModel will set during "open" or "run" model
+    return(ve.model$RunModel)
+  } else { # The model is running in backward-compatible mode
+    return(ve.model$RunModel <- TRUE)
+  }
 }
 
 #===============
@@ -815,6 +826,9 @@ requirePackage <- function(Package) TRUE
 #'   attributes.
 #' @export
 runModule <- function(ModuleName, PackageName, RunFor, RunYear, StopOnErr = TRUE) {
+
+  if ( ! modelRunning() ) invisible( list(Errors=character(0),Warnings="Model Not Running") )
+  
   #Check whether the module should be run for the current run year
   #---------------------------------------------------------------
   BaseYear <- getModelState()$BaseYear
@@ -977,12 +991,6 @@ runModule <- function(ModuleName, PackageName, RunFor, RunYear, StopOnErr = TRUE
            "' for year '", RunYear, "'.")
   writeLog(Msg,Level="warn")
 
-  invisible(
-    list(
-      Errors = Errors_,
-      Warnings = Warnings_
-    )
-  )
   if ( length(Warnings_) > 0 ) {
     writeLog(Warnings_,Level="warn")
   }
@@ -990,6 +998,13 @@ runModule <- function(ModuleName, PackageName, RunFor, RunYear, StopOnErr = TRUE
     writeLog(Errors_,Level="error")
     if ( StopOnErr ) stop("runModule call failed") else warning("Not stopping for errors...")
   }
+
+  invisible(
+    list(
+      Errors = Errors_,
+      Warnings = Warnings_
+    )
+  )
 }
 
 #RUN SCRIPT
@@ -1029,6 +1044,8 @@ runScript <- function(Module, Specification=NULL, RunFor, RunYear, writeDatastor
   ModuleSource <- substitute(Module)
   ModuleFunc <- (Module)
 
+  if ( ! modelRunning() ) invisible( list(Errors=character(0),Warnings="Model Not Running") )
+  
   #Set up failure message
   #----------------------
   badModule <- function(ModuleName,Msg) {

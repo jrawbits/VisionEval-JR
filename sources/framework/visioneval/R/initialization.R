@@ -75,7 +75,7 @@ getRunParameter <- function(Parameter,Default=NA,Param_ls=NULL) {
 #READ CONFIGURATION FILE
 #=======================
 #'
-#' \code{readConfigurationFil} a visioneval control function to load Run Parameters from a
+#' \code{readConfigurationFile} a visioneval control function to load Run Parameters from a
 #' configuration file. The files are in JSON format (like defs/run_parameters.json in a
 #' typical model).
 #'
@@ -97,7 +97,7 @@ readConfigurationFile <- function(ParamDir,ParamFile) {
     ParamPattern <- sapply(ParamFiles,function(x) paste0("(",x,")"))
     ParamPattern <- paste("^",paste(ParamPattern,collapse="|"),"$",sep="")
     ParamPattern <- gsub("\\.","\\.",ParamPattern) # quote literal periods in file name candidates
-    candidates <- dir(ParamDir,pattern=ParamPattern,all=TRUE,no..=TRUE,ignore.case=TRUE) # find any matching files
+    candidates <- dir(ParamDir,pattern=ParamPattern,all.files=TRUE,no..=TRUE,ignore.case=TRUE) # find any matching files
     candidates <- ParamFiles[ ParamFiles %in% candidates ] # get the search order right
     if ( length(candidates)==0 ) {
       return(list())
@@ -159,7 +159,7 @@ readConfigurationFile <- function(ParamDir,ParamFile) {
 #' If multiple configuration files are defined, the are sought in this order: .cnf,
 #' .visioneval, visioneval.json, run_parameters.json
 #'
-#' @param ModelRun A logical (default TRUE) which if FALSE says only to load system and
+#' @param RunModel A logical (default TRUE) which if FALSE says only to load system and
 #'   user configurations.
 #' @param ... Additional named parameters passed in from earlier function invocations
 #'
@@ -173,7 +173,7 @@ loadConfiguration <- function(RunModel=TRUE,...) {
   RunParam_ls <- list()
   attr(RunParam_ls,"cnf") <- character(0)
   ve.runtime <- normalizePath(get0("ve.runtime",ifnotfound=getwd()),winslash="/")
-  browser()
+  # browser()
 
   # helper function to update a set of run parameters and their source
   updateConfiguration <- function(RunParam_ls,newParam_ls,message) {
@@ -261,7 +261,7 @@ loadConfiguration <- function(RunModel=TRUE,...) {
   # Often these will be set up by VEModel or VEScenario prior to running the model
   # Things like InputPath for alternate input locations or adding in ScenarioRoot
   EnvParam_ls <- list()
-  userParams <- rev(find(("RunParam_ls"))
+  userParams <- rev(find(("RunParam_ls")))
   for ( ep in userParams ) { # Process back to front
     env <- as.environment(ep)
     EnvParam_ls[ names(env$RunParam_ls) ] <- env$RunParam_ls
@@ -312,15 +312,15 @@ loadConfiguration <- function(RunModel=TRUE,...) {
 #' @param File The name of the file to seek
 #' @param Dir The name of a run parameter specifying a directory relative to getwd()
 #' @param DefaultDir The default value for the run parameter directory
-#' @param RunParam_ls The run parameters in which to seek InputPath and Dir (default
+#' @param Param_ls The run parameters in which to seek InputPath and Dir (default
 #'   is the one in ve.model environment)
 #' @param StopOnError logical, if TRUE stop if no existing file is found, else return NA
 #' @return the path of a file existing on InputDir/Dir/File or NA if not found
 #' @export
-findRuntimeInputFile <- function(File,Dir="InputDir",DefaultDir="inputs",RunParam_ls=NULL,StopOnError=TRUE) {
-  inputPath <- getRunParameter("InputPath",Default="",RunParam_ls=RunParam_ls)
-  searchDir <- getRunParameter(Dir,Default=NA,RunParam_ls=RunParam_ls)
-  fileName  <- getRunParameter(File,Default=NA,RunParam_ls=RunParam_ls)
+findRuntimeInputFile <- function(File,Dir="InputDir",DefaultDir="inputs",Param_ls=NULL,StopOnError=TRUE) {
+  inputPath <- getRunParameter("InputPath",Default="",Param_ls=Param_ls)
+  searchDir <- getRunParameter(Dir,Default=NA,Param_ls=Param_ls)
+  fileName  <- getRunParameter(File,Default=NA,Param_ls=Param_ls)
   searchDir <- file.path(inputPath,searchDir) # might yield more than one
   candidates <- character(0)
   if ( any(!is.na(searchDir)) && !is.na(fileName) )  {
@@ -351,29 +351,18 @@ findRuntimeInputFile <- function(File,Dir="InputDir",DefaultDir="inputs",RunPara
 #'
 #' @param Save A logical (default=TRUE) indicating whether the model state file
 #'   should be written out.
-#' @param ... Additional named parameters that will override VisionEval.cnf or
-#'   run_parameters.json. These historically include:
-#' Dir [A string identifying the name of the directory where the global
-#' parameters, deflator, and default units files are located. The default value
-#' is defs.]
-#' ParamFile [A string identifying the name of the global parameters file.
-#' The default value is run_parameters.json.]
-#' DeflatorFile [A string identifying the name of the file which contains
-#' deflator values by year (e.g. consumer price index). The default value is
-#' deflators.csv.]
-#' UnitsFile [A string identifying the name of the file which contains
-#' default units for complex data types (e.g. currency, distance, speed, etc.).
-#' The default value is units.csv.]
-#'
+#' @param Param_ls A named list of model run parameters
 #' @return TRUE if the model state list is created and file is saved, FALSE if
 #' the model state file was not saved.
 #' @export
 #' @import jsonlite
-initModelState <- function(Save=TRUE) {
+initModelState <- function(Save=TRUE,Param_ls=NULL) {
 
-  # Load model environment (should have RunParam_ls already loaded)
-  model.env <- getModelEnvironment()
-  RunParam_ls <- model.env$RunParam_ls;
+  # Load model environment (should have RunParam_ls already loaded, furnishing ...)
+  if ( ! is.list(Param_ls) ) {
+    model.env <- modelEnvironment()
+    Param_ls <- model.env$RunParam_ls;
+  }
 
   # The required parameters will be the initial elements for the ModelState
   # Other RunParam_ls elements will be placed in ModelState_ls$RunParam_ls
@@ -381,7 +370,7 @@ initModelState <- function(Save=TRUE) {
     "Model", "Scenario", "Description", "Region", "BaseYear", "Years",
     "DatastoreName", "Seed"
   )
-  ParamExists_ <- RequiredParam_ %in% names(RunParam_ls)
+  ParamExists_ <- RequiredParam_ %in% names(Param_ls)
   if (any(!ParamExists_)) {
     MissingParam_ <- RequiredParam_[!ParamExists_]
     Message <- c(
@@ -394,24 +383,24 @@ initModelState <- function(Save=TRUE) {
   # Install the parameters - the required parameters become the foundation for
   # ModelState_ls. Other parameters are placed in newModelState_ls$RunParameters,
   # (including things like ParamDir, UnitsFile, etc.)
-  newModelState_ls <- RunParam_ls[RequiredParam_]
-  # ModelState version of RunParam_ls now also includes the required parameters
+  newModelState_ls <- Param_ls[RequiredParam_]
+  # ModelState version of Param_ls now also includes the required parameters
   # Formerly: newModelState_ls$RunParam_ls <- RunParam_ls[ ! (names(RunParam_ls) %in% RequiredParam_) ]
-  newModelState_ls$RunParam_ls <- RunParam_ls
+  newModelState_ls$RunParam_ls <- Param_ls
   newModelState_ls$LastChanged <- Sys.time()
 
   # Also load the complete deflators and units files, which will be accessed later via ModelState_ls
-  DeflatorFile <- getRunParameter("DeflatorFile",Default="deflators.csv",RunParam_ls=RunParam_ls)
-  DeflatorFilePath <- findRuntimeInputFile(DeflatorFile,Dir="ParamDir",DefaultDir="defs",RunParam_ls=RunParam_ls)
+  DeflatorFile <- getRunParameter("DeflatorFile",Default="deflators.csv",Param_ls=Param_ls)
+  DeflatorFilePath <- findRuntimeInputFile(DeflatorFile,Dir="ParamDir",DefaultDir="defs",Param_ls=Param_ls)
   newModelState_ls$Deflators <- read.csv(DeflatorFilePath, as.is = TRUE)
 
-  UnitsFile <- getRunParameter("UnitsFile",Default="units.csv",RunParam_ls=RunParam_ls)
-  UnitsFilePath <- findRuntimeInputFile(DeflatorFile,Dir="ParamDir",RunParam_ls=RunParam_ls)
+  UnitsFile <- getRunParameter("UnitsFile",Default="units.csv",Param_ls=Param_ls)
+  UnitsFilePath <- findRuntimeInputFile(DeflatorFile,Dir="ParamDir",Param_ls=Param_ls)
   newModelState_ls$Units <- read.csv(UnitsFilePath, as.is = TRUE)
 
   # Establish the ModelState in model.env (and optionally the ModelStateFilePath)
   model.env$ModelState_ls <- newModelState_ls
-  model.env$RunParam_ls <- RunParam_ls; # Includes all the run Parameters, including "required"
+  model.env$RunParam_ls <- Param_ls; # Includes all the run Parameters, including "required"
   if ( Save) save(ModelState_ls, envir=model.env, file = getModelStateFilePath())
 
   return(Save) 
@@ -594,7 +583,7 @@ getResultsDirectory <- function() {
 #' @export
 getModelStateFileName <- function() {
   # We'll look in envir$RunParam_ls for name and path information
-  return(basename(getRunParameter("ModelStateName", Default="ModelState.Rda"));)
+  return(basename(getRunParameter("ModelStateName", Default="ModelState.Rda")))
 }
 
 #GET MODEL STATE PATH
@@ -604,16 +593,16 @@ getModelStateFileName <- function() {
 #' \code{getModelStateFilePath} a visioneval framework control function that
 #' returns the path of ModelState.rda relative to getwd(), the model run directory.
 #'
-#' @param RunParam_ls run parameters to seek, or ve.model version if not provided
+#' @param Param_ls run parameters to seek, or ve.model version if not provided
 #' @return a character string containing the path to the ModelState file
 #' @export
-getModelStateFilePath <- function(RunParam_ls=NULL) {
+getModelStateFilePath <- function(Param_ls=NULL) {
   envir <- modelEnvironment()
   modelStateName <- get0(
     "ModelStatePath", envir=envir, inherits=FALSE,
     ifnotfound={
       modelStateFile <- getModelStateFileName()
-      resultsDir <- getRunParameter("ResultsDir",Default=".",RunParam_ls=RunParam_ls)
+      resultsDir <- getRunParameter("ResultsDir",Default=".",Param_ls=Param_ls)
       envir$ModelStatePath <- file.path(resultsDir,modelStateFile)
     }
   )
@@ -873,11 +862,6 @@ writeLog <- function(Msg = "", Level="Info", Logger="") {
 #' @param FileToLoad A string identifying the full path name to the saved
 #'   datastore. Path name can either be relative to the working directory or
 #'   absolute.
-#' @param Dir A string identifying the path of the geography definition file (GeoFile),
-#'   default to 'defs' relative to the working directory
-#' @param GeoFile A string identifying the name of the geography definition file
-#'   (see 'readGeography' function) that is consistent with the saved datastore.
-#'   The geography definition file must be located in the 'defs' directory.
 #' @param SaveDatastore A logical identifying whether an existing datastore
 #'   will be saved. It is renamed by appending the system time to the name. The
 #'   default value is TRUE.
@@ -888,12 +872,14 @@ writeLog <- function(Msg = "", Level="Info", Logger="") {
 #'   and the contents of the loaded datastore. If the stored file does not exist
 #'   an error is thrown.
 #' @export
-loadDatastore <- function(FileToLoad, Dir="defs/", GeoFile, SaveDatastore = TRUE) {
-  GeoFile <- file.path(Dir, GeoFile)
+loadDatastore <- function(FileToLoad, SaveDatastore = TRUE) {
   G <- getModelState()
   #If data store exists, rename
+  # TODO: that should already have been done when we set up the loading
+  #       wherever this function was called from.
   DatastoreName <- G$DatastoreName
   if (file.exists(DatastoreName) & SaveDatastore) {
+    # TODO: blow away the existing one if SaveDatastore is not TRUE
     TimeString <- gsub(" ", "_", as.character(Sys.time()))
     ArchiveDatastoreName <-
       paste0(unlist(strsplit(DatastoreName, "\\."))[1],
@@ -904,13 +890,15 @@ loadDatastore <- function(FileToLoad, Dir="defs/", GeoFile, SaveDatastore = TRUE
   }
   if (file.exists(FileToLoad)) {
     file.copy(FileToLoad, DatastoreName)
-    Geo_df <- read.csv(GeoFile, colClasses = "character")
-    Update_ls <- list()
-    Update_ls$BzoneSpecified <- !all(is.na(Geo_df$Bzone))
-    Update_ls$CzoneSpecified <- !all(is.na(Geo_df$Czone))
-    Update_ls$Geo_df <- Geo_df
-    setModelState(Update_ls)
-    listDatastore()
+    # Note: already checked geography consistency
+#     GeoFile <- file.path(Dir, GeoFile)
+#     Geo_df <- read.csv(GeoFile, colClasses = "character")
+#     Update_ls <- list()
+#     Update_ls$BzoneSpecified <- !all(is.na(Geo_df$Bzone))
+#     Update_ls$CzoneSpecified <- !all(is.na(Geo_df$Czone))
+#     Update_ls$Geo_df <- Geo_df
+#     setModelState(Update_ls)
+    listDatastore() # Rebuild datastore index
   } else {
     Message <- paste("File", FileToLoad, "not found.")
     writeLog(Message,Level="error")
@@ -940,35 +928,27 @@ loadDatastore <- function(FileToLoad, Dir="defs/", GeoFile, SaveDatastore = TRUE
 #'
 #' @param Save A logical (default=TRUE) indicating whether the model state
 #'   should be saved to the model state file, or just updated in ve.model environment
-#' @param ... Additional named arguments may explicitly override ParamDir and GeoFile
-#'   (otherwise these will be sought in the ModelState after having been set in
-#'   VisionEval.cnf or in run_parameters.json).
-#' ParamDir [A string identifying the path to the geographic
-#'   specifications file. Note: don't include the final separator in the
-#'   path name 'e.g. not defs/'.]
-#' GeoFile [A string identifying the name of the geographic
-#'   specifications file. This is a csv-formatted text file which contains
-#'   columns named 'Azone', 'Bzone', 'Czone', and 'Marea'. The 'Azone' column
-#'   must have zone names in all rows. The 'Bzone' and 'Czone' columns can be
-#'   unspecified (NA in all rows) or may have have unique names in every row.
-#'   The 'Marea' column (referring to metropolitan areas) identifies
-#'   metropolitan areas corresponding to the most detailed level of specified
-#'   geography (or 'None' no metropolitan area occupies any portion of the
-#'   zone.]
 #' @return The value TRUE is returned if the function is successful at reading
+#' @param Param_ls a list of parameters
 #'   the file and the specifications are consistent. It stops if there are any
 #'   errors in the specifications. All of the identified errors are written to
 #'   the run log. A data frame containing the file entries is added to the
 #'   model state file as Geo_df'.
 #' @export
-readGeography <- function(Save=TRUE) {
+readGeography <- function(Save=TRUE,Param_ls=NULL) {
   #Check for errors in the geographic definitions file
+
+  # Load model environment (should have RunParam_ls already loaded, furnishing ...)
+  if ( ! is.list(Param_ls) ) {
+    model.env <- modelEnvironment()
+    Param_ls <- model.env$RunParam_ls
+  }
 
   #Read in geographic definitions if file exists, otherwise error
   #--------------------------------------------------------------
-  GeoFile <- getRunParameter("GeoFile",Default="geo.csv",RunParam_ls=RunParam_ls)
-  GeoFilePath <- findRuntimeInputFile(GeoFile,Dir="ParamDir",DefaultDir="defs",RunParam_ls=RunParam_ls)
-  Geo_df <- read.csv(GeoFilePath, colClasses="character)
+  GeoFile <- getRunParameter("GeoFile",Default="geo.csv",Param_ls=Param_ls)
+  GeoFilePath <- findRuntimeInputFile(GeoFile,Dir="ParamDir",DefaultDir="defs",Param_ls=Param_ls)
+  Geo_df <- read.csv(GeoFilePath, colClasses="character")
   attr(Geo_df,"file") <- GeoFilePath
   CheckResults_ls <- checkGeography(Geo_df)
 
