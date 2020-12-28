@@ -503,57 +503,8 @@ checkModuleOutputs <-
 #' in large part by the checkModuleOutputs function that is called.
 #'
 #' @param ModuleName A string identifying the module name.
-#' @param ParamDir A string identifying the location of the directory where
-#' the run parameters, model parameters, and geography definition files are
-#' located. The default value is defs. This directory should be located in the
-#' tests directory.
-#' @param RunParamFile A string identifying the name of the run parameters
-#' file. The default value is run_parameters.json.
-#' @param GeoFile A string identifying the name of the file which contains
-#' geography definitions.
-#' @param ModelParamFile A string identifying the name of the file which
-#' contains model parameters. The default value is model_parameters.json.
-#' @param LoadDatastore A logical value identifying whether to load an existing
-#' datastore. If TRUE, it loads the datastore whose name is identified in the
-#' run_parameters.json file. If FALSE it initializes a new datastore.
-#' @param SaveDatastore A logical value identifying whether the module outputs
-#' will be written to the datastore. If TRUE the module outputs are written to
-#' the datastore. If FALSE the outputs are not written to the datastore.
-#' @param DoRun A logical value identifying whether the module should be run. If
-#'   FALSE, the function will initialize a datastore, check specifications, and
-#'   load inputs but will not run the module but will return the list of module
-#'   specifications. That setting is useful for module development in order to
-#'   create the all the data needed to assist with module programming. It is
-#'   used in conjunction with the getFromDatastore function to create the
-#'   dataset that will be provided by the framework. The default value for this
-#'   parameter is TRUE. In that case, the module will be run and the results
-#'   will checked for consistency with the Set specifications.
-#' @param RunFor A string identifying what years the module is to be tested for.
-#'   The value must be the same as the value that is used when the module is run
-#'   in a module. Allowed values are 'AllYears', 'BaseYear', and 'NotBaseYear'.
-#' @param StopOnErr A logical identifying whether model execution should be
-#'   stopped if the module transmits one or more error messages or whether
-#'   execution should continue with the next module. The default value is TRUE.
-#'   This is how error handling will ordinarily proceed during a model run. A
-#'   value of FALSE is used when 'Initialize' modules in packages are run during
-#'   model initialization. These 'Initialize' modules are used to check and
-#'   preprocess inputs. For this purpose, the module will identify any errors in
-#'   the input data, the 'initializeModel' function will collate all the data
-#'   errors and print them to the log.
-#' @param RequiredPackages A character vector identifying any packages that
-#'   must be installed in order to test the module because the module either
-#'   has a soft reference to a module in the package (i.e. the Call spec only
-#'   identifies the name of the module being called) or a soft reference to a
-#'   dataset in the module (i.e. only identifies the name of the dataset). The
-#'   default value is NULL.
-#' @param TestGeoName A character vector identifying the name of the geographic
-#'   area for which data is to be loaded. This argument has effect only if the
-#'   DoRun argument is FALSE. It enables the module developer to choose the
-#'   geographic area data is to be loaded for when developing a module that
-#'   is run for geography other than the region. For example if a module is
-#'   run at the Azone level, the user can specify the name of the Azone that
-#'   data is to be loaded for. If the name is misspecified an error will be
-#'   flagged.
+#' @param Param_ls Parameter configuration (list)
+#' @param ... Other parameters (see comments)
 #' @return If DoRun is FALSE, the return value is a list containing the module
 #'   specifications. If DoRun is TRUE, there is no return value. The function
 #'   writes out messages to the console and to the log as the testing proceeds.
@@ -563,28 +514,70 @@ checkModuleOutputs <-
 #'   error messages are also written to the log.
 #' @export
 testModule <-
-  function(ModuleName,
-           ParamDir = "defs",
-           RunParamFile = "run_parameters.json",
-           GeoFile = "geo.csv",
-           ModelParamFile = "model_parameters.json",
-           LoadDatastore = FALSE,
-           SaveDatastore = TRUE,
-           DoRun = TRUE,
-           RunFor = "AllYears",
-           StopOnErr = TRUE,
-           RequiredPackages = NULL,
-           TestGeoName = NULL) {
+  function(ModuleName,Param_ls=NULL,...) {
+#            ParamDir = "defs",
+#            RunParamFile = "run_parameters.json",
+#            GeoFile = "geo.csv",
+#            ModelParamFile = "model_parameters.json",
+#            LoadDatastore = FALSE,
+#            SaveDatastore = TRUE,
+#            DoRun = TRUE,
+#            RunFor = "AllYears",
+#            StopOnErr = TRUE,
+#            RequiredPackages = NULL,
+#            TestGeoName = NULL) {
+
+    # TODO: make this work with the new parameter setup
+    #       the entire thing needs to be rethought...
 
     #Set working directory to tests and return to main module directory on exit
     #--------------------------------------------------------------------------
     setwd("tests")
     on.exit(setwd("../"))
 
+    if ( ! is.list(Param_ls) ) {
+      model.env <- modelEnvironment()
+      if ( "RunParam_ls" %in% ls(model.env) ) {
+        Param_ls <- model.env$RunParam_ls
+      } else {
+        Param_ls <- list()
+      }
+    }
+
+    ParamDir = "defs"
+    RunParamFile = "run_parameters.json"
+    GeoFile = "geo.csv"
+    ModelParamFile = "model_parameters.json"
+    LoadDatastore = FALSE
+    SaveDatastore = TRUE
+    DoRun = TRUE
+    RunFor = "AllYears"
+    StopOnErr = TRUE
+    RequiredPackages = NULL
+    TestGeoName = NULL
+
+    defParam_ls <- list(
+      ParamDir = "defs",
+      RunParamFile = "run_parameters.json",
+      GeoFile = "geo.csv",
+      ModelParamFile = "model_parameters.json",
+      LoadDatastore = FALSE,
+      SaveDatastore = TRUE,
+      DoRun = TRUE,
+      RunFor = "AllYears",
+      StopOnErr = TRUE,
+      RequiredPackages = NULL,
+      TestGeoName = NULL
+    )
+    missing <- ! names(defParam_ls) %in% names(Param_ls)
+    Param_ls[missing] <- defParam_ls[missing]
+    f.env <- environment()
+    for ( p in names(Param_ls) ) assign(p,Param_ls[p],envir=f.env)
+
     #Initialize model state and log files
     #------------------------------------
     Msg <- paste0("Testing ", ModuleName, ".")
-    initModelState(Dir = ParamDir, ParamFile = RunParamFile)
+    initModelState(Save=TRUE,Param_ls=NULL)
     initLog(ModuleName)
     writeLog(Msg,Level="warn")
     rm(Msg)
@@ -601,7 +594,7 @@ testModule <-
     if (!is.null(RequiredPkg_)) {
       #Make sure all required packages are present
       InstalledPkgs_ <- rownames(installed.packages())
-      MissingPkg_ <- RequiredPkg_[!(RequiredPkg_ %in% InstalledPkgs_)]
+      MissingPkg_ <- RequiredPkg_[!(RequiredPkg_ %in% InstalledPkgs_)];
       if (length(MissingPkg_ != 0)) {
         Msg <-
           paste0("One or more required packages need to be installed in order ",
@@ -647,13 +640,12 @@ testModule <-
       }
       loadDatastore(
         FileToLoad = DatastoreName,
-        GeoFile = GeoFile,
         SaveDatastore = FALSE
       )
       writeLog("Datastore loaded.", Level="warn")
     } else {
       writeLog("Attempting to initialize datastore.", Level="warn")
-      initDatastore(ParamDir = ParamDir, GeoFile = GeoFile, ModelParamFile = ModelParamFile)
+      initDatastore()
       readGeography()
       initDatastoreGeography()
       loadModelParameters()

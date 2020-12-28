@@ -102,16 +102,12 @@ getUniqueName <- function(newPath,newName) {
 
 ## Helper function
 #  Look for run_model.R (any case) in root or subdirectories and return full paths
-modelInRoot <- function(modelPath,runModelName) {
-  modelSpec <- paste0(runModelName,"$")
+modelInRoot <- function(modelPath,ModelScript) {
+  modelSpec <- paste0(ModelScript,"$")
   paths <- grep(modelSpec,ignore.case=TRUE,dir(modelPath,full.names=TRUE,recursive=TRUE),value=TRUE)
-  # All runModelName files with path relative to modelPath
+  # All ModelScriptPattern files with path relative to modelPath
   paths <- normalizePath(paths,winslash="/")
-  if ( any(paths==modelPath) ) {
-    paths <- paths[ paths==modelPath ] <- "."
-  } else {
-    paths <- dirname(sub(paste0(modelPath,"/"),"",paths)) # remove modelPath so the names are relative.
-  }
+  paths <- sub( modelPath,".",paths ) # still includes the file name
   return(paths)
 }
 
@@ -122,15 +118,13 @@ modelInRoot <- function(modelPath,runModelName) {
 # RunParam_ls provides a list of configuration values 
 # Returns a list with the following elements:
 #   isValid : a boolean, TRUE if we found model(s), FALSE if we did not
-#   runModelName : a character vector (length 1) containing the name of
-#      the run_model.R file (default, "run_model.R"), which we just attempt to
-#      "get" with inheritance (it will be loaded in the ve.runtime config file, if
-#      defined, otherwise default as always to run_model.R
+#   ModelScript : a vector (length of stagePaths) with the actual files found matching
+#      the ModelScript RunParameter.
 #   modelPath : character vector (length 1); the normalized version of parameter
 #   stagePaths : character vector of absolute paths below modelPath that were found
 #      to contain files named <runModelName> (per configuration). First part of
 #      each path will exactly match modelPath.
-findModel <- function( modelPath, RunParam_ls ) {
+findModel <- function( modelPath, Param_ls ) {
 
   find_ls <- list()
   find_ls$isValid <- FALSE # we'll change our mind later...
@@ -141,14 +135,14 @@ findModel <- function( modelPath, RunParam_ls ) {
   }
 
   # Establish the local name for run_model.R
-  # VisionEval.R startup will set ve.env$runModelName from site configuration file
+  # VisionEval.R startup will set ModelScript from site configuration file
   #   located in runtime root (first of .visioneval, VisionEval.ini, VisionEval.cnf)
   #   with same default as here ("run_model.R")
-  find_ls$ModelScript <- visioneval::getRunParameter("ModelScript",RunParam_ls,Default="run_model\\.R")
+  searchScript <- visioneval::getRunParameter("ModelScript",Param_ls,Default="run_model\\.R")
   # TODO: Look for getRunParamter("ModelScriptFile") for alternative search approach
   
   # check if modelPath contains a runModelName
-  if ( grepl(modelPath,paste0(find_ls$ModelScript,"$"),ignore.case=TRUE) ) {
+  if ( grepl(modelPath,paste0(searchScript,"$"),ignore.case=TRUE) ) {
     modelPath <- modelPath[1]
     find_ls$modelPath <- normalizePath(dirname(modelPath),winslash="/")
     find_ls$stagePaths <- "." # modelPath root is the only stagePath
@@ -158,7 +152,7 @@ findModel <- function( modelPath, RunParam_ls ) {
 
   # if modelPath is not an absolute path, search for it amongst the "roots"
   if ( ! isAbsolutePath(modelPath) ) {
-    roots<-getModelRoots(RunParam_ls)
+    roots<-getModelRoots(Param_ls)
     possiblePaths <- file.path(roots,modelPath)
     existing <- dir.exists(possiblePaths)
     if ( ! any(existing) ) {
@@ -175,13 +169,13 @@ findModel <- function( modelPath, RunParam_ls ) {
     find_ls$modelPath <- modelPath
   }
 
-  # TODO: need to elaborate the StateTemplate approach to constructing
-  #   stage paths, and also allow for different run_model.R names
   # Attempt to locate runModelName in directory and sub-directories
-  # The resulting vector are the stage paths
-  find_ls$stagePaths <- modelInRoot(find_ls$modelPath,find_ls$runModelName)
+  # The resulting vector are the stage paths (relative to find_ls$modelPath)
+  find_ls$stagePaths <- modelInRoot(find_ls$modelPath,searchScript)
+  find_ls$ModelScript <- basename(find_ls$stagePaths)
+  find_ls$stagePaths <- dirname(find_ls$stagePaths)
   if ( length(find_ls$stagePaths)<=0 ) {
-    message("No ",find_ls$runModelName," found in ",find_ls$modelPath)
+    message("No ",searchScript," found in ",find_ls$modelPath)
   } else {
     find_ls$isValid <- TRUE
   }
@@ -218,7 +212,7 @@ findStandardModel <- function( model ) {
 
 SampleModelDataFormat <- c( templ="Template",samp="Sample" )
 
-installStandardModel <- function( modelName, modelPath, RunParam_ls, confirm, skeleton ) {
+installStandardModel <- function( modelName, modelPath, confirm, skeleton, Param_ls=NULL ) {
   # Locate and install standard modelName into modelPath
   #   If modelPath is NULL or empty string, create conflict-resolved modelName in first available standard root
   #   If modelPath is an existing directory, put modelName into it (conflict-resolved name)
@@ -228,7 +222,8 @@ installStandardModel <- function( modelName, modelPath, RunParam_ls, confirm, sk
   if ( is.null(modelName) || ! nzchar(modelName) ) return(model) # Vector of available standard model names
 
   # Set up destination modelPath
-  root <- getModelRoots(RunParam_ls,1)
+  if ( ! is.list(Param_ls) ) Param_ls <- list()
+  root <- getModelRoots(Param_ls,1)
   if ( missing(modelPath) || is.null(modelPath) ) modelPath <- modelName
   if ( ! isAbsolutePath(modelPath) ) {
     installPath <- normalizePath(file.path(root,modelPath),winslash="/",mustWork=FALSE)
@@ -301,9 +296,7 @@ ve.model.copy <- function(newName=NULL,newPath=NULL) {
   return( openModel(newModelPath) )
 }
 
-loadModelState <- function(path) {
-  # TODO: needs to respect ModelDir and ResultsDir
-  stop("Need to fix VEModel::loadModelState")
+loadModelState <- function(path,RunParam_ls) {
   ms.env <- new.env()
   if ( ! grepl("ModelState\\.Rda$",path) ) path <- file.path(path,"ModelState.Rda")
   if ( file.exists(path) ) {
@@ -318,9 +311,7 @@ loadModelState <- function(path) {
 # Initialize a VEModel from modelPath
 ve.model.init <- function(modelPath=NULL,verbose=TRUE) {
   # Load system and user model configuration
-  # TODO: figure out where to put RunParam_ls from those guys
-  # Probably need to keep it within the VEModel structure
-  self$RunParam_ls <- visioneval::loadConfiguration(ModelRun=FALSE)
+  self$RunParam_ls <- visioneval::loadConfiguration(RunModel=FALSE)
 
   # Identify the run_model.R root location
   modelPaths <- findModel(modelPath,self$RunParam_ls)
@@ -332,11 +323,12 @@ ve.model.init <- function(modelPath=NULL,verbose=TRUE) {
   self$modelPath <- modelPaths$modelPath
   self$modelName <- basename(self$modelPath)
   if ( verbose ) print(self$modelPath)
-  self$stagePaths <- modelPaths$stagePaths; # named vector of absolute paths to "stages" (folder with run_model.R)
+  self$stagePaths <- modelPaths$stagePaths; # named vector of paths to "stages" (folder with run_model.R)
+  self$stageScripts <- modelPaths$ModelScript; #names of run_model.R scripts for each stage
 
   self$RunParam_ls$runModelName <- modelPaths$runModelName; # should be identical retrieving parameters
 
-  # TODO: make this work with the new initializeModel(RunMode="Load") option.
+  # TODO: make this work with the new initializeModel(RunModel=FALSE) option.
   # We will actually load the ModelState for each stage, and build an in-memory
   #  one if the results folder is not yet created (no "run" attempted yet), or
   #  if there is no subfolder of results for a modelStage, or if there is no ModelState.rda
@@ -345,10 +337,12 @@ ve.model.init <- function(modelPath=NULL,verbose=TRUE) {
   #  creates multiple stages, so we will rebuild the stages based on what we find
   #  when we initialize/parse the run_model.R scripts here.
 
+  browser()
   self$stageCount <- length(self$stagePaths)
   private$ModelState <- lapply(
     self$stagePaths,
-    loadModelState
+    loadModelState,
+    RunParam_ls = self$RunParam_ls
   )
 
   # TODO: rethink whether we're still using the VEOutput object...
@@ -667,6 +661,7 @@ VEModel <- R6::R6Class(
     modelName=NULL,
     modelPath=NULL,
     stagePaths=NULL,
+    stageScripts=NULL,
     stageCount=NULL,
     RunParam_ls=NULL,
     runStatus=NULL,
@@ -733,7 +728,7 @@ VEModel <- R6::R6Class(
 openModel <- function(modelPath="") {
   if ( missing(modelPath) || !nzchar(modelPath) ) {
     runtime <- get0("ve.runtime",ifnotfound=getwd())
-    Param_ls <- visioneval::loadConfiguration(ModelRun=FALSE) # system/user profiles only
+    Param_ls <- visioneval::loadConfiguration(RunModel=FALSE) # system/user profiles only
     return(dir(file.path(runtime,visioneval::getRunParameter("ModelDir",Param_ls=Param_ls,Default="models"))))
   } else {
     return( VEModel$new(modelPath = modelPath) )
