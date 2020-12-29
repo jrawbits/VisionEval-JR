@@ -58,6 +58,9 @@ utils::globalVariables(c("initDatastore","Year"))
 #' SaveDatastore A logical identifying whether if an existing datastore
 #' should be renamed rather than removed.
 #'
+#' @param Param_ls A list of run parameters from the environment. These will
+#' be overridden by anything in ... (first) or in ParamDir/RunParamFile
+#' (highest priority).
 #' @param LoadDatastore A logical identifying whether an existing datastore
 #' should be loaded.
 #' @param DatastoreName A string identifying the full path name of a datastore
@@ -74,18 +77,29 @@ utils::globalVariables(c("initDatastore","Year"))
 #' @export
 initializeModel <-
 function(
+  Param_ls = NULL,
   LoadDatastore = FALSE,
   DatastoreName = NULL,
   SimulateRun = FALSE,
   ...
 ) {
-  # NOTE: This function expects to have getwd() be the same directory that the
-  # ModelState and Datastore will be created in (the model/scenario location)
-  # The actual run_model.R script can be elsewhere ("ModelScriptFile")
-
+  # TODO: Refactor so we do the following tasks:
+  #       1. Load or Create the ModelState (in memory) for this model (if not running)
+  #          a. Initialize from Run Parameters
+  #          b. Parse the model script
+  #          c. Build the model specifications
+  #          d. (Optionally) Simulate the Model Run - important for identifying interior stages
+  #       2. Initialize for a Model Run
+  #          a. Save the previous ModelState and Datastore if requested (starting a run)
+  #          b. Save the new ModelState
+  #          c. Set up the new Datastore
+  #       5. Run the initial model steps
+  #          a. Run the Initialize scripts (if any)
+  #          b. Load the model Inputs to the Datastore
+  #       
   # Performs the following operations
   #
-  #   Regardless of RunModel parameter will load an existing ModelState and check that the model has
+  #   Regardless of RunModel state will load an existing ModelState and check that the model has
   #   everything it needs to run, updating ModelState as needed. Performs an in-memory "Init" first
   #   if no ModelState file exists so the parsed elements of run_model.R are available for
   #   inspection, but it will not save the ModelState_ls. The ModelState_ls will only be saved when
@@ -104,10 +118,33 @@ function(
   ve.model <- modelEnvironment()
   RunModel <- modelRunning()
 
+  # Check for pre-existing ve.model environment (e.g. from VEModel$run) and RunParam_ls found there
+  if ( is.null(Param_ls) ) Param_ls <- get0( "RunParam_ls", envir=ve.model, ifnotfound=list() )
+
   # Process configuration including anything sent in through dots
-  RunParam_ls <- ve.model$RunParam_ls <- loadConfiguration(RunModel=RunModel,...)
+  # loadConfiguration here goes only to the ParamDir/ParamFile plus dots, which
+  # will override anything in Param_ls.
+  ModelDir <- getRunParameter("ModelDir",Default=getwd(),Param_ls=Param_ls)
+
+  # Dots will override anything passed from the environment or loaded up from the current directory
+  RunParam_ls <- loadConfiguration(ParamDir=getwd(),keepParam_ls=list(...),overrideParam_ls=Param_ls)
+  ParamDir <- getRunParameter("ParamDir",Default="defs",Param_ls=RunParam_ls)
+  RunParamFile <- getRunParameter("RunParamFile",Default="run_parameters.json",Param_ls=RunParam_ls)
+  InputPath <- getRunParameter("InputPath",Default=".",Param_ls=Param_ls)
+  ParamPath <- normalizePath(file.path(InputPath,ParamDir),winslash="/",mustWork=FALSE)
+
+  # RunParamFile will also override any parameters taken from dots or external parameters
+  # NOTE: first existing file on ParamPath will be loaded, and not any others
+  RunParam_ls <- loadConfiguration(ParamDir=ParamPath,ParamFile=RunParamFile,overrideParam_ls=RunParam_ls)
+
+  ModelScriptFile <- getRunParameter( # in old-style model, dots will have overridden
+    "ModelScriptFile",
+    Default=normalizePath(file.path(ModelDir,"run_model.R"),winslash="/"),
+    Param_ls=RunParam_ls
+  )
 
   # Set up model state transition parameters
+  # TODO: Only need these if we're running a model (so do it later when we push aside the old Datastore)
   previousModelState <- NULL
   previousModelStateName <- ""
   savedPreviousModelState <- FALSE
@@ -127,13 +164,13 @@ function(
   # Get (just) the name of the current model's model state
   # We expect to find it in getwd() - need to manage the directory better
   # NOTE: if RunDirectory is missing, it will still have getwd() as its default value
-  RunDirectory <- getRunParameter("ModelDir",Default=getwd())
   currentModelStatePath <- getModelStateFilePath()
   currentModelStateExists <- file.exists(currentModelStatePath)
 
   # Install ModelState_ls in ve.model environment
   if (
-    RunModel || # always make a new one if doing Init or Run
+    RunModel || # always make a new one if running the model (and save the last one)
+    # TODO: add a SaveModelState flag (like SaveDatastore), defaulting to TRUE
     ! currentModelStateExists ) # if doing Load, initialize one (in memory)
   {
     writeLog("Initializing Model. This may take a while",Level="warn")
@@ -261,6 +298,17 @@ function(
   if ( LoadDatastore ) {
     LoadEnv <- new.env() # for loaded ModelState
     if ( loadExistingDatastore  ) {
+      # TODO: fix this logic so we can process later stages using "in memory" model states while
+      # loading. So we'll need some way to locate the in memory version without requiring it to be
+      # loaded here from disk. So we can pile up previous model states (indexed by their exterior
+      # stage name) in ve.model as we initialize all the models in "Load" mode. That's the same list
+      # that ends up being stashed in the VEModel object. If there's no such list, or the path we're
+      # searching for isn't in it, that may be a user-level book-keeping error. If we're in "Run"
+      # mode, we always want to load from disk, and throw an error if the file doesn't exist.
+
+      # In "Load" mode, if we don't find a pre-loaded ModelState, it probably means the basename for
+      # the directory listed for LoadDatastore is not one containing a ModelScriptFile - that's a
+      # user-level book-keeping error.
       if ( nzchar(previousModelStateName) ) {
         # we moved aside the old model state; now we'll resurrect it
         # into the current model state
