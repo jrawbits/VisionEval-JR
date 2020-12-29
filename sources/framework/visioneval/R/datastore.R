@@ -14,6 +14,39 @@
 #functions which call the core functions to move data to and from the datastore
 #in order to run modules.
 
+#Here is what each of these generic functions does:
+#
+#initDatastore
+#   TODO: implement "parent Datastore" to implicitly include
+#   compatible groups, tables, names from another Datastore location
+#   The index of this Datastore includes the other Datastore, but
+#   we add a path to the structure indicating which physical
+#   Datastore holds the most current version of each Dataset.
+#
+#initTable
+#   Make a Table space for a Dataset.
+#   
+#initDataset
+#   Creates an empty Dataset
+#   This only appears to be used in its H5 version (so may not need
+#   to export it)
+#
+#readFromTable
+#   TODO: map through Datastore index to the physical location
+#   of the Table/Dataset.
+#
+#writeToTable
+#   TODO: write always to the immediate Datastore, but treat it as
+#   missing and rebuild entirely if we write to a Dataset that is not
+#   physically located in the current Datastore.
+#
+#listDatastore
+#  This function is principally used internally, but may be called at
+#  the top level without parameters to build a datastore index into
+#  ModelState. In the RD version, it also builds a file with the
+#  Datastore table of contents in it. In the H5 version, the H5
+#  Datastore furnishes its own index.
+#  TODO: manage indexing parent Datastores
 
 ###############################################################################
 #                                                                             #
@@ -42,6 +75,7 @@
 #' written to the model state file.
 #' @export
 listDatastoreRD <- function(DataListing_ls = NULL) {
+  #TODO: Using this to update the data listing is "just wrong"
   #Load the model state file
   G <- readModelState() # will load from file if not already present in getModelEnvironment()
 
@@ -610,9 +644,8 @@ initDatastoreH5 <- function(AppendGroups = NULL) {
 #' @param Length a number identifying the table length.
 #' @return The value TRUE is returned if the function is successful at creating
 #'   the table. In addition, the listDatastore function is run to update the
-#'   inventory in the model state file. The function stops if the group in which
-#'   the table is to be placed does not exist in the datastore and a message is
-#'   written to the log.
+#'   inventory in the model state file. The function will create any
+#'   missing Group as it creates the Table.
 #' @export
 #' @import rhdf5
 initTableH5 <- function(Table, Group, Length) {

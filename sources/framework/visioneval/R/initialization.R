@@ -169,6 +169,21 @@ readConfigurationFile <- function(ParamDir,ParamFile) {
 #' to create runParam_ls
 #' @export
 loadConfiguration <- function(RunModel=TRUE,...) {
+# TODO: New interface:
+#       ParamDir=ParamDir,
+#       ParamFile=ParamFile, # if we have a name for it
+#       overrideParam_ls=overrideParam_ls,
+#       keepParam_ls=keepParam_ls
+# Load ParamDir/ParamFile
+#   If no Directory specified, just use an empty list
+#   If no ParamFile specified, look in ParamDir for the candidate configuration file names
+#   If ParamFile is specified and does not exist, it's an error
+#   Otherwise, we'll just return whatever we can build from keepParam_ls and overrideParam_ls
+# Merge keepParam_ls into what we have built so far
+#   keepParam_ls will overwrite anything we read from ParamDir/ParamFile with the same name
+#   If there are any names in ParamDir/ParamFile not defined in keepParam_ls, those are also kept
+# Then merge what we have built so far into overrideParam_ls
+#   If there are any names in overrideParam_ls not defined here, add those to the list
   dotParams_ls <- list(...)
   RunParam_ls <- list()
   attr(RunParam_ls,"cnf") <- character(0)
@@ -195,7 +210,7 @@ loadConfiguration <- function(RunModel=TRUE,...) {
   RunParam_ls <- updateConfiguration(RunParam_ls, siteParam_ls)
 
   # Can change default ModelDir in site configuration file
-  modelDir <- getRunParameter("ModelDir",Param_ls=RunParam_ls,Default="models")
+  modelDir <- getRunParameter("ModelDir",Default="models",Param_ls=RunParam_ls)
   userParam_ls <- readConfigurationFile(ParamDir=file.path(ve.runtime,modelDir))
   RunParam_ls <- updateConfiguration(RunParam_ls,userParam_ls)
 
@@ -563,9 +578,9 @@ getResultsDirectory <- function() {
   resultsDirectoryPath <- get0(
     "ModelResultsPath", envir=envir, inherits=FALSE,
     ifnotfound={
-      # TODO: is it appropriate to use full paths here
+      # TODO: Check that this works
       modelDir <- getRunParameter("ModelDir",Default=getwd())
-      resultsDir <- getRunParameter("ResultsDir",Default="")
+      resultsDir <- getRunParameter("ResultsDir",Default=".")
       envir$ModelResultsPath <- normalizePath(file.path(modelDir,resultsDir),winslash="/")
     }
   )
