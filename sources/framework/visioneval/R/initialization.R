@@ -32,8 +32,8 @@ utils::globalVariables(c("initTable","writeToTable","ModelState_ls","listDatasto
 initModelState <- function(Save=TRUE,Param_ls=NULL) {
 
   # Load model environment (should have RunParam_ls already loaded, furnishing ...)
+  model.env <- modelEnvironment()
   if ( ! is.list(Param_ls) ) {
-    model.env <- modelEnvironment()
     Param_ls <- model.env$RunParam_ls;
   }
 
@@ -68,13 +68,15 @@ initModelState <- function(Save=TRUE,Param_ls=NULL) {
   newModelState_ls$Deflators <- read.csv(DeflatorFilePath, as.is = TRUE)
 
   UnitsFile <- getRunParameter("UnitsFile",Default="units.csv",Param_ls=Param_ls)
-  UnitsFilePath <- findRuntimeInputFile(DeflatorFile,Dir="ParamDir",Param_ls=Param_ls)
+  UnitsFilePath <- findRuntimeInputFile(UnitsFile,Dir="ParamDir",Param_ls=Param_ls)
   newModelState_ls$Units <- read.csv(UnitsFilePath, as.is = TRUE)
 
   # Establish the ModelState in model.env (and optionally the ModelStateFilePath)
   model.env$ModelState_ls <- newModelState_ls
   model.env$RunParam_ls <- Param_ls; # Includes all the run Parameters, including "required"
-  if ( Save) save(ModelState_ls, envir=model.env, file = getModelStateFilePath())
+  # Note that the ModelStateFileName is always saved in getwd() - we need to be running
+  # where the state will be saved.
+  if ( Save) save(ModelState_ls, envir=model.env, file = getModelStateFileName(Param_ls))
 
   return(Save) 
 }
@@ -91,13 +93,13 @@ initModelState <- function(Save=TRUE,Param_ls=NULL) {
 #' in memory is not unsaved (shouldn't be a problem inside a model run).
 #'
 #' @param FileName A string identifying the name of the file that contains
-#' the ModelState_ls list. The default is the configured path to 'ModelState.Rda'.
+#' the ModelState_ls list. The default is the ModelStateFileName in getwd().
 #' @param envir An environment into which to load ModelState.Rda
 #' (default ve.model)
 #' @return TRUE if ModelState was loaded, FALSE if it could not be
 #  (invisibly)
 #' @export
-loadModelState <- function(FileName=getModelStateFilePath(),envir=NULL) {
+loadModelState <- function(FileName=getModelStateFileName(),envir=NULL) {
   if ( is.null(envir) ) envir = modelEnvironment()
   if (file.exists(FileName)) {
     load(FileName,envir=envir)
@@ -151,7 +153,7 @@ getModelState <- function(...) {
 #' @return always TRUE
 #' @export
 setModelState <-
-function(ChangeState_ls=list(), FileName = getModelStateFilePath(), Save=TRUE) {
+function(ChangeState_ls=list(), FileName = getModelStateFileName(), Save=TRUE) {
   # Get current ModelState (providing FileName will force a "Read")
   changeModelState_ls <- readModelState(FileName=FileName)
   envir=modelEnvironment()
@@ -183,30 +185,6 @@ function(ChangeState_ls=list(), FileName = getModelStateFilePath(), Save=TRUE) {
   invisible(TRUE)
 }
 
-#GET DIRECTORY FOR RESULTS
-#=========================
-#' Get directory for results (respecting model and scenario paths). "Results" in this
-#' context means the log file, ModelStateFileName and DatastoreName.
-#'
-#' \code{getModelStateDirectory} a visioneval framework control function that
-#' reports the directory in which the model run results will be placed.
-#'
-#' @return a character string identifying the directory for results
-#' @export
-getResultsDirectory <- function() {
-  envir <- modelEnvironment()
-  resultsDirectoryPath <- get0(
-    "ModelResultsPath", envir=envir, inherits=FALSE,
-    ifnotfound={
-      # TODO: Check that this works with new directory structure
-      modelDir <- getRunParameter("ModelDir",Default=getwd())
-      resultsDir <- getRunParameter("ResultsDir",Default=".")
-      envir$ModelResultsPath <- normalizePath(file.path(modelDir,resultsDir),winslash="/")
-    }
-  )
-  return( resultsDirectoryPath )
-}
-
 #GET MODEL STATE FILENAME
 #========================
 #' Get model state file name
@@ -214,35 +192,13 @@ getResultsDirectory <- function() {
 #' \code{getModelStateFileName} a visioneval framework control function that
 #' reports the model state file name for this model (from configuration)
 #'
+#' @param Param_ls a run parameter list to search (if NULL, the default, load the RunParam_Ls from
+#    the modelEnvironment if that exists
 #' @return a character string containing the ModelState file base name
 #' @export
-getModelStateFileName <- function() {
+getModelStateFileName <- function(Param_ls=NULL) {
   # We'll look in envir$RunParam_ls for name and path information
   return(basename(getRunParameter("ModelStateName", Default="ModelState.Rda")))
-}
-
-#GET MODEL STATE PATH
-#====================
-#' Get model state file path (can open this)
-#'
-#' \code{getModelStateFilePath} a visioneval framework control function that
-#' returns the path of ModelState.rda relative to getwd(), the model run directory.
-#'
-#' @param Param_ls run parameters to seek, or ve.model version if not provided
-#' @return a character string containing the path to the ModelState file
-#' @export
-getModelStateFilePath <- function(Param_ls=NULL) {
-  # TODO: Make this work with the new directory configurations
-  envir <- modelEnvironment()
-  modelStateName <- get0(
-    "ModelStatePath", envir=envir, inherits=FALSE,
-    ifnotfound={
-      modelStateFile <- getModelStateFileName()
-      resultsDir <- getRunParameter("ResultsDir",Default=".",Param_ls=Param_ls)
-      envir$ModelStatePath <- file.path(resultsDir,modelStateFile)
-    }
-  )
-  return(modelStateName)
 }
 
 #READ MODEL STATE FILE
@@ -269,9 +225,9 @@ readModelState <- function(Names_ = "All", FileName=NULL, envir=NULL) {
   # Load from FileName if we explicitly provide it, or if we do not already
   # have a ModelState_ls in the environment
   if ( !is.null(FileName) || ! exists("ModelState_ls",envir=envir,inherits=FALSE) ) {
-    if ( is.null(FileName) ) FileName <- getModelStateFilePath()
+    if ( is.null(FileName) ) FileName <- getModelStateFileName()
     if ( ! loadModelState(FileName,envir) ) {
-      Msg <- paste0("Could not load ModelState from",FileName)
+      Msg <- paste0("Could not load ModelState from",FileName,"in",getwd())
       writeLog(Msg,Level="error")
       stop(Msg,call.=FALSE)
     }
@@ -359,6 +315,7 @@ getUnits <- function(Type_) {
 #' threshold will be ignored. Default is "info" which shows a lot.
 #' "warn" is typical for running a model, and "error" for only the
 #' worst.
+#' @param Save a logical (default TRUE) indicating whether to save the log file
 #' @param Suffix A character string appended to the file name for the log file.
 #' For example, if the suffix is 'CreateHouseholds', the log file is named
 #' 'Log_CreateHouseholds.txt'. The default value is NULL in which case the
@@ -367,7 +324,7 @@ getUnits <- function(Type_) {
 #'   working directory and identifies the name of the log file in the
 #'   model state file.
 #' @export
-initLog <- function(TimeStamp = NULL, Threshold="info", Suffix = NULL) {
+initLog <- function(TimeStamp = NULL, Threshold="info", Save=TRUE, Suffix = NULL) {
   # TODO: integrate with running a model from VEModel$run
   # TODO: also ensure that it is backward compatible if just sourcing run_model.R
   # TODO: use ve.env to grab the active logger name
@@ -377,11 +334,15 @@ initLog <- function(TimeStamp = NULL, Threshold="info", Suffix = NULL) {
   }
   LogInitTime <- gsub(" ","_",TimeStamp)
 
-  if (!is.null(Suffix)) {
-    LogFile <- paste0("Log_", Suffix, ".txt")
-  } else {
-    LogFile <- paste0("Log_", gsub(":", "_", LogInitTime), ".txt")
+  LogFile <- "console"
+  if ( Save ) {
+    if (!is.null(Suffix)) {
+      LogFile <- paste0("Log_", Suffix, ".txt")
+    } else {
+      LogFile <- paste0("Log_", gsub(":", "_", LogInitTime), ".txt")
+    }
   }
+
   # Set up logger and threshold in the model environment
   envir=modelEnvironment()
   envir$ve.logger <- "ve.logger"
@@ -393,13 +354,17 @@ initLog <- function(TimeStamp = NULL, Threshold="info", Suffix = NULL) {
   }
 
   # Create and provision the ve.logger
-  futile.logger::flog.appender(futile.logger::appender.tee(LogFile),name=envir$ve.logger)
+  if ( Save ) {
+    futile.logger::flog.appender(futile.logger::appender.tee(LogFile),name=envir$ve.logger)
+  }
   futile.logger::flog.threshold(envir$ve.log.threshold, name=envir$ve.logger)
 
   # Log header
   futile.logger::flog.layout( function(level,msg,...) cat(msg,...,"\n"), name=envir$ve.logger )
   # The following are not errors, but give them that log level to ensure they get out
-  futile.logger::flog.error("Model Run:",LogInitTime,name=envir$ve.logger)
+  if ( Save ) {
+    futile.logger::flog.error("Model Run:",LogInitTime,name=envir$ve.logger)
+  }
 
   # Log standard format
   futile.logger::flog.layout( layout.visioneval,name=envir$ve.logger)
@@ -427,12 +392,12 @@ layout.visioneval <- function(level, msg, id='', ...)
 
 # Internal log level translation table
 log.threshold <- c(
-  futile.logger::INFO,
-  futile.logger::TRACE,
-  futile.logger::DEBUG,
-  futile.logger::WARN,
-  futile.logger::ERROR,
-  futile.logger::FATAL
+  INFO=futile.logger::INFO,
+  TRACE=futile.logger::TRACE,
+  DEBUG=futile.logger::DEBUG,
+  WARN=futile.logger::WARN,
+  ERROR=futile.logger::ERROR,
+  FATAL=futile.logger::FATAL
 )
 log.function <- list(
   INFO  = futile.logger::flog.info,
