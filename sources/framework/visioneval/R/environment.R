@@ -78,8 +78,8 @@ modelRunning <- function() {
 #' readConfigurationFile for more information on the "source" attribute of run parameters.
 #'
 #' @param Parameter character vector (length one) naming Parameter to retrieve
-#' @param Default is the value to provide if Parameter is not found in runParam_ls
-#' @param Param_ls a list of run parameters to look within (otherwise runParam_ls from
+#' @param Default is the value to provide if Parameter is not found in RunParam_ls
+#' @param Param_ls a list of run parameters to look within (otherwise RunParam_ls from
 #' "ve.model" environment if it exists, and if not then in and above
 #' \code{parent.frame()})
 #' @param logSource a logical (default=FALSE); if TRUE, write an info-level log message reporting the
@@ -88,25 +88,23 @@ modelRunning <- function() {
 #' @export
 getRunParameter <- function(Parameter,Default=NA,Param_ls=NULL,logSource=FALSE) {
   param.source <- NULL
-  if ( is.list(Param_ls) ) { # look only there
-    runParam_ls <- Param_ls
-  } else {
+  if ( ! is.list(Param_ls) ) { # look only there
     envir <- if ( "ve.model" %in% search() ) {
+      param.source <- "ve.model$RunParam_ls"
       as.environment("ve.model")
-      param.source <- "ve.model$runParam_ls"
     } else {
-      envir <- parent.frame()
       param.source <- paste("Calling environment:",as.character(.traceback(2)),collapse=", ")
+      parent.frame()
     }
-    runParam_ls <- get0("runParam_ls",envir=envir,ifnotfound=list())
+    Param_ls <- get0("RunParam_ls",envir=envir,ifnotfound=list())
   }
-  if ( is.null(attr(runParam_ls,"source")) ) {
+  if ( is.null(attr(Param_ls,"source")) ) {
     if ( is.null(param.source) ) {
       param.source <- paste("Unknown, called from:",as.character(.traceback(2)),collapse=", ")
     }
-    runParam_ls <- addParameterSource(runParam_ls,param.source)
+    Param_ls <- addParameterSource(Param_ls,param.source)
   }
-  if ( length(runParam_ls)==0 || ! Parameter %in% names(runParam_ls) ) {
+  if ( length(Param_ls)==0 || ! Parameter %in% names(Param_ls) ) {
     if ( logSource ) writeLog(
       paste(Parameter,"using Default, called from:",as.character(.traceback(2)),collapse=", "),
       Level="info"
@@ -114,7 +112,7 @@ getRunParameter <- function(Parameter,Default=NA,Param_ls=NULL,logSource=FALSE) 
     return( Default )
   } else {
     if ( logSource ) {
-      sources <- attr(runParam_ls,"source")
+      sources <- attr(Param_ls,"source")
       if ( is.null(sources) ) {
         writeLog(
           paste("Unknown source for",Parameter,"at",as.character(.traceback(2)),collapse=", "),
@@ -127,7 +125,7 @@ getRunParameter <- function(Parameter,Default=NA,Param_ls=NULL,logSource=FALSE) 
         )
       }
     }
-    return( runParam_ls[[Parameter]] )
+    return( Param_ls[[Parameter]] )
   }
 }
 
@@ -476,7 +474,7 @@ loadConfiguration <- function( # if all arguments are defaulted, return an empty
 #' The first existing file is returned or NA if none exists. If StopOnError is TRUE (the
 #' default), an error message is logged and processing stops.
 #'
-#' @param File The name of the file to seek
+#' @param File The name of the file to seek (NOT a run parameter)
 #' @param Dir The name of a run parameter specifying a directory relative to getwd()
 #' @param DefaultDir The default value for the run parameter directory
 #' @param Param_ls The run parameters in which to seek InputPath and Dir (default
@@ -485,16 +483,14 @@ loadConfiguration <- function( # if all arguments are defaulted, return an empty
 #' @return the path of a file existing on InputDir/Dir/File or NA if not found
 #' @export
 findRuntimeInputFile <- function(File,Dir="InputDir",DefaultDir="inputs",Param_ls=NULL,StopOnError=TRUE) {
-  browser()
   inputPath <- getRunParameter("InputPath",Default=".",Param_ls=Param_ls)
   writeLog(paste("Input path raw:",inputPath,collapse=":"),Level="trace")
   searchDir <- getRunParameter(Dir,Default=NA,Param_ls=Param_ls)
-  fileName  <- getRunParameter(File,Default=NA,Param_ls=Param_ls)
   searchInDir <- file.path(inputPath,searchDir) # might yield more than one
   candidates <- character(0)
-  if ( any(!is.na(searchInDir)) && !is.na(fileName) )  {
+  if ( any(!is.na(searchInDir)) && !is.na(File) )  {
     searchInDir <- searchInDir[!is.na(searchInDir)]
-    candidates <- file.path(searchInDir,fileName)
+    candidates <- file.path(searchInDir,File)
     candidates <- candidates[ file.exists(candidates) ]
   }
   if ( StopOnError && ( length(candidates)==0 || is.na(candidates) ) ) {

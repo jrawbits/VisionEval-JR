@@ -300,28 +300,28 @@ ve.model.loadModelState <- function(log="error") {
   ResultsDir <- visioneval::getRunParameter("ResultsDir",Default=".",Param_ls=self$RunParam_ls)
   ModelStateFileName <- visioneval::getRunParameter("ModelStateFileName",Default="ModelState.Rda",Param_ls=self$RunParam_ls)
   private$ModelState <- list()
-  ms.env <- new.env()
   owd <- setwd(file.path(self$modelPath,ResultsDir))
-  on.exit({ rm(ms.env); setwd(owd) })
+  on.exit(setwd(owd))
   for ( stage in seq_along(self$stagePaths) ) {
     stagePath <- self$stagePaths[stage]
     scriptFile <- self$stageScripts[stage]
     modelState <- normalizePath(file.path(self$modelPath,ResultsDir,stagePath,ModelStateFileName),winslash="/",mustWork=FALSE)
     if ( file.exists(modelState) ) {
+      ms.env <- new.env()
       load(modelState,envir=ms.env)
-      private$ModelState[basename(stagePath)] <- ms.env$Model_State_ls
+      private$ModelState[[ basename(stagePath) ]] <- ms.env$Model_State_ls
     } else {
       modelScriptFile <- normalizePath(file.path(self$modelPath,stagePath,scriptFile),winslash="/")
-#       parsedScript <- visioneval::parseModelScript(modelScriptFile)
-#       initModel <- parsedScript$InitParams_ls;
       ve.model <- visioneval::modelEnvironment()
       ve.model$RunModel <- FALSE
       ve.model$ve.logger <- "ve.logger"
+      ve.model$RunStatus <- "Not Run"
       futile.logger::flog.threshold(log.level(log))
+      futile.logger::flog.threshold(log.level(log),name=ve.model$ve.logger)
       # TODO: incorporate the arguments to initializeModel listed in modelScriptFile
       visioneval::initializeModel(Param_ls=self$RunParam_ls,ModelScriptFile=modelScriptFile)
-      private$ModelState[ basename(stagePath) ] <- ve.model$ModelState_ls
-      rm(list=ls(ve.model))
+      private$ModelState[[ basename(stagePath) ]] <- ve.model$ModelState_ls
+      rm(list=ls(ve.model),envir=ve.model)
       rm(ve.model)
     }
   }
@@ -400,6 +400,7 @@ log.level <- function(level) {
     "TRACE"=futile.logger::TRACE,
     "WARN"=futile.logger::WARN
   )
+  level <- toupper(level)
   if ( level %in% names(legal.levels) ) {
     return(legal.levels[level])
   } else {
@@ -424,7 +425,7 @@ ve.model.run <- function(stage=NULL,lastStage=NULL,stageScript=NULL,lastScript=N
   #   also provided (in which case stageScript is the exterior stage, and stage is the interior)
   # TODO: implement for interior scripts
 
-  resultsDir <- file.path(self$modelPath,visioneval::getRunParameter("ResultsDir",Default=".",Param_ls=self$RunParam_ls,"."))
+  resultsDir <- file.path(self$modelPath,visioneval::getRunParameter("ResultsDir",Default=".",Param_ls=self$RunParam_ls))
   modelStateName <- visioneval::getRunParameter("modelStateFileName",Default="ModelState.Rda",Param_ls=self$RunParam_ls)
 
   # TODO: look up stages by name/identifier
@@ -470,10 +471,11 @@ ve.model.run <- function(stage=NULL,lastStage=NULL,stageScript=NULL,lastScript=N
     owd <- setwd(file.path(self$modelPath,stage))
     self$status <- ""
 
-    rm(list=ls(ve.model)) # ve.model is always fresh for each model stage
+    rm(list=ls(ve.model),envir=ve.model) # ve.model is always fresh for each model stage
     ve.model$RunParam_ls <- self$RunParam_ls; # put it where initializeModel can see it
 
-    futile.logger::flog.threshold(log.level(log))
+    ve.model$ve.logger <= "ve.logger"
+    futile.logger::flog.threshold(log.level(log),name=ve.model$ve.logger)
     tryCatchLog::tryCatchLog(
       {
         self$status <- "Running"
@@ -657,7 +659,7 @@ ve.model.print <- function() {
   cat("Model:",self$modelName,"\n")
   cat("Path:\n")
   print(self$modelPath)
-  cat("Datastore Type:",self$runParam_ls$DatastoreType,"\n")
+  cat("Datastore Type:",self$RunParam_ls$DatastoreType,"\n")
   cat("Status:", self$status,"\n")
   self$status
 }
@@ -789,8 +791,7 @@ VEModel <- R6::R6Class(
 #'
 #' @param modelPath Directory containing a VisionEval model; if an empty character string is
 #'     provided, prints a list of available models (see details)
-#' @param log a character string identifying the log level to be applied to the new model
-#'   initialization
+#' @param log a character string identifying the log level to be displayed
 #' @return A VEModel object or a VEModelList of available models if no modelPath or modelName is
 #'   provided; see details and `vignette("VEModel")`
 #' @export
@@ -834,12 +835,13 @@ openModel <- function(modelPath="",log="error") {
 #'   install the sample model.
 #' @param confirm if TRUE (default) and running interactively, prompt user to confirm, otherwise
 #'   just do it.
+#' @param log a string describing the minimum level to display
 #' @return A VEModel object of the model that was just installed
 #' @export
-installModel <- function(modelName=NULL, modelPath=NULL, skeleton=FALSE, confirm=!skeleton) {
+installModel <- function(modelName=NULL, modelPath=NULL, skeleton=FALSE, confirm=!skeleton, log="error") {
   model <- installStandardModel(modelName, modelPath, confirm, skeleton)
   if ( is.list(model) ) {
-    return( VEModel$new( modelPath=model$modelPath ) )
+    return( VEModel$new( modelPath=model$modelPath, log=log ) )
   } else {
     return( model ) # should be a character vector of available standard models
   }

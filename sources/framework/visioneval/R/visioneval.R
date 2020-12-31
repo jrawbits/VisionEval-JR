@@ -68,6 +68,7 @@ utils::globalVariables(c("initDatastore","Year"))
 #' @param SimulateRun A logical identifying whether the model run should be
 #' simulated: i.e. each step is checked to confirm that data of proper type
 #' will be present when the module is called. JRaw says: Just do it
+#' @param LogLevel A character string indicating the threshold for log messages
 #' @param ... Additional named arguments that can override run parameters from
 #' VisonEval.cnf or from run_parameters.json. See Run Parameters section.
 #' @return The ModelState_ls that was constructed, invisibly.
@@ -78,6 +79,7 @@ function(
   LoadDatastore = FALSE,
   DatastoreName = NULL, # WARNING: different from "DatastoreName" loaded as a run parameter
   SimulateRun = FALSE,
+  LogLevel = "error",
   ...
 ) {
   # TODO: Refactor so we do the following tasks:
@@ -163,12 +165,7 @@ function(
   # If "Run" step is explicitly invoked, start the current model run log file
   # If not running, all messages are just logged to "ve.logger"
   # (defaulting to the ROOT logger, which appends to the console by default)
-  if ( RunModel ) {
-    logState <- initLog(Timestamp) # start/reset the model run logger
-  } else {
-    if ( ! exists("ve.logger") ) ve.model$ve.logger = "ve.logger"
-    logState <- list()
-  }
+  logState <- initLog(Timestamp,Threshold=LogLevel,Save=RunModel) # start/reset the model run logger
 
   # Get status of current model state
   # Expect that getwd() contains (or will contain) the ModelState.Rda we're working on
