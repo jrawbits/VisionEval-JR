@@ -2,8 +2,7 @@
 #visioneval.R
 #============
 
-#This script defines the main functions that implement the VisionEval framework
-#and are intended to be exported.
+#This script defines the functions that are used to write VisionEval models.
 
 utils::globalVariables(c("initDatastore","Year"))
 
@@ -71,15 +70,13 @@ utils::globalVariables(c("initDatastore","Year"))
 #' will be present when the module is called. JRaw says: Just do it
 #' @param ... Additional named arguments that can override run parameters from
 #' VisonEval.cnf or from run_parameters.json. See Run Parameters section.
-#' @return None. The function prints to the log file messages which identify
-#' whether or not there are errors in initialization. It also prints a success
-#' message if initialization has been successful.
+#' @return The ModelState_ls that was constructed, invisibly.
 #' @export
 initializeModel <-
 function(
   Param_ls = NULL,
   LoadDatastore = FALSE,
-  DatastoreName = NULL,
+  DatastoreName = NULL, # WARNING: different from "DatastoreName" loaded as a run parameter
   SimulateRun = FALSE,
   ...
 ) {
@@ -119,29 +116,41 @@ function(
   RunModel <- modelRunning()
 
   # Check for pre-existing ve.model environment (e.g. from VEModel$run) and RunParam_ls found there
-  if ( is.null(Param_ls) ) Param_ls <- get0( "RunParam_ls", envir=ve.model, ifnotfound=list() )
+  if ( is.null(Param_ls) ) {
+    Param_ls <- addParameterSource(
+      get0( "RunParam_ls", envir=ve.model, ifnotfound=list() ),
+      "RunParam_ls in modelEnvironment()"
+   ) 
+  } else {
+    Param_ls <- addParameterSource(Param_ls, "initializeModel(Param_ls=)")
+  }
 
-  # Process configuration including anything sent in through dots
-  # loadConfiguration here goes only to the ParamDir/ParamFile plus dots, which
-  # will override anything in Param_ls.
+  # Process configuration files in relevant places
   ModelDir <- getRunParameter("ModelDir",Default=getwd(),Param_ls=Param_ls)
 
   # Dots will override anything passed from the environment or loaded up from the current directory
-  RunParam_ls <- loadConfiguration(ParamDir=getwd(),keepParam_ls=list(...),overrideParam_ls=Param_ls)
+  DotParam_ls <- addParameterSource(list(...),"initializeModel(...)")
+  RunParam_ls <- loadConfiguration(ParamDir=getwd(),keep=DotParam_ls,override=Param_ls)
+
   ParamDir <- getRunParameter("ParamDir",Default="defs",Param_ls=RunParam_ls)
   RunParamFile <- getRunParameter("RunParamFile",Default="run_parameters.json",Param_ls=RunParam_ls)
   InputPath <- getRunParameter("InputPath",Default=".",Param_ls=Param_ls)
-  ParamPath <- normalizePath(file.path(InputPath,ParamDir),winslash="/",mustWork=FALSE)
 
-  # RunParamFile will also override any parameters taken from dots or external parameters
-  # NOTE: first existing file on ParamPath will be loaded, and not any others
-  RunParam_ls <- loadConfiguration(ParamDir=ParamPath,ParamFile=RunParamFile,overrideParam_ls=RunParam_ls)
+  ParamPath <- normalizePath(file.path(InputPath,ParamDir),winslash="/",mustWork=FALSE)
+  RunParam_ls <- loadConfiguration(ParamDir=ParamPath,ParamFile=RunParamFile,override=RunParam_ls)
 
   ModelScriptFile <- getRunParameter( # in old-style model, dots will have overridden
     "ModelScriptFile",
     Default=normalizePath(file.path(ModelDir,"run_model.R"),winslash="/"),
     Param_ls=RunParam_ls
   )
+
+  ModelStateFileName <- getRunParameter("ModelStateFileName",Default="ModelState.Rda",Param_ls=RunParam_ls)
+
+  # Configure default for SaveDatastore run parameter
+  SaveDatastore <- if ( "SaveDatastore" %in% names(RunParam_ls) ) {
+    RunParam_ls$SaveDatastore
+  } else TRUE # Save by default
 
   # Set up model state transition parameters
   # TODO: Only need these if we're running a model (so do it later when we push aside the old Datastore)
@@ -161,22 +170,20 @@ function(
     logState <- list()
   }
 
-  # Get (just) the name of the current model's model state
-  # We expect to find it in getwd() - need to manage the directory better
-  # NOTE: if RunDirectory is missing, it will still have getwd() as its default value
-  currentModelStatePath <- getModelStateFilePath()
+  # Get status of current model state
+  # Expect that getwd() contains (or will contain) the ModelState.Rda we're working on
+  currentModelStatePath <- normalizePath(ModelStateFileName,winslash="/",mustWork=FALSE)
   currentModelStateExists <- file.exists(currentModelStatePath)
 
   # Install ModelState_ls in ve.model environment
   if (
     RunModel || # always make a new one if running the model (and save the last one)
-    # TODO: add a SaveModelState flag (like SaveDatastore), defaulting to TRUE
     ! currentModelStateExists ) # if doing Load, initialize one (in memory)
   {
     writeLog("Initializing Model. This may take a while",Level="warn")
 
-    # If a ModelState.Rda file exists and this one is to be saved, rename it
-    if (currentModelStateExists && RunModel) {
+    # If running and the ModelState already exists and we want to SaveDatastore, set it aside
+    if ( currentModelStateExists && RunModel && SaveDatastore ) {
       # Read the model state to see if it has a "LastChanged" flag
       previousModelState <- readModelState(FileName=currentModelStatePath,envir=new.env())
 
@@ -187,7 +194,6 @@ function(
       }
 
       # Move the previous model state out of the way
-      # TODO: preserve previous model state name per configuration
       previousModelStateName <- paste0("ModelState_",previousTimestamp,".Rda")
       savedPreviousModelState <- file.rename(currentModelStatePath, previousModelStateName)
     }
@@ -204,39 +210,22 @@ function(
     setModelState(logState,Save=RunModel)
   }
 
-  # Configure default for SaveDatastore run parameter
-  SaveDatastore <- if ( "SaveDatastore" %in% names(ve.model$ModelState_ls) ) {
-    ve.model$ModelState_ls$SaveDatastore
-  } else TRUE # Save by default
+  # Locate any earlier Datastore and ModelState, if needed
 
-  # Assign the correct datastore interaction functions
-  assignDatastoreFunctions(RunParam_ls$DatastoreType)
-
-  #=======================================
-  #CHECK CONFLICTS WITH EXISTING DATASTORE
-  #=======================================
-  # Sort out LoadDatastore/SaveDatastore parameters, based on what exists
-  # Do this step in all run modes
-  # The "local" block has side-effects on variables defined outside it;
-  # "local" is used to gather the errors into one place via "return" statements
-
-  # Prepare to accumulate errors and warnings
-  DstoreConflicts <- character(0)
-  InfoMsg <- character(0)
-
-  # TODO: Build the path to the Datastore we are going to work with
-  # Normalized path name of the datastore from the ModelState (TODO: relative to RunDirectory)
-  # TODO: DatastoreName is probably relative, and we need to find it relative to RunDirectory
-  RunDstoreName <- normalizePath(ve.model$ModelState_ls$DatastoreName, winslash = "/", mustWork = FALSE)
+  # Normalized path name of the datastore from the ModelState, relative to getwd()
+  # Note that the DatastoreName in RunParam_ls is decidedly NOT the same as the DatastoreName
+  #   in the parameter list to initializeModel
+  #   (the parameter is the path/filename for the *other* Datastore from a previous stage)
+  RunDstoreName <- normalizePath(RunParam_ls$DatastoreName, winslash = "/", mustWork = FALSE)
   RunDstoreDir <- dirname(RunDstoreName)
 
   #Normalized path name of the datastore to be loaded, or empty string
-  if (is.null(DatastoreName) ) {
+  if (is.null(DatastoreName) ) { # DatastoreName here is NOT the RunDstoreName
     if ( LoadDatastore ) {
       # null name means start with the current (existing) Datastore
       LoadDstoreName <- RunDstoreName
       LoadDstoreDir <- RunDstoreDir
-    } else {
+    } else { # Nothing to load
       LoadDatastore <- FALSE
       LoadDstoreName <- NULL
       LoadStoreDir <- NULL
@@ -247,64 +236,38 @@ function(
     LoadDatastore <- TRUE # must load if there's a name provided
   }
 
-  #Error if LoadDatastore and the DatastoreName does not exist
-  if ( LoadDatastore && !file.exists(LoadDstoreName) ) {
-    DstoreConflicts <- c(DstoreConflicts,
-      paste0(
-        "Failed to load Datastore ",LoadDstoreName,". ",
-        "Perhaps the full path name was not specified."
-      )
-    )
-  }
-
   # Flag if we're trying to (re-)load the existing Datastore
   loadExistingDatastore <- LoadDatastore && (RunDstoreName == LoadDstoreName) && (RunDstoreDir == LoadDstoreDir)
 
-  #Error datastore exists and is not being loaded or saved (renamed)
-  if ( file.exists(RunDstoreName) ) {
-    if ( ! ( LoadDatastore || SaveDatastore ) ) {
-      DstoreConflicts <- c(DstoreConflicts,
-        paste(
-          "The existing datastore, ",RunDstoreName," will NOT be overwritten.\n",
-          "Set SaveDatastore=TRUE to move the existing datastore aside.\n",
-          "To add to it, set DatastoreName=NULL and set LoadDatastore=TRUE.\n",
-          "Or just delete it and try again.\n"
-        )
-      )
-    } else if (
-      LoadDatastore &&
-      ! SaveDatastore &&
-      ! loadExistingDatastore ) {
-      DstoreConflicts <- c(DstoreConflicts,
-        paste(
-          "Loading DatastoreName='",LoadDstoreName,"'.",
-          "Existing datastore ",RunDstoreName," would be overwritten.",
-          "Set SaveDatastore=TRUE to move the existing datastore aside.\n",
-          "Or just delete it and try again.\n"
-        )
-      )
-    }
-  } else if ( SaveDatastore ) {
-    InfoMsg <- c(
-      InfoMsg,
-      "Ignored run parameter SaveDatastore=TRUE, as there is no Datastore to save."
-    )
-    SaveDatastore <- FALSE
-  }
+  #===========================================================================
+  #PARSE SCRIPT TO MAKE TABLE OF ALL THE MODULE CALLS, CHECK AND COMBINE SPECS
+  #===========================================================================
 
-  #---------------------------------------------------------
-  # Check loaded ModelState for compatibility
-  #---------------------------------------------------------
-  if ( LoadDatastore ) {
-    LoadEnv <- new.env() # for loaded ModelState
+  #Parse script and make data frame of modules that are called directly
+  parsedScript <- parseModelScript(RunParam_ls$ModelScriptFile)
+
+  # Create required package list, adding from previous ModelState if available
+  AlreadyInitialized <- character(0) # required (initialized packages) from loaded datastore
+  RequiredPackages <- parsedScript$RequiredVEPackages;
+
+  # Prepare to accumulate errors and warnings
+  DstoreConflicts <- character(0)
+  InfoMsg <- character(0)
+
+  # Load the previous model state, if availble
+  LoadEnv <- new.env() # for loaded ModelState
+  if ( RunModel && LoadDatastore ) {
     if ( loadExistingDatastore  ) {
-      # TODO: fix this logic so we can process later stages using "in memory" model states while
-      # loading. So we'll need some way to locate the in memory version without requiring it to be
-      # loaded here from disk. So we can pile up previous model states (indexed by their exterior
-      # stage name) in ve.model as we initialize all the models in "Load" mode. That's the same list
-      # that ends up being stashed in the VEModel object. If there's no such list, or the path we're
-      # searching for isn't in it, that may be a user-level book-keeping error. If we're in "Run"
-      # mode, we always want to load from disk, and throw an error if the file doesn't exist.
+      # Find the Existing Datastore and ModelState for it
+      # try to load of ModelStateFileName from LoadDstoreDir:
+      #    If RunModel, fail if not present
+      #    Otherwise, look for it in memory
+      #      Check if ModelState is loaded in ve.model$ModelStateStages[basename(LoadDstoreDir)]
+      #        (VEModel will have performed this initialization on all earlier stages and left
+      #         its results there)
+      #      If not available in memory, skip consistency checks and report a warning
+      #        (Supports use case of adding a new model - e.g. for computing additional metrics
+      #         using a module not in the original model run)
 
       # In "Load" mode, if we don't find a pre-loaded ModelState, it probably means the basename for
       # the directory listed for LoadDatastore is not one containing a ModelScriptFile - that's a
@@ -317,302 +280,43 @@ function(
       } # else the current model state already has the previous contents
     } else {
       # Load model state from the directory containing the other Datastore
-      modelStatePath <- file.path(LoadDstoreDir,basename(currentModelStatePath))
+      # Use the currently configured ModelStateFileName
+      #  if it's not right, that model needs to re-run in the current environment
+      modelStatePath <- file.path(LoadDstoreDir,ModelStateFileName)
       if ( ! loadModelState(modelStatePath,envir=LoadEnv) ) {
         stop(writeLog(paste("Unable to open ModelState:",modelStatePath),Level="error"),call.=FALSE)
       }
 
-      # Get values from the other Datastore
-      LoadDstoreType <- (LoadEnv$ModelState_ls$DatastoreType)
-      #Get datastore type from current ModelState
-      RunDstoreType <- (ve.model$ModelState_ls$DatastoreType)
-
-      # Grab the required packages from the model state for LoadDstoreName
-
-      #Check that run and load datastores are of same type
-      if ( RunDstoreType != LoadDstoreType) {
-        DstoreConflicts <- c(DstoreConflicts, paste(
-          "Incompatible datastore types.\n",
-          "This Model Run has type: ", RunDstoreType, ".\n",
-          "Load Datastore has type: ", LoadDstoreType, "."
-        ))
-      }
-      #Check that geography, units, deflators and base year are consistent
-      BadGeography <-
-      !all.equal(ve.model$ModelState_ls$Geo_df, LoadEnv$ModelState_ls$Geo_df)
-      BadUnits <-
-      !all.equal(ve.model$ModelState_ls$Units, LoadEnv$ModelState_ls$Units)
-      BadDeflators <-
-      !all.equal(ve.model$ModelState_ls$Deflators, LoadEnv$ModelState_ls$Deflators)
-      BadBaseYear <- ! (ve.model$ModelState_ls$BaseYear == LoadEnv$ModelState_ls$BaseYear)
-
-      if ( BadGeography || BadUnits || BadDeflators || BadBaseYear) {
-        elements <- paste(
-          "Geography"[BadGeography],
-          "Units"[BadUnits],
-          "Deflators"[BadDeflators],
-          "Base Year"[BadBaseYear],
-          sep="_"
-        )
-        elements <- gsub("_",", ",gsub("^_+|_+$","",elements))
-        DstoreConflicts <- c(DstoreConflicts,
-          paste(
-            "Inconsistent ",elements," between Model Run and Load Datastore."
-          )
-        )
+      # Copy over the required packages part of the previous model state
+      if ( "RequiredVEPackages" %in% names(LoadEnv$ModelState_ls) ) {
+        AlreadyInitialized <- LoadEnv$ModelState_ls$RequiredVEPackages
+        RequiredPackages <- unique(c(RequiredPackages, LoadEnv$ModelState_ls$RequiredVEPackages))
       }
     }
   }
 
-  #Write information message to log if any
-  if (length(InfoMsg) != 0) {
-    writeLog(InfoMsg,Level="warn")
-  }
-
-  if (length(DstoreConflicts) != 0) {
-    writeLog(DstoreConflicts,Level="error")
-    # Restore previous model state if we had moved it out of the way
-    # Will only happen if performing "Init" or "Run"
-    if ( nzchar(previousModelStateName) && savedPreviousModelState ) {
-      unlink(currentModelStatePath)
-      if (file.exists(previousModelStateName)) { # TODO: relative to RunDirectory
-        file.rename(previousModelStateName, basename(currentModelStatePath))
-      }
-    }
-    stop("Datastore configuration error: See log messages.",call.=FALSE)
-  }
-
-  #===========================================================================
-  #PARSE SCRIPT TO MAKE TABLE OF ALL THE MODULE CALLS, CHECK AND COMBINE SPECS
-  #===========================================================================
-
-  #Parse script and make data frame of modules that are called directly
-  parsedScript <- parseModelScript(RunParam_ls$ModelScriptFile)
-
-  # Create required package list, adding from previous ModelState if available
-  AlreadyInitialized_ <- character(0) # required (initialized packages) from loaded datastore
-  RequiredPkg_ <- parsedScript$RequiredVEPackages
-  if ( LoadDatastore ) {
-    # We already set up the model state for the loaded datastore above
-    # Copy over the required packages part of the previous model state
-    if ( "RequiredVEPackages" %in% names(LoadEnv$ModelState_ls) ) {
-      AlreadyInitialized_ <- LoadEnv$ModelState_ls$RequiredVEPackages
-      RequiredPkg_ <- unique(c(RequiredPkg_, LoadEnv$ModelState_ls$RequiredVEPackages))
-    }
-  }
   setModelState(
     list(ModuleCalls_df=parsedScript$ModuleCalls_df), # Full list of calls
     Save=RunModel
   )
 
-  # All the rest of what we need to do with module calls should have them unique
-  ModuleCalls_df <- unique(parsedScript$ModuleCalls_df)
-
-  # Report any required packages that are not also in module calls
-  umc <- unique(ModuleCalls_df$PackageName)
-  explicitRequired_ <- unique(RequiredPkg_)
-  if ( any( not.in.umc <- ! (explicitRequired_ %in% umc) ) ) {
-    for ( p in explicitRequired_[not.in.umc] ) {
-      writeLog(paste("Package",p,"is required"),Level="warn")
-    }
-  }
-  RequiredPkg_ <- c(umc,explicitRequired_)
-
-  #Get list of installed packages
-  #Check that all module packages are in list of installed packages
-  InstalledPkgs_ <- rownames(installed.packages())
-  MissingPkg_ <- RequiredPkg_[!(RequiredPkg_ %in% InstalledPkgs_)]
-  if (length(MissingPkg_ != 0)) {
-    Msg <-
-    paste0("One or more required packages need to be installed in order ",
-      "to run the model. Following are the missing package(s): ",
-      paste(MissingPkg_, collapse = ", "), ".")
-    writeLog(Msg,Level="error")
-    stop(Msg)
-  }
-  #Check for 'Initialize' module in each package if so add to ModuleCalls_df
-  Add_ls <- list()
-  # Do not add Initialize if the package was required in an earlier model stage
-  # Results of Initialization in that case will already be in the Datastore
-  for (Pkg in unique(setdiff(ModuleCalls_df$PackageName,AlreadyInitialized_))) {
-    PkgData <- data(package = Pkg)$results[,"Item"]
-    if ("InitializeSpecifications" %in% PkgData) {
-      Add_df <-
-      data.frame(
-        ModuleName = "Initialize",
-        PackageName = Pkg,
-        RunFor = "AllYears",
-        RunYear = "Year"
-      )
-      Add_ls[[Pkg]] <- Add_df
-    }
-  }
-  #Insert Initialize module entries into ModuleCalls_df
-  Pkg_ <- names(Add_ls)
-  for (Pkg in Pkg_) {
-    Idx <- head(grep(Pkg, ModuleCalls_df$PackageName), 1)
-    End <- nrow(ModuleCalls_df)
-    ModuleCalls_df <- rbind(
-      ModuleCalls_df[1:(Idx - 1),],
-      Add_ls[[Pkg]],
-      ModuleCalls_df[Idx:End,]
-    )
-  }
-
-  #Identify all modules and datasets in required packages
-  Datasets_df <-
-  data.frame(
-    do.call(
-      rbind,
-      lapply(RequiredPkg_, function(x) {
-        data(package = x)$results[,c("Package", "Item")]
-      })
-    ), stringsAsFactors = FALSE
-  )
-  WhichAreModules_ <- grep("Specifications", Datasets_df$Item)
-  ModulesByPackage_df <- Datasets_df[WhichAreModules_,]
-  ModulesByPackage_df$Module <-
-  gsub("Specifications", "", ModulesByPackage_df$Item)
-  ModulesByPackage_df$Item <- NULL
-  DatasetsByPackage_df <- Datasets_df[-WhichAreModules_,]
-  names(DatasetsByPackage_df) <- c("Package", "Dataset")
-  #Save the modules and datasets lists in the model state
-  setModelState(
-    list (
-      ModulesByPackage_df = ModulesByPackage_df,
-      DatasetsByPackage_df = DatasetsByPackage_df,
-      RequiredVEPackages = RequiredPkg_
-    ),
+  AllSpecs_ls <- parseModuleCalls(
+    parsedScript$ModuleCalls_df,
+    RequiredPackages,
+    AlreadyInitialized,
     Save=RunModel
   )
 
-  #Iterate through each module call and check availability and specifications
-  #create combined list of all specifications
-  # ModulesByPackage_df lists all modules available in the packages
-  # ModuleCalls_df lists only modules that appear in runModule commands
-  # AllSpecs_ls is a list of processed specifications
-  # We refer to it later to find and load input files, and to simulate a model run
-  Errors_ <- character(0)
-  AllSpecs_ls <- list()
-  for (i in 1:nrow(ModuleCalls_df)) {
-    AllSpecs_ls[[i]] <- list()
-    ModuleName <- ModuleCalls_df$ModuleName[i]
-    AllSpecs_ls[[i]]$ModuleName <- ModuleName
-    PackageName <- ModuleCalls_df$PackageName[i]
-    AllSpecs_ls[[i]]$PackageName <- PackageName
-    AllSpecs_ls[[i]]$RunFor <- ModuleCalls_df$RunFor[i]
-    #Check module availability
-    Err <- checkModuleExists(ModuleName, PackageName, InstalledPkgs_)
-    if (length(Err) > 0) {
-      Errors_ <- c(Errors_, Err)
-      next()
-    }
-    #Load and check the module specifications
-    Specs_ls <- processModuleSpecs(getModuleSpecs(ModuleName, PackageName))
-    Err <- checkModuleSpecs(Specs_ls, ModuleName)
-    if (length(Err) > 0) {
-      Errors_ <- c(Errors_, Err)
-      next()
-    } else {
-      AllSpecs_ls[[i]]$Specs <- Specs_ls
-    }
-    #If the 'Call' spec is not null and is a list, check the called module
-    if (!is.null(Specs_ls$Call) && is.list(Specs_ls$Call)) {
-      #Iterate through module calls
-      for (j in 1:length(Specs_ls$Call)) {
-        Call_ <- unlist(strsplit(Specs_ls$Call[[j]], "::"))
-        #Check module availability
-        if (length(Call_) == 2) { # package explicitly specified
-          Err <-
-          checkModuleExists(
-            Call_[2],
-            Call_[1],
-            InstalledPkgs_,
-            c(Module = ModuleName, Package = PackageName))
-        } else  {
-          if (length(Call_) == 1) { # only module name is provided
-            if (! any(Call_ %in% ModulesByPackage_df$Module) ) {
-              Err <- c(
-                paste0("Error in runModule call for module ", Call_,"."),
-                "It is not present in any package already identified in the model run script.",
-                "Please add requirePackage(<package-with-module>) to the script."
-              )
-            } else {
-              callPkgs_ <- ModuleCalls_df$PackageName[Call_ %in% ModuleCalls_df$ModuleName]
-              if ( length(callPkgs_)==1 ) { # use existing explicit call to module
-                Call_ <- c( callPkgs_, Call_ )
-              } else  { # callPkgs_ is probably length 0, but could also have more than 1
-                Pkg <- ModulesByPackage_df$Package[ModulesByPackage_df$Module == Call_]
-                Call_ <- c(unique(Pkg), Call_)
-                if (length(Call_) > 2 ) { # More than one package contains the module
-                  callPkgs_ <- Call_[-length(Call_)]
-                  callModule_ <- Call_[length(Call_)]
-                  testPkgs_ <- callPkgs_[callPkgs_ %in% explicitRequired_]
-                  if ( length(testPkgs_) == 0 ) testPkgs_ <- callPkgs_  # No explicit required package
-                  if ( length(testPkgs_) > 1 ) { # Could not resolve by explicit required package
-                    Msg_ <- paste("Providing module",callModule_,"from package",testPkgs_[1])
-                    Warn_ <- c(
-                      Msg_,
-                      paste("Also present in: ", paste(testPkgs_[2:length(testPkgs_)],collapse=", ")),
-                      "Use requirePackage() to force selection."
-                    )
-                    writeLog(Warn_,Level="warn")
-                  } else { # Resolved to exactly one package with the module
-                    writeLog(paste("Provided module",callModule_,"from Package",testPkgs_[1]),Level="info")
-                  }
-                  Call_ <- c(testPkgs_[1],callModule_) # Use the first package found, unless explicit
-                }
-              }
-            }
-          } else {
-            Err <- paste("Cannot fathom Call specification:",Specs_ls$Call[[j]])
-          }
-        }
-        if (length(Err) > 0) {
-          Errors_ <- c(Errors_, Err)
-          next()
-        }
-        # Load and check the module specifications and add Get specs if
-        # there are no specification errors
-        for (i in 1:(length(Call_)-1)) { # Code above forces length(Call_) always to be 2 or fail
-          CallSpecs_ls <-
-          processModuleSpecs(getModuleSpecs(Call_[length(Call_)], Call_[i]))
-          Err <- checkModuleSpecs(CallSpecs_ls, Call_[length(Call_)])
-          if (length(Err) > 0) {
-            Errors_ <- c(Errors_, Err)
-            next()
-          } else {
-            AllSpecs_ls[[i]]$Specs$Get <-
-            c(AllSpecs_ls[[i]]$Specs$Get <- Specs_ls$Get)
-          }            
-        }
-      }
-    }
-
-    #If any errors, print to log and stop execution
-    if (length(Errors_) > 0) {
-      Msg <-
-      paste0("There are one or more errors in the module calls:\n",
-        "package not installed, or module not present in package, ",
-        "or errors in module specifications.")
-      writeLog(c(Msg,Errors_),Level="error")
-      stop(Msg," Check log for details")
-    }
+  if ( RunModel ) {
 
     #==================
     #SIMULATE MODEL RUN
     #==================
+    # TODO: See if this works without RunModel
+    # May be some hangups for LoadDatastore workflow
     if (SimulateRun) {
       simDataTransactions(AllSpecs_ls)
     }
-  }
-
-  if ( RunModel ) {
-    # perform the "Run" step
-
-    #==============================================================
-    # PREPARE THE DATASTORE (SAVE PREVIOUS THEN LOAD OR INITIALIZE)
-    #==============================================================
 
     #----------------------------
     #Set up objects and functions
@@ -621,6 +325,123 @@ function(
     RunDstoreName <- normalizePath(ve.model$ModelState_ls$DatastoreName, winslash = "/", mustWork = FALSE)
     RunDstoreDir <- dirname(RunDstoreName)
     RunDstoreFile <- basename(RunDstoreName)
+
+    # Assign the correct datastore interaction functions
+    assignDatastoreFunctions(RunParam_ls$DatastoreType)
+
+    #=======================================
+    #CHECK CONFLICTS WITH EXISTING DATASTORE
+    #=======================================
+    # Sort out LoadDatastore/SaveDatastore parameters, based on what exists
+    # Do this step in all run modes, but skip some of the checking if not RunModel
+    # The "local" block has side-effects on variables defined outside it;
+    # "local" is used to gather the errors into one place via "return" statements
+
+    #Error if LoadDatastore and the DatastoreName does not exist
+    if ( LoadDatastore && !file.exists(LoadDstoreName) ) {
+      DstoreConflicts <- c(DstoreConflicts,
+        paste0(
+          "Failed to load Datastore ",LoadDstoreName,". ",
+          "Perhaps the full path name was not specified."
+        )
+      )
+    }
+
+    # Get values from the other Datastore
+    LoadDstoreType <- (LoadEnv$ModelState_ls$DatastoreType)
+    #Get datastore type from current ModelState
+    RunDstoreType <- (ve.model$ModelState_ls$DatastoreType)
+
+    #Check that run and load datastores are of same type
+    if ( RunDstoreType != LoadDstoreType) {
+      DstoreConflicts <- c(DstoreConflicts, paste(
+        "Incompatible datastore types.\n",
+        "This Model Run has type: ", RunDstoreType, ".\n",
+        "Load Datastore has type: ", LoadDstoreType, "."
+      ))
+    }
+    #Check that geography, units, deflators and base year are consistent
+    BadGeography <-
+    !all.equal(ve.model$ModelState_ls$Geo_df, LoadEnv$ModelState_ls$Geo_df)
+    BadUnits <-
+    !all.equal(ve.model$ModelState_ls$Units, LoadEnv$ModelState_ls$Units)
+    BadDeflators <-
+    !all.equal(ve.model$ModelState_ls$Deflators, LoadEnv$ModelState_ls$Deflators)
+    BadBaseYear <- ! (ve.model$ModelState_ls$BaseYear == LoadEnv$ModelState_ls$BaseYear)
+
+    if ( BadGeography || BadUnits || BadDeflators || BadBaseYear) {
+      elements <- paste(
+        "Geography"[BadGeography],
+        "Units"[BadUnits],
+        "Deflators"[BadDeflators],
+        "Base Year"[BadBaseYear],
+        sep="_"
+      )
+      elements <- gsub("_",", ",gsub("^_+|_+$","",elements))
+      DstoreConflicts <- c(DstoreConflicts,
+        paste(
+          "Inconsistent ",elements," between Model Run and LoadDatastore."
+        )
+      )
+    }
+
+    if ( file.exists(RunDstoreName) ) {
+      if ( ! ( LoadDatastore || SaveDatastore ) ) {
+        DstoreConflicts <- c(DstoreConflicts,
+          paste(
+            "The existing datastore, ",RunDstoreName," will NOT be overwritten.\n",
+            "Set SaveDatastore=TRUE to move the existing datastore aside.\n",
+            "To add to it, set DatastoreName=NULL and set LoadDatastore=TRUE.\n",
+            "Or just delete it and try again.\n"
+          )
+        )
+      } else if (
+        LoadDatastore &&
+        ! SaveDatastore &&
+        ! loadExistingDatastore ) {
+        DstoreConflicts <- c(DstoreConflicts,
+          paste(
+            "Loading DatastoreName='",LoadDstoreName,"'.",
+            "Existing datastore ",RunDstoreName," would be overwritten.",
+            "Set SaveDatastore=TRUE to move the existing datastore aside.\n",
+            "Or delete it and try again.\n"
+          )
+        )
+      }
+    } else if ( SaveDatastore ) {
+      InfoMsg <- c(
+        InfoMsg,
+        "Ignored run parameter SaveDatastore=TRUE, as there is no Datastore to save."
+      )
+      SaveDatastore <- FALSE
+    }
+  
+    #---------------------------------------------------------
+    # Check loaded ModelState for compatibility
+    # Won't do this check if the model is not running
+    #---------------------------------------------------------
+
+    #Write information message to log if any
+    if (length(InfoMsg) != 0) {
+      writeLog(InfoMsg,Level="warn")
+    }
+
+    if (length(DstoreConflicts) != 0) {
+      # Restore previous model state if we had moved it out of the way
+      if ( nzchar(previousModelStateName) && savedPreviousModelState ) {
+        unlink(currentModelStatePath)
+        if (file.exists(previousModelStateName)) { # TODO: relative to RunDirectory
+          file.rename(previousModelStateName, basename(currentModelStatePath))
+        }
+      }
+      writeLog(DstoreConflicts,Level="error")
+      stop("Datastore configuration error: See log messages.",call.=FALSE)
+    }
+
+    #==============================================================
+    # PREPARE THE DATASTORE (SAVE PREVIOUS THEN LOAD OR INITIALIZE)
+    #==============================================================
+
     #--------------------------------------------------------
     #Save previous datastore and model state if SaveDatastore
     #--------------------------------------------------------
@@ -651,6 +472,7 @@ function(
           unlink(RunDstoreName,recursive=TRUE)
         }
         # Copy the loaded file/directory Datastore hierarchy
+        # TODO: use virtual link to previous Datastore, rather than copying mega- or gigabytes
         loadDatastoreCopy <- tempfile(tmpdir=getwd(),pattern="Datastore_")
         dir.create(loadDatastoreCopy)
         file.copy(LoadDstoreName, loadDatastoreCopy, recursive = TRUE)
@@ -659,6 +481,7 @@ function(
       }
 
       # Copy datastore inventory for loaded datastore
+      # TODO virtual link to previous Datastore
       ve.model$ModelState_ls$Datastore <- LoadEnv$ModelState_ls$Datastore
       setModelState(ve.model$ModelState_ls,Save=RunModel)
 
@@ -681,129 +504,9 @@ function(
     #===============================
     #CHECK AND PROCESS MODULE INPUTS
     #===============================
-    #Set up a list to store processed inputs for all modules
-    ProcessedInputs_ls <- list()
-    #Process inputs for all modules and add results to list
-    # ORIGINAL VERSION:
-      #     for (i in 1:nrow(ModuleCalls_df)) {
-      #       Module <- ModuleCalls_df$ModuleName[i]
-      #       Package <- ModuleCalls_df$PackageName[i]
-      #       EntryName <- paste(Package, Module, sep = "::")
-      #       ModuleSpecs_ls <- processModuleSpecs(getModuleSpecs(Module, Package))
-      #       #If there are inputs, process them
-      #       if (!is.null(ModuleSpecs_ls$Inp)) {
-      #         ProcessedInputs_ls[[EntryName]] <- processModuleInputs(ModuleSpecs_ls, Module)
-      #         #If module is Initialize process inputs with Initialize function
-      #         if (Module == "Initialize") {
-      #           if (length(ProcessedInputs_ls[[Module]]$Errors) == 0) {
-      #             initFunc <- eval(parse(text = paste(Package, Module, sep = "::")))
-      #             InitData_ls <- ProcessedInputs_ls[[EntryName]]
-      #             InitializedInputs_ls <- initFunc(InitData_ls)
-      #             ProcessedInputs_ls[[EntryName]]$Data <- InitializedInputs_ls$Data
-      #             ProcessedInputs_ls[[EntryName]]$Errors <- InitializedInputs_ls$Errors
-      #             if (length(InitializedInputs_ls$Warnings > 0)) {
-      #               writeLog(InitializedInputs_ls$Warnings,Level="warn")
-      #             }
-      #           }
-      #         }
-      #       }
-      #     }
-    for (Spec in AllSpecs_ls) {
-      Module <- Spec$ModuleName
-      Package <- Spec$PackageName
-      EntryName <- paste(Package, Module, sep = "::")
-      ModuleSpecs_ls <- (Spec$Specs)
-      #If there are inputs, process them
-      if (!is.null(ModuleSpecs_ls$Inp)) {
-        ProcessedInputs_ls[[EntryName]] <- processModuleInputs(ModuleSpecs_ls, Module)
-        # Process inputs with Initialize function
-        if (Module == "Initialize") {
-          if (length(ProcessedInputs_ls[[EntryName]]$Errors) == 0) {
-            initFunc <- eval(parse(text = paste(Package, Module, sep = "::")))
-            InitData_ls <- ProcessedInputs_ls[[EntryName]]
-            InitializedInputs_ls <- initFunc(InitData_ls)
-            ProcessedInputs_ls[[EntryName]]$Data <- InitializedInputs_ls$Data
-            ProcessedInputs_ls[[EntryName]]$Errors <- InitializedInputs_ls$Errors
-            if (length(InitializedInputs_ls$Warnings > 0)) {
-              writeLog(InitializedInputs_ls$Warnings,Level="warn")
-            }
-          }
-        }
-      }
-    }
-    #Check whether there are any input errors
-    InpErrors_ <- unlist(lapply(ProcessedInputs_ls, function (x) {
-      x$Errors
-    }))
-    HasErrors <- length(InpErrors_ != 0)
-    if (HasErrors) {
-      writeLog(InpErrors_,Level="errors")
-      stop("Input files have errors. Check the log for details.")
-    }
-    rm(InpErrors_)
 
-    #Load model inputs into the datastore
-    #------------------------------------
-    # Original Process
-      #     for (i in 1:nrow(ModuleCalls_df)) {
-      #       #Get information on the inputs
-      #       Module <- ModuleCalls_df$ModuleName[i]
-      #       Package <- ModuleCalls_df$PackageName[i]
-      #       EntryName <- paste(Package, Module, sep = "::")
-      #       ModuleSpecs_ls <- processModuleSpecs(getModuleSpecs(Module, Package))
-      #       #Eliminate writing any new input table to Global group if it already exists
-      #       if (!is.null(ModuleSpecs_ls$NewInpTable)) {
-      #         NewInpTableSpecs_ls <- ModuleSpecs_ls$NewInpTable
-      #         GlobalTableExists_ <- unlist(lapply(NewInpTableSpecs_ls, function(x) {
-      #           if (x$GROUP == "Global") {
-      #             checkTableExistence(x$TABLE, "Global", ve.model$ModelState_ls$Datastore)
-      #           } else {
-      #             FALSE
-      #           }
-      #         }))
-      #         if (all(GlobalTableExists_)) {
-      #           ModuleSpecs_ls$NewInpTable <- NULL
-      #         } else {
-      #           ModuleSpecs_ls$NewInpTable <- NewInpTableSpecs_ls[!GlobalTableExists_]
-      #         }
-      #       }
-      #       #Load inputs to datastore
-      #       if (!is.null(ModuleSpecs_ls$Inp)) {
-      #         inputsToDatastore(ProcessedInputs_ls[[EntryName]], ModuleSpecs_ls, Module)
-      #       }
-      #     }
-    for (Spec in AllSpecs_ls) {
-      #Get information on the inputs
-      Module <- Spec$ModuleName
-      Package <- Spec$PackageName
-      EntryName <- paste(Package, Module, sep = "::")
-      ModuleSpecs_ls <- (Spec$Specs)
-      #Eliminate writing any new input table to Global group if it already exists
-      if (!is.null(ModuleSpecs_ls$NewInpTable)) {
-        NewInpTableSpecs_ls <- ModuleSpecs_ls$NewInpTable
-        GlobalTableExists_ <- unlist(lapply(NewInpTableSpecs_ls, function(x) {
-          if (x$GROUP == "Global") {
-            checkTableExistence(x$TABLE, "Global", ve.model$ModelState_ls$Datastore)
-          } else {
-            FALSE
-          }
-        }))
-        if (all(GlobalTableExists_)) {
-          ModuleSpecs_ls$NewInpTable <- NULL
-        } else {
-          ModuleSpecs_ls$NewInpTable <- NewInpTableSpecs_ls[!GlobalTableExists_]
-        }
-      }
-      #Load inputs to datastore
-      if (!is.null(ModuleSpecs_ls$Inp)) {
-        inputsToDatastore(ProcessedInputs_ls[[EntryName]], ModuleSpecs_ls, Module)
-      }
-    }
-  }
+    processInputFiles(AllSpecs_ls)
 
-  #Report done with initialization
-  #-------------------------------
-  if ( RunModel ) {
     writeLog(
       c(
         paste("Scenario:",ve.model$ModelState_ls$Scenario),
@@ -811,27 +514,11 @@ function(
       ), Level = "warn"
     )
   }
-  writeLog("Model successfully initialized.", Level = "warn")
-}
 
-#=================
-#IS MODEL RUNNING?
-#=================
-#' Check if model is running
-#'
-#' \code{modelRunning} returns TRUE if the model is running; otherwise
-#' the run_model.R script is executed as a "dry run"
-#'
-#' @return TRUE if ve.model$RunModel is TRUE, otherwise FALSE
-#' @export
-modelRunning <- function() {
-  if ( ! "ve.model" %in% search() ) { # have not performed initializeModel
-    return(FALSE)
-  } else if ( "RunModel" %in% ls(ve.model) ) { # VEModel will set during "open" or "run" model
-    return(ve.model$RunModel)
-  } else { # The model is running in backward-compatible mode
-    return(ve.model$RunModel <- TRUE)
-  }
+  #Report done with initialization
+  #-------------------------------
+  writeLog("Model successfully initialized.", Level = "warn")
+  invisible(ve.model$ModelState_ls)
 }
 
 #===============
