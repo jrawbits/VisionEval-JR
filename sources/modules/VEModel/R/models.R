@@ -312,14 +312,18 @@ ve.model.loadModelState <- function(log="error") {
       private$ModelState[[ basename(stagePath) ]] <- ms.env$Model_State_ls
     } else {
       modelScriptFile <- normalizePath(file.path(self$modelPath,stagePath,scriptFile),winslash="/")
+      visioneval::initLog(Save=FALSE,Threshold=log)
       ve.model <- visioneval::modelEnvironment()
       ve.model$RunModel <- FALSE
-      ve.model$ve.logger <- "ve.logger"
       ve.model$RunStatus <- "Not Run"
-      futile.logger::flog.threshold(log.level(log))
-      futile.logger::flog.threshold(log.level(log),name=ve.model$ve.logger)
-      # TODO: incorporate the arguments to initializeModel listed in modelScriptFile
-      visioneval::initializeModel(Param_ls=self$RunParam_ls,ModelScriptFile=modelScriptFile)
+      self$RunParam_ls$ParsedModelScript <- parsedScript <- visioneval::parseModelScript(modelScriptFile)
+      # TODO: extract initialization parameters
+      visioneval::initializeModel(
+        Param_ls=self$RunParam_ls,
+        ModelScriptFile=modelScriptFile,
+        ParsedModelScript=parsedScript,
+        LogLevel=log
+      )
       private$ModelState[[ basename(stagePath) ]] <- ve.model$ModelState_ls
       rm(list=ls(ve.model),envir=ve.model)
       rm(ve.model)
@@ -391,23 +395,6 @@ ve.model.init <- function(modelPath=NULL,verbose=TRUE,log="error") {
   self$status <- self$runStatus[length(self$runStatus)]
 }
 
-log.level <- function(level) {
-  legal.levels <- c(
-    "DEBUG"=futile.logger::DEBUG,
-    "ERROR"=futile.logger::ERROR,
-    "FATAL"=futile.logger::FATAL,
-    "INFO"=futile.logger::INFO,
-    "TRACE"=futile.logger::TRACE,
-    "WARN"=futile.logger::WARN
-  )
-  level <- toupper(level)
-  if ( level %in% names(legal.levels) ) {
-    return(legal.levels[level])
-  } else {
-    return(legal.levels["ERROR"])
-  }
-}
-
 ve.model.stages <- function(stage=NULL,stageScript=NULL) {
   NULL
 }
@@ -473,9 +460,7 @@ ve.model.run <- function(stage=NULL,lastStage=NULL,stageScript=NULL,lastScript=N
 
     rm(list=ls(ve.model),envir=ve.model) # ve.model is always fresh for each model stage
     ve.model$RunParam_ls <- self$RunParam_ls; # put it where initializeModel can see it
-
-    ve.model$ve.logger <= "ve.logger"
-    futile.logger::flog.threshold(log.level(log),name=ve.model$ve.logger)
+    ve.model$RunParam_ls$LogLevel <- log
     tryCatchLog::tryCatchLog(
       {
         self$status <- "Running"
@@ -483,19 +468,17 @@ ve.model.run <- function(stage=NULL,lastStage=NULL,stageScript=NULL,lastScript=N
 
         # Find and run the model script for the stage
         # Formally set run parameters for post mortem debugging
+        ModelDir <- normalizePath(file.path(self$modelPath,stage),winslash="/",mustWork=TRUE)
         modelRunParam_ls <- list(
-          ModelDir=normalizePath(
-            file.path(self$modelPath,stage),
-            winslash="/",mustWork=TRUE
-          ),
+          ModelDir=ModelDir,
           ModelScriptFile=file.path(ModelDir,runModel)
         )
         ve.model$RunParam_ls <- visioneval::mergeParameters(
           ve.model$RunParam_ls,
           visioneval::addParameterSource(modelRunParam_ls,"VEModel$run constructed")
         )
-        ModelDir <- visioneval::getRunParameter("ModelDir",Default=NA,Param_ls=ve.model$RunParam_ls)
-        ModelScriptFile <- visioneval::getRunParameter("ModelScriptFile",Default=NA,Param_ls=ve.model$RunParam_ls)
+        ModelDir <- visioneval::getRunParameter("ModelDir",Default=ModelDir,Param_ls=ve.model$RunParam_ls)
+        ModelScriptFile <- visioneval::getRunParameter("ModelScriptFile",Default=runModel,Param_ls=ve.model$RunParam_ls)
 
         sys.source(ModelScriptFile,envir=ve.model)
 

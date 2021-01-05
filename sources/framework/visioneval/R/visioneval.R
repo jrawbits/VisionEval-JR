@@ -79,7 +79,7 @@ function(
   LoadDatastore = FALSE,
   DatastoreName = NULL, # WARNING: different from "DatastoreName" loaded as a run parameter
   SimulateRun = FALSE,
-  LogLevel = "error",
+  LogLevel = NULL,
   ...
 ) {
   # TODO: Refactor so we do the following tasks:
@@ -138,7 +138,7 @@ function(
   RunParamFile <- getRunParameter("RunParamFile",Default="run_parameters.json",Param_ls=RunParam_ls)
   InputPath <- getRunParameter("InputPath",Default=".",Param_ls=Param_ls)
 
-  ParamPath <- normalizePath(file.path(InputPath,ParamDir),winslash="/",mustWork=FALSE)
+  ParamPath <- normalizePath(file.path(InputPath,ParamDir),winslash="/",mustWork=FALSE) # might be more than one
   RunParam_ls <- loadConfiguration(ParamDir=ParamPath,ParamFile=RunParamFile,override=RunParam_ls)
 
   ModelScriptFile <- getRunParameter( # in old-style model, dots will have overridden
@@ -164,7 +164,11 @@ function(
 
   # If "Run" step is explicitly invoked, start the current model run log file
   # If not running, all messages are just logged to "ve.logger"
-  # (defaulting to the ROOT logger, which appends to the console by default)
+  # (defaulting to the ROOT logger, which appends to the console by
+  # default)
+  if ( is.null(LogLevel) ) {
+    LogLevel <- getRunParameter("LogLevel",Default="error",Param_ls=RunParam_ls)
+  }
   logState <- initLog(Timestamp,Threshold=LogLevel,Save=RunModel) # start/reset the model run logger
 
   # Get status of current model state
@@ -240,8 +244,13 @@ function(
   #PARSE SCRIPT TO MAKE TABLE OF ALL THE MODULE CALLS, CHECK AND COMBINE SPECS
   #===========================================================================
 
-  #Parse script and make data frame of modules that are called directly
-  parsedScript <- parseModelScript(RunParam_ls$ModelScriptFile)
+  #Parse script and make data frame of modules that are called
+  #directly
+  parsedScript <- getRunParameter(
+    "ParsedModelScript",
+    Default=parseModelScript(ModelScriptFile),
+    Param_ls=RunParam_ls
+  )
 
   # Create required package list, adding from previous ModelState if available
   AlreadyInitialized <- character(0) # required (initialized packages) from loaded datastore
@@ -504,11 +513,13 @@ function(
 
     processInputFiles(AllSpecs_ls)
 
-    writeLog(
-      c(
+    writeLogMessage(
+      paste(
+        paste("Name:",ve.model$ModelState_ls$Model),
         paste("Scenario:",ve.model$ModelState_ls$Scenario),
-        paste("Description:",ve.model$ModelState_ls$Description)
-      ), Level = "warn"
+        paste("Description:",ve.model$ModelState_ls$Description),
+        sep="\n"
+      )
     )
   }
 
