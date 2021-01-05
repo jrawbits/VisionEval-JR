@@ -176,6 +176,9 @@ getRunParameter <- function(Parameter,Default=NA,Param_ls=NULL,logSource=FALSE) 
 #' @export
 readConfigurationFile <- function(ParamDir=NULL,ParamFile=NULL,mustWork=FALSE) {
 
+  # Initialize the parameter list
+  ParamFile_ls <- list()
+
   # ParamFile is ignored if ParamDir is not provided
   if ( is.null(ParamDir) && !is.null(ParamFile) ) ParamFile <- NULL
   
@@ -198,61 +201,72 @@ readConfigurationFile <- function(ParamDir=NULL,ParamFile=NULL,mustWork=FALSE) {
     }
   }
   if ( all(!is.null(c(ParamDir,ParamFile))) ) {
-    ParamFilePath <- file.path(ParamDir,ParamFile)
-    if ( mustWork && ! file.exists(ParamFilePath) ) {
-      stop(
-        writeLog(
-          paste("Missing required parameter file:",ParamFilePath),
-          Level="error"
-        )
-      )
+    ParamFileExists <- FALSE
+    if ( ! is.null(ParamFile) ) {
+      for ( pDir in ParamDir ) { # Might be more than one, depending on InputPath
+        ParamFilePath <- file.path(ParamDir,ParamFile)
+        ParamFileExists <- file.exists(ParamFilePath)
+        if ( ParamFileExists ) break
+      }
     }
-    ParamFile_ls <- list()
     formatErrors <- character(0)
     formatWarnings <- character(0)
-    ParamFile_ls <- withRestarts(
-      json = function(path,yaml.msg) {
+
+    if ( ! ParamFileExists ) {
+      if ( mustWork ) {
+        stop(
+          writeLog(
+            paste("Missing required parameter file:",ParamFilePath),
+            Level="error"
+          )
+        )
+      }
+      # else fall through with ParamFile_ls an empty list
+    } else {
+      ParamFile_ls <- withRestarts(
+        json = function(path,yaml.msg) {
+          tryCatch(
+            {
+              jsonlite::fromJSON(path)
+            },
+            error = function(e) {
+              formatErrors <- c(formatErrors,yaml.msg,paste("JSON:",conditionMessage(e)))
+              list()
+            },
+            warning = function(w) {
+              formatWarnings <- c(formatWarnings,paste("JSON:",conditionMessage(w)))
+            }
+          )
+        },
         tryCatch(
           {
-            jsonlite::fromJSON(path)
+            yaml::yaml.load_file(ParamFilePath)
           },
-          error = function(e) {
-            formatErrors <- c(formatErrors,yaml.msg,paste("JSON:",conditionMessage(e)))
-            list()
+          error = function(e) formatErrors <- {
+            invokeRestart("json",ParamFilePath,paste("YAML:",conditionMessage(e)))
           },
-          warning = function(w) {
-            formatWarnings <- c(formatWarnings,paste("JSON:",conditionMessage(w)))
-          }
+          warning = function(w) formatWarnings <- c(formatWarnings,paste("YAML:",conditionMessage(w)))
         )
-      },
-      tryCatch(
-        {
-          yaml::yaml.load_file(ParamFilePath)
-        },
-        error = function(e) formatErrors <- {
-          invokeRestart("json",ParamFilePath,paste("YAML:",conditionMessage(e)))
-        },
-        warning = function(w) formatWarnings <- c(formatWarnings,paste("YAML:",conditionMessage(w)))
       )
-    )
-    if ( length(formatWarnings)>0 ) {
-      writeLog(paste("Warning reading run parameters from ",ParamFilePath))
-      writeLog(formatWarnings,Level="warn")
-    } else if ( length(formatErrors)>0 ) {
-      stop(
-        "\nError reading run parameters from ",ParamFilePath,"\n",
-        paste(collapse="\n",writeLog(formatErrors,Level="error"))
-      )
+      if ( length(formatWarnings)>0 ) {
+        writeLog(paste("Warning reading run parameters from ",ParamFilePath))
+        writeLog(formatWarnings,Level="warn")
+      }
+      if ( length(formatErrors)>0 ) {
+        stop(
+          "\nError reading run parameters from ",ParamFilePath,"\n",
+          paste(collapse="\n",writeLog(formatErrors,Level="error"))
+        )
+      }
     }
-  } else {
-    ParamFile_ls <- list()
-  }
-  if ( ! is.list(ParamFile_ls) || ! all(nzchar(names(ParamFile_ls))) ) {
+  } else writeLog(paste("No parameter file found in",ParamDir),Level="debug")
+  if ( length(ParamFile_ls)>0 && ! all(nzchar(names(ParamFile_ls))) ) {
     stop( paste(
       collapse="\n",
       writeLog( c(
         paste("Parsing run parameters did not yield a named R list ( class",class(ParamFile_ls),")"),
-        paste("Parameter file:",ParamFilePath)
+        paste("Parameter file:",ParamFilePath),
+        Level="error"
       ) )
     ) )
   }
@@ -272,7 +286,7 @@ readConfigurationFile <- function(ParamDir=NULL,ParamFile=NULL,mustWork=FALSE) {
 #'
 #' @param Param_ls a named list of run parameters
 #' @param Source a character string describing the source
-#' @result Param_ls, with a "source" data.frame attached (if possible)
+#' @return Param_ls, with a "source" data.frame attached (if possible)
 #' @export
 addParameterSource <- function(Param_ls,Source="Manually added") {
   if (
@@ -498,4 +512,192 @@ findRuntimeInputFile <- function(File,Dir="InputDir",DefaultDir="inputs",Param_l
     stop( writeLog(paste("Could not locate",File,"in",searchDir),Level="error") )
   }
   return(candidates[1]) # if StopOnError==FALSE, return NA
+}
+
+#INITIALIZE LOG
+#==============
+#' Initialize logging.
+#'
+#' \code{initLog} a visioneval framework control function that sets up a logging environment and
+#' optionally creates a log (text file) that stores messages generated by the framework or packages.
+#'
+#' This function creates a log file that is a text file which stores messages generated during a
+#' model run. The default name of the log is 'Log_<prefix>_<date>_<time>.txt' where '<date>' is the
+#' initialization date and '<time>' is the initialization time, and '<prefix>' is the Prefix
+#' parameter provided to the function.
+#'
+#' Logging can be re-initialized at any time to divert subsequent log messages to a different file.
+#' If logging to a file is turned off and writeLog is not in an interactive environment
+#' (e.g. inside an Rscript), logging to a file will be turned on, with the log file being placed
+#' in ve.runtime (if it exists) or the current working directory, with filePrefix set to
+#' "VisionEval".
+#'
+#' @param TimeStamp Force the log message time stamp to this value (default: \code{Sys.time()})
+#' @param Threshold Logging threshold to display (see \code{writeLog()} for available levels).
+#' Messages below the threshold will be ignored. Default is "info" which shows a lot. "warn" is
+#' typical for running a model, and "error" for only the worst.
+#' @param Save a logical (default TRUE) indicating whether to save the log file
+#' @param Prefix A character string appended to the file name for the log file. For example, if the
+#' Prefix is 'CreateHouseholds', the log file is named 'Log_CreateHouseholds_<date>_<time>.txt'. The
+#' default value is NULL in which case the Prefix is the date and time.
+#' @return A list containing the name of the constructed log file and the time stamp
+#' @import futile.logger
+#' @export
+initLog <- function(TimeStamp = NULL, Threshold="info", Save=TRUE, Prefix = NULL) {
+
+  if (is.null(TimeStamp)) {
+    TimeStamp <- as.character(Sys.time())
+  }
+  LogNameParts <- unlist(strsplit(TimeStamp,split=" "))
+
+  if ( ! is.null(Prefix) ) LogNameParts <- c(Prefix,LogNameParts)
+
+  if ( Save ) {
+    LogNameParts <- gsub("[^-[:alnum:]._]","",LogNameParts) # filter illegal filename characters
+    LogFile <- paste0(paste(c("Log",LogNameParts),collapse="_"),".txt")
+  } else {
+    LogFile <- "console"
+  }
+
+  # Create and provision the ve.logger
+  th <- which( log.threshold %in% Threshold )
+  if ( length(th)==0 ) Threshold <- "INFO"
+  futile.logger::flog.threshold(Threshold, name="ve.logger")
+  futile.logger::flog.layout( log.layout.visioneval,name="ve.logger")
+  if ( Save ) {
+    if ( interactive() ) {
+      futile.logger::flog.appender(futile.logger::appender.tee(LogFile),name="ve.logger")
+    } else {
+      futile.logger::flog.appender(futile.logger::appender.file(LogFile),name="ve.logger")
+    }
+  } else {
+    futile.logger::flog.appender(futile.logger::appender.console(),name="ve.logger")
+  }
+
+  if ( interactive() ) {
+    futile.logger::flog.appender(log.appender.errtee(LogFile),name="stderr")
+  } else {
+    futile.logger::flog.appender(futile.logger::appender.file(LogFile),name="stderr")
+  }
+  futile.logger::flog.threshold("WARN",name="stderr")
+  futile.logger::flog.layout( log.layout.visioneval, name="stderr")
+
+  startMsg <- paste("Logging started at",TimeStamp,"for",toupper(Threshold),"to",LogFile)
+  writeLogMessage(startMsg)
+
+  invisible(list(LogFile=LogFile,ModelStart=TimeStamp))
+}
+#initLog()
+
+# futile.logger layout for visioneval (adjusted from futile.logger::layout.simple)
+
+prepare_arg <- function(x) {
+  if (is.null(x) || length(x) == 0) return(deparse(x))
+  return(x)
+}
+
+log.appender.errtee <- function(file) {
+  function(line) {
+    cat(line,sep="",file=stderr())
+    cat(line,file=file,append=TRUE,sep="")
+  }
+}
+
+log.layout.message <- function(level,msg,...) return(paste(msg,...,"\n",sep=""))
+
+log.layout.visioneval <- function(level, msg, id='', ...)
+{
+  the.time <- format(Sys.time(), "%Y-%m-%d %H:%M:%S")
+  if (length(list(...)) > 0) {
+    parsed <- lapply(list(...), prepare_arg)
+    msg <- do.call(sprintf, c(msg, parsed))
+  }
+  return( sprintf("[%s] %s : %s\n", substr(names(level),1,1), the.time, msg) )
+}
+
+# Internal log level translation table
+log.threshold <- c(
+  "TRACE",
+  "DEBUG",
+  "INFO",
+  "WARN",
+  "ERROR",
+  "FATAL"
+)
+log.function <- list(
+  TRACE = futile.logger::flog.trace,
+  DEBUG = futile.logger::flog.debug,
+  INFO  = futile.logger::flog.info,
+  WARN  = futile.logger::flog.warn,
+  ERROR = futile.logger::flog.error,
+  FATAL = futile.logger::flog.fatal
+)
+
+#WRITE LOG MESSAGE
+#================
+#' Write an unformatted messge to log (no timestamp, etc.)
+#'
+#' \code{writeLogMessage} a visioneval framework control function that writes an unformatted message
+#' to the run log (without time stamp, etc.)
+#'
+#' This function logs messages to the VisionEval log, which will be stdout (the console) if not
+#' running a model, and the model log file if a model is running.
+#'
+#' A character vector may be provided for Msg, in which case each element of the vector will become
+#' one line in the log.
+#'
+#' @param Msg A character vector, whose first element must not be empty.
+#' @return TRUE if the message is written to the log successfully ("as-is")
+#' @export
+writeLogMessage <- function(Msg = "") {
+  if ( missing(Msg) || length(Msg)==0 || ! nzchar(Msg) ) {
+    message(
+      "writeLogMessage(Msg): No message supplied\n",
+    )
+  } else {
+    futile.logger::flog.layout( log.layout.message, name="ve.logger" )
+    futile.logger::flog.fatal( Msg, name="ve.logger" ) # "fatals" always get out...
+    futile.logger::flog.layout( log.layout.visioneval, name="ve.logger" )
+  }
+  invisible(Msg)
+}
+
+#WRITE TO LOG
+#============
+#' Write to log.
+#'
+#' \code{writeLog} a visioneval framework control function that writes a message
+#' to the run log.
+#'
+#' This function logs messages to the VisionEval log, which will be stdout
+#' (the console) if not running a model, and the model log file if a model
+#' is running.
+#'
+#' A character vector may be provided for Msg, in which case each
+#' element of the vector will become one line in the log.
+#'
+#' @param Msg A character vector, whose first element must not be empty.
+#' @param Level character string identifying log level
+#' @param Logger character string identifying where to send the log message
+#' @return TRUE if the message is written to the log successfully.
+#' It appends the time and the message text to the run log.
+#' @export
+writeLog <- function(Msg = "", Level="INFO", Logger="") {
+  if ( missing(Msg) || length(Msg)==0 || ! nzchar(Msg) ) {
+    message(
+      "writeLog(Msg,Level,Logger): No message supplied\n",
+      "Available Log Levels:\n",
+      paste(names(log.threshold),collapse=", ")
+    )
+  } else {
+    Level <- toupper(Level)
+    if ( ! Level %in% names(log.function) ) Level="INFO"
+    if ( ! is.character(Logger) || ! nzchar(Logger) ) {
+      Logger <- if ( which(log.threshold==Level) >= which(log.threshold=="WARN") ) "stderr" else "ve.logger"
+    }
+    for ( m in Msg ) {
+      log.function[[Level]](m,name=Logger)
+    }
+  }
+  invisible(Msg)
 }
