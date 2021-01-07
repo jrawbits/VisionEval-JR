@@ -310,8 +310,6 @@ getUnits <- function(Type_) {
 #' @param Save if FALSE, just update ModelState in memory, otherwise write changes to disk
 #' @return A list of all processed module specifications
 parseModuleCalls <- function( ModuleCalls_df, AlreadyInitialized, RequiredPackages, Save=TRUE ) {
-  # TODO: look backward into ModelState from LoadDatastore (earlier stages)
-  # and pull the required modules from those.
 
   ModuleCalls_df <- unique(ModuleCalls_df)
 
@@ -1394,7 +1392,7 @@ initDatastoreGeography <- function(GroupNames = NULL) {
 loadModelParameters <- function() {
   G <- getModelState()
   RunParam_ls <- G$RunParam_ls
-  ModelParamInfo <- c("ParamDir","ModelParamFile","InputPath")
+  ModelParamInfo <- c("ParamDir","ModelParamFile")
   missingParams <- ! ModelParamInfo %in% names(RunParam_ls)
   if ( any(missingParams) ) {
     stop(
@@ -1410,9 +1408,10 @@ loadModelParameters <- function() {
   writeLog("Loading model parameters file.",Level="info")
   ParamFile <- file.path(RunParam_ls$ParamDir, RunParam_ls$ModelParamFile)
   if (!file.exists(ParamFile)) {
-    # Not Found: Try again looking this time in InputDir
+    # Not Found: Try again looking this time in InputPath
+    InputPath <- getRunParameter("InputPath",Default=getwd(),Param_ls=RunParam_ls)
     ParamFile <- file.path(RunParam_ls$InputPath, RunParam_ls$ModelParamFile)
-    if (!file.exists(ParamFile)) {
+    if (!any(file.exists(ParamFile))) {
       # Still Not Found: Throw an error
       ErrorMsg <- paste0(
         "Model parameters file (",
@@ -1421,6 +1420,8 @@ loadModelParameters <- function() {
         paste(RunParam_ls$ParamDir,RunParam_ls$InputDir,collapse=", ")
       )
       stop( writeLog(ErrorMsg,Level="error") )
+    } else {
+      ParamFile <- ParamFile[1] # may have multiple InputPaths; pick the first found file
     }
   }
 

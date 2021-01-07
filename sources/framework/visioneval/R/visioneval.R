@@ -238,7 +238,7 @@ function(
   }
 
   # Flag if we're trying to (re-)load the existing Datastore
-  loadExistingDatastore <- LoadDatastore && (RunDstoreName == LoadDstoreName) && (RunDstoreDir == LoadDstoreDir)
+  LoadExistingDatastore <- LoadDatastore && (RunDstoreName == LoadDstoreName) && (RunDstoreDir == LoadDstoreDir)
 
   #===========================================================================
   #PARSE SCRIPT TO MAKE TABLE OF ALL THE MODULE CALLS, CHECK AND COMBINE SPECS
@@ -260,44 +260,63 @@ function(
   DstoreConflicts <- character(0)
   InfoMsg <- character(0)
 
-  # Load the previous model state, if availble
+  # Load the previous model state, if available
+  # TODO: if ! RunModel look for the model state in the file system,
+  # and if not found, then look for LoadedModelState in ve.model, a
+  # named list of ModelStates created in memory from earlier stages
+  # by VEModel.
   LoadEnv <- new.env() # for loaded ModelState
-  if ( RunModel && LoadDatastore ) {
-    if ( loadExistingDatastore  ) {
-      # Find the Existing Datastore and ModelState for it
-      # try to load of ModelStateFileName from LoadDstoreDir:
-      #    If RunModel, fail if not present
-      #    Otherwise, look for it in memory
-      #      Check if ModelState is loaded in ve.model$ModelStateStages[basename(LoadDstoreDir)]
-      #        (VEModel will have performed this initialization on all earlier stages and left
-      #         its results there)
-      #      If not available in memory, skip consistency checks and report a warning
-      #        (Supports use case of adding a new model - e.g. for computing additional metrics
-      #         using a module not in the original model run)
-
-      # In "Load" mode, if we don't find a pre-loaded ModelState, it probably means the basename for
-      # the directory listed for LoadDatastore is not one containing a ModelScriptFile - that's a
-      # user-level book-keeping error.
+  if ( LoadDatastore ) {
+    # If running and LoadExisting, find it in the file system by
+    # loading the "previous" that we had moved out of the way above
+    if ( RunModel && LoadExistingDatastore  ) {
+      # LoadExistingDatastore means load the one for this model
+      # If it doesn't exist and we're not running, that's fine 
       if ( nzchar(previousModelStateName) ) {
         # we moved aside the old model state; now we'll resurrect it
         # into the current model state
         load(previousModelStateName, envir=LoadEnv)
         setModelState(LoadEnv$ModelState_ls,Save=RunModel)
-      } # else the current model state already has the previous contents
-    } else {
-      # Load model state from the directory containing the other Datastore
-      # Use the currently configured ModelStateFileName
-      #  if it's not right, that model needs to re-run in the current environment
+      } # else the current model state already has the necessary contents
+        #  probably because it is being built from scratch
+    }
+    if ( ! LoadExistingDatastore ) {
+      # Seek ModelState from the directory containing the other Datastore
+      # In the file system, use the currently configured ModelStateFileName
+      #  if it's not right, that other model needs to be re-run in
+      #  the current environment.
       modelStatePath <- file.path(LoadDstoreDir,ModelStateFileName)
-      if ( ! loadModelState(modelStatePath,envir=LoadEnv) ) {
-        stop(writeLog(paste("Unable to open ModelState:",modelStatePath),Level="error"),call.=FALSE)
+      modelStateLoaded <- loadModelState(modelStatePath,envir=LoadEnv)
+      if ( ! modelStateLoaded && ! RunModel ) {
+        # If the ModelState is not in the filesystem and we're not
+        # running, look for pseudo-ModelStates built by VEModel$initialize
+        if ( "ModelStateStages" %in% ls(ve.model) ) {
+          LoadEnv$ModelState_ls <- ve.model$ModelStateStages[LoadDstoreDir]
+          if ( ! is.null(LoadEnv$ModelState_ls) ) {
+            modelStateLoaded <- TRUE
+          }
+        }
       }
+      if ( ! modelStateLoaded ) {
+        stop(
+          writeLog(
+            c(
+              "Error in LoadDatastore.",
+              "The prior stage is missing; run it first.",
+              paste("Prior stage:",LoadDstoreName),
+              paste("Unable to load ModelState:",modelStatePath)
+            ),
+            Level="error"),
+          call.=FALSE
+        )
+      }
+    }
 
-      # Copy over the required packages part of the previous model state
-      if ( "RequiredVEPackages" %in% names(LoadEnv$ModelState_ls) ) {
-        AlreadyInitialized <- LoadEnv$ModelState_ls$RequiredVEPackages
-        RequiredPackages <- unique(c(RequiredPackages, LoadEnv$ModelState_ls$RequiredVEPackages))
-      }
+    # Copy over the required packages part of the previous model state
+    # That's all we need so we can parse the current module calls successfully
+    if ( "RequiredVEPackages" %in% names(LoadEnv$ModelState_ls) ) {
+      AlreadyInitialized <- LoadEnv$ModelState_ls$RequiredVEPackages
+      RequiredPackages <- unique(c(RequiredPackages, LoadEnv$ModelState_ls$RequiredVEPackages))
     }
   }
 
@@ -353,42 +372,44 @@ function(
       )
     }
 
-    # Get values from the other Datastore
-    LoadDstoreType <- (LoadEnv$ModelState_ls$DatastoreType)
-    #Get datastore type from current ModelState
-    RunDstoreType <- (ve.model$ModelState_ls$DatastoreType)
+    if ( LoadDatastore ) {
+      # Get values from the other Datastore
+      LoadDstoreType <- (LoadEnv$ModelState_ls$DatastoreType)
+      #Get datastore type from current ModelState
+      RunDstoreType <- (ve.model$ModelState_ls$DatastoreType)
 
-    #Check that run and load datastores are of same type
-    if ( RunDstoreType != LoadDstoreType) {
-      DstoreConflicts <- c(DstoreConflicts, paste(
-        "Incompatible datastore types.\n",
-        "This Model Run has type: ", RunDstoreType, ".\n",
-        "Load Datastore has type: ", LoadDstoreType, "."
-      ))
-    }
-    #Check that geography, units, deflators and base year are consistent
-    BadGeography <-
-    !all.equal(ve.model$ModelState_ls$Geo_df, LoadEnv$ModelState_ls$Geo_df)
-    BadUnits <-
-    !all.equal(ve.model$ModelState_ls$Units, LoadEnv$ModelState_ls$Units)
-    BadDeflators <-
-    !all.equal(ve.model$ModelState_ls$Deflators, LoadEnv$ModelState_ls$Deflators)
-    BadBaseYear <- ! (ve.model$ModelState_ls$BaseYear == LoadEnv$ModelState_ls$BaseYear)
+      #Check that run and load datastores are of same type
+      if ( RunDstoreType != LoadDstoreType) {
+        DstoreConflicts <- c(DstoreConflicts, paste(
+          "Incompatible datastore types.\n",
+          "This Model Run has type: ", RunDstoreType, ".\n",
+          "Load Datastore has type: ", LoadDstoreType, "."
+        ))
+      }
+      #Check that geography, units, deflators and base year are consistent
+      BadGeography <-
+      !all.equal(ve.model$ModelState_ls$Geo_df, LoadEnv$ModelState_ls$Geo_df)
+      BadUnits <-
+      !all.equal(ve.model$ModelState_ls$Units, LoadEnv$ModelState_ls$Units)
+      BadDeflators <-
+      !all.equal(ve.model$ModelState_ls$Deflators, LoadEnv$ModelState_ls$Deflators)
+      BadBaseYear <- ! (ve.model$ModelState_ls$BaseYear == LoadEnv$ModelState_ls$BaseYear)
 
-    if ( BadGeography || BadUnits || BadDeflators || BadBaseYear) {
-      elements <- paste(
-        "Geography"[BadGeography],
-        "Units"[BadUnits],
-        "Deflators"[BadDeflators],
-        "Base Year"[BadBaseYear],
-        sep="_"
-      )
-      elements <- gsub("_",", ",gsub("^_+|_+$","",elements))
-      DstoreConflicts <- c(DstoreConflicts,
-        paste(
-          "Inconsistent ",elements," between Model Run and LoadDatastore."
+      if ( BadGeography || BadUnits || BadDeflators || BadBaseYear) {
+        elements <- paste(
+          "Geography"[BadGeography],
+          "Units"[BadUnits],
+          "Deflators"[BadDeflators],
+          "Base Year"[BadBaseYear],
+          sep="_"
         )
-      )
+        elements <- gsub("_",", ",gsub("^_+|_+$","",elements))
+        DstoreConflicts <- c(DstoreConflicts,
+          paste(
+            "Inconsistent ",elements," between Model Run and LoadDatastore."
+          )
+        )
+      }
     }
 
     if ( file.exists(RunDstoreName) ) {
@@ -404,7 +425,7 @@ function(
       } else if (
         LoadDatastore &&
         ! SaveDatastore &&
-        ! loadExistingDatastore ) {
+        ! LoadExistingDatastore ) {
         DstoreConflicts <- c(DstoreConflicts,
           paste(
             "Loading DatastoreName='",LoadDstoreName,"'.",
@@ -472,7 +493,7 @@ function(
     #       Need to clear existing Datastore, if there is one
     if (LoadDatastore) {
       # If not the same as any existing datastore, delete existing datastore
-      if ( ! loadExistingDatastore ) {
+      if ( ! LoadExistingDatastore ) {
         # Remove existing Datastore
         if ( file.exists(RunDstoreName) ) {
           unlink(RunDstoreName,recursive=TRUE)
