@@ -204,8 +204,15 @@ readConfigurationFile <- function(ParamDir=NULL,ParamFile=NULL,mustWork=FALSE) {
     ParamFileExists <- FALSE
     if ( ! is.null(ParamFile) ) {
       for ( pDir in ParamDir ) { # Might be more than one, depending on InputPath
-        ParamFilePath <- file.path(ParamDir,ParamFile)
+        ParamFilePath <- unique(file.path(ParamDir,ParamFile))
         ParamFileExists <- file.exists(ParamFilePath)
+        if ( length(ParamFilePath)>1 ) {
+          for ( i in 1:length(ParamFilePath) ) {
+            writeLog(
+              paste("ParamFile",i,ParamFilePath[i]),Level="info")
+          }
+          ParamFilePath <- ParamFilePath[which(ParamFileExists)[1]]
+        }
         if ( ParamFileExists ) break
       }
     }
@@ -560,27 +567,30 @@ initLog <- function(TimeStamp = NULL, Threshold="info", Save=TRUE, Prefix = NULL
   }
 
   # Create and provision the ve.logger
-  th <- which( log.threshold %in% Threshold )
+  th <- which( log.threshold %in% toupper(Threshold) )
   if ( length(th)==0 ) Threshold <- "INFO"
+
+  # ve.logger is for all messages from Threshold on up
+  #  (so may include more or less than stderr)
   futile.logger::flog.threshold(Threshold, name="ve.logger")
   futile.logger::flog.layout( log.layout.visioneval,name="ve.logger")
+
+  # stderr logger is for WARN, ERROR or FATAL (always)
+  futile.logger::flog.threshold("WARN",name="stderr")
+  futile.logger::flog.layout( log.layout.visioneval, name="stderr")
+
   if ( Save ) {
     if ( interactive() ) {
       futile.logger::flog.appender(futile.logger::appender.tee(LogFile),name="ve.logger")
+      futile.logger::flog.appender(futile.logger::appender.tee(LogFile),name="stderr")
     } else {
       futile.logger::flog.appender(futile.logger::appender.file(LogFile),name="ve.logger")
+      futile.logger::flog.appender(futile.logger::appender.file(LogFile),name="stderr")
     }
   } else {
     futile.logger::flog.appender(futile.logger::appender.console(),name="ve.logger")
+    futile.logger::flog.appender(futile.logger::appender.console(),name="stderr")
   }
-
-  if ( interactive() ) {
-    futile.logger::flog.appender(log.appender.errtee(LogFile),name="stderr")
-  } else {
-    futile.logger::flog.appender(futile.logger::appender.file(LogFile),name="stderr")
-  }
-  futile.logger::flog.threshold("WARN",name="stderr")
-  futile.logger::flog.layout( log.layout.visioneval, name="stderr")
 
   startMsg <- paste("Logging started at",TimeStamp,"for",toupper(Threshold),"to",LogFile)
   writeLogMessage(startMsg)
@@ -647,17 +657,18 @@ log.function <- list(
 #' one line in the log.
 #'
 #' @param Msg A character vector, whose first element must not be empty.
+#' @param Logger A string indicating the name of the logger ("ve.logger" or "stderr")
 #' @return TRUE if the message is written to the log successfully ("as-is")
 #' @export
-writeLogMessage <- function(Msg = "") {
+writeLogMessage <- function(Msg = "", Logger="ve.logger") {
   if ( missing(Msg) || length(Msg)==0 || ! nzchar(Msg) ) {
     message(
       "writeLogMessage(Msg): No message supplied\n",
     )
   } else {
-    futile.logger::flog.layout( log.layout.message, name="ve.logger" )
-    futile.logger::flog.fatal( Msg, name="ve.logger" ) # "fatals" always get out...
-    futile.logger::flog.layout( log.layout.visioneval, name="ve.logger" )
+    futile.logger::flog.layout( log.layout.message, name=Logger )
+    futile.logger::flog.fatal( Msg, name=Logger ) # "fatals" always get out...
+    futile.logger::flog.layout( log.layout.visioneval, name=Logger )
   }
   invisible(Msg)
 }
@@ -673,12 +684,14 @@ writeLogMessage <- function(Msg = "") {
 #' (the console) if not running a model, and the model log file if a model
 #' is running.
 #'
-#' A character vector may be provided for Msg, in which case each
-#' element of the vector will become one line in the log.
+#' A character vector may be provided for Msg, in which case each ' element of the vector will
+#'   become one line in the log. By default, messages are logged to stderr if WARN or above, or to
+#'   ve.logger if below WARN but at or above the current ve.logger threshold. If a Logger is
+#'   given explicitly, it will be written to (provided its own threshold is at a sufficient level).
 #'
 #' @param Msg A character vector, whose first element must not be empty.
 #' @param Level character string identifying log level
-#' @param Logger character string identifying where to send the log message
+#' @param Logger character string overriding default logger selection
 #' @return TRUE if the message is written to the log successfully.
 #' It appends the time and the message text to the run log.
 #' @export

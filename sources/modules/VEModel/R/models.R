@@ -82,12 +82,13 @@ modelInRoot <- function(modelPath,searchScript,searchExact) {
   if ( length(paths) == 0 ) {
     dirs <- list(dir(list.dirs(modelPath,recursive=FALSE),full.names=TRUE))
     paths <- do.call("grep",c(grepArgs,dirs))
+    visioneval::writeLog(dirs,Level="debug")
   }
   if ( length(paths) > 0 ) {
     # All matching searchScript files with path relative to modelPath
     paths <- sub("^\\./","",sub( modelPath,".",paths )) # still includes the file name
     # Must have no more than one run_model.R per subdirectory
-    if ( ( dupes <- duplicated(dirname(paths)) ) ) {
+    if ( ( any(dupes <- duplicated(dirname(paths))) ) ) {
       Msg <- paste(
         "Model script ",
         if ( searchExact ) "exact search" else "regex search",
@@ -285,9 +286,9 @@ ve.model.copy <- function(newName=NULL,newPath=NULL) {
   get.destination <- 
   newModelPath <- normalizePath(newModelPath,winslash="/",mustWork=FALSE)
   dir.create(newModelPath,showWarnings=FALSE)
-  for ( p in 1:self$stageCount ) {
-    copy.from <- setdiff(self$dir(path=p),private$artifacts(path=p))
-    copy.to <- file.path(newModelPath,self$stagePaths[p])
+  for ( s in 1:self$stageCount ) {
+    copy.from <- setdiff(self$dir(state=s),private$artifacts(state=s))
+    copy.to <- file.path(newModelPath,self$stagePaths[s])
     dir.create(copy.to,showWarnings=FALSE)
     file.copy(copy.from,copy.to,recursive=TRUE)
   }
@@ -299,32 +300,38 @@ ve.model.loadModelState <- function(log="error") {
   # Load all the ModelStates for the model stages, using initializeModel with RunModel=FALSE
   ResultsDir <- visioneval::getRunParameter("ResultsDir",Default=".",Param_ls=self$RunParam_ls)
   ModelStateFileName <- visioneval::getRunParameter("ModelStateFileName",Default="ModelState.Rda",Param_ls=self$RunParam_ls)
+  BaseInputPath <- visioneval::getRunParameter("InputPath",Default=self$modelPath,Param_ls=self$RunParam_ls)
   private$ModelState <- list()
   owd <- setwd(file.path(self$modelPath,ResultsDir))
   on.exit(setwd(owd))
   for ( stage in seq_along(self$stagePaths) ) {
+    Param_ls <- self$RunParam_ls
     stagePath <- self$stagePaths[stage]
-    scriptFile <- self$stageScripts[stage]
-    modelState <- normalizePath(file.path(self$modelPath,ResultsDir,stagePath,ModelStateFileName),winslash="/",mustWork=FALSE)
-    if ( file.exists(modelState) ) {
-      ms.env <- new.env()
-      load(modelState,envir=ms.env)
-      private$ModelState[[ basename(stagePath) ]] <- ms.env$Model_State_ls
+    stageInput <- file.path(self$modelPath,stagePath)
+    Param_ls$ResultsDir <- file.path(ResultsDir,stagePath)
+    setwd(file.path(self$modelPath,Param_ls$ResultsDir))
+    modelState <- normalizePath(ModelStateFileName,winslash="/",mustWork=FALSE)
+    if ( visioneval::loadModelState(modelState, ( ms.env <- new.env() )) ) {
+      private$ModelState[[ basename(stagePath) ]] <- ms.env$ModelState_ls
     } else {
-      modelScriptFile <- normalizePath(file.path(self$modelPath,stagePath,scriptFile),winslash="/")
+      scriptFile <- self$stageScripts[stage]
+      modelScriptFile <- normalizePath(file.path(stageInput,scriptFile),winslash="/")
       visioneval::initLog(Save=FALSE,Threshold=log)
       ve.model <- visioneval::modelEnvironment()
       ve.model$RunModel <- FALSE
       ve.model$RunStatus <- "Not Run"
-      self$RunParam_ls$ParsedModelScript <- parsedScript <- visioneval::parseModelScript(modelScriptFile)
-      # TODO: extract initialization parameters
+      ve.model$ModelStateStages <- private$ModelState; # previously loaded model states
+      Param_ls$InputPath <- c(stageInput,BaseInputPath)
+      parsedScript <- visioneval::parseModelScript(modelScriptFile)
+      # TODO: extract initialization parameters from model script
       visioneval::initializeModel(
-        Param_ls=self$RunParam_ls,
+        Param_ls=Param_ls,
         ModelScriptFile=modelScriptFile,
-        ParsedModelScript=parsedScript,
+        ParsedModelScript=parsedScript, # Could also have done Param_ls$ParsedModelScript <- parsedScript
         LogLevel=log
       )
       private$ModelState[[ basename(stagePath) ]] <- ve.model$ModelState_ls
+      browser()
       rm(list=ls(ve.model),envir=ve.model)
       rm(ve.model)
     }
@@ -437,11 +444,7 @@ ve.model.run <- function(stage=NULL,lastStage=NULL,stageScript=NULL,lastScript=N
   if ( is.null(lastStage) ) lastStage <- self$stageCount;
 
   # Set up the model runtime environment
-  if ( ! "ve.model" %in% search() ) {
-    ve.model <- attach(NULL,name="ve.model")
-  } else {
-    ve.model <- as.environment("ve.model")
-  }
+  ve.model <- visioneval::modelEnvironment()
 
   for ( ms in stageStart:lastStage ) {
     stage <- self$stagePaths[ms]
@@ -541,39 +544,36 @@ ve.model.dir <- function(pattern=NULL,recursive=FALSE,shorten="",stage=NULL,stag
   # path/stage can be a vector of discrete stages (e.g. c(1,3); only
   # those will be inspected.
   # TODO: separate script specification from stageScript specification
-  if ( missing(path) ) path <- stage
-  if ( is.null(path) ) path<-c(1:self$stageCount)
-  files <- dir(self$modelPath[path],pattern=pattern,recursive=recursive,full.names=TRUE)
+  if ( is.null(stage) ) stage<-c(1:self$stageCount)
+  files <- dir(self$modelPath[stage],pattern=pattern,recursive=recursive,full.names=TRUE)
   if ( nzchar(shorten) ) files <- gsub(shorten,"",files)
   return(files)
 }
 
 # outputOnly will just report the extraction results
 # (not the model run)
-ve.artifacts <- function(path=NULL,stage=NULL,outputOnly=FALSE) {
-  if ( missing(path) ) path <- stage
+ve.artifacts <- function(stage=NULL,outputOnly=FALSE) {
   if ( ! outputOnly ) {
-    mstates <- self$dir(pattern=".*(Previous)*ModelState\\.Rda",path=path)
+    mstates <- self$dir(pattern=".*(Previous)*ModelState\\.Rda",stage=stage)
     mstates <- mstates[!dir.exists(mstates)]
-    dstores <- self$dir(pattern="Datastore_*",path=path)
+    dstores <- self$dir(pattern="Datastore_*",stage=stage)
     dstores <- dstores[dir.exists(dstores)]
-    logs    <- self$dir(pattern="Log_*.*\\.txt",path=path)
+    logs    <- self$dir(pattern="Log_*.*\\.txt",stage=stage)
     logs    <- logs[!dir.exists(logs)]
     artifacts <- c(mstates,dstores,logs)
   } else artifacts <- character(0)
-  outputs <- self$dir(pattern="output",path=path)
+  outputs <- self$dir(pattern="output",stage=stage)
   return(c(artifacts,outputs))
 }
 
-ve.model.clear <- function(force=FALSE,outputOnly=NULL,path=NULL,stage=NULL) {
-  if ( missing(path) ) path <- stage
+ve.model.clear <- function(force=FALSE,outputOnly=NULL,stage=NULL) {
   if ( missing( outputOnly ) ) {
     # If "output" exists in any stage, only offer to clear outputs
     # unless the user manually overrides. Makes it harder to
     # accidentally delete a model run.
     outputOnly = any( dir.exists( file.path(self$modelPath,"output") ) )
   }
-  to.delete <- private$artifacts(path=path,outputOnly=outputOnly)
+  to.delete <- private$artifacts(stage=stage,outputOnly=outputOnly)
   if ( length(to.delete)>0 ) {
     to.delete <- gsub(paste0("^",getwd(),"/"),"",to.delete)
     print(to.delete)
