@@ -326,19 +326,25 @@ ve.model.loadModelState <- function(log="error") {
     }
     if ( visioneval::loadModelState(modelState, ( ms.env <- new.env() )) ) {
       private$ModelState[[ basename(stagePath) ]] <- ms.env$ModelState_ls
+      if ( "RunStatus" %in% ms.env$ModelState_ls ) {
+        self$runStatus[stage] <- ms.env$ModelState_ls$RunStatus
+      } else {
+        self$runStatus[stage] <- "Prior Run"
+      }
     } else {
+      self$runStatus[stage] <- "Not Run"
       scriptFile <- self$stageScripts[stage]
       modelScriptFile <- normalizePath(file.path(stageInput,scriptFile),winslash="/")
       ve.model <- visioneval::modelEnvironment()
       ve.model$RunModel <- FALSE
-      ve.model$RunStatus <- "Not Run"
       ve.model$ModelStateStages <- private$ModelState; # previously loaded model states
       Param_ls$InputPath <- c(stageInput,BaseInputPath)
       parsedScript <- visioneval::parseModelScript(modelScriptFile)
 
       # Execute the initializeModel function from the model script
       initArgs                   <- parsedScript$InitParams_ls; # includes LoadDatastore etc.
-      initArgs$Param_ls          <- Param_ls;  # Naming explicit arguments makes them higher priority than Param_ls
+      initArgs$Param_ls          <- Param_ls;
+      # Naming explicit arguments below (e.g. ModelScriptFile) makes them higher priority than Param_ls
       initArgs$ModelScriptFile   <- modelScriptFile
       initArgs$ParsedModelScript <- parsedScript
       initArgs$LogLevel          <- log
@@ -394,23 +400,8 @@ ve.model.init <- function(modelPath=NULL,verbose=TRUE,log="error") {
   # Load the Model State
   private$loadModelState(log=log)
 
-  # TODO: Make this work with nested (interior) stages
-  self$runStatus <- sapply(
-    simplify=TRUE,
-    private$ModelState,
-    function(ms) {
-      if ( length(ms) > 0 ) {
-        # TODO: ms might be a list of interior stages
-        ifelse(
-          "runStatus" %in% names(ms),
-          ms$runStatus,
-          "Prior Run"
-        )
-      } else {
-        "Not Run"
-      }
-    }
-  )
+  # TODO: Distinguish between a "virtual" model state and one loaded from disk
+  # Move the runStatus setup to loadModelState
   self$status <- self$runStatus[length(self$runStatus)]
 }
 
@@ -418,17 +409,16 @@ ve.model.init <- function(modelPath=NULL,verbose=TRUE,log="error") {
 # Find the runModel script
 # Work in the Results directory - need to relay locations from here to initializeModel
 # Need to set Inputs directory
-ve.model.run <- function(stage=NULL,lastStage=NULL,stageScript=NULL,lastScript=NULL,log="ERROR",verbose=TRUE) {
-  # stage and lastStage will run a sequence of *interior* model stages
-  #   (defined by runStage directives in the run_model.R script)
-  # stageScript and lastScript will run a sequence of *exterior* model stages
-  #   (separate run_model.R scripts)
+ve.model.run <- function(stage=NULL,lastStage=NULL,log="ERROR",verbose=TRUE) {
+  # stage and lastStage will run a sequence of *exterior* model stages (separate run_model.R in
+  # subdirectories)
   # If self$stagePaths has length > 1, stage refers to that *exterior* stage unless stageScript is
   #   also provided (in which case stageScript is the exterior stage, and stage is the interior)
   # TODO: implement for interior scripts
 
   resultsDir <- file.path(self$modelPath,visioneval::getRunParameter("ResultsDir",Default=".",Param_ls=self$RunParam_ls))
   modelStateName <- visioneval::getRunParameter("modelStateFileName",Default="ModelState.Rda",Param_ls=self$RunParam_ls)
+  BaseInputPath <- visioneval::getRunParameter("InputPath",Default=self$modelPath,Param_ls=self$RunParam_ls)
 
   # TODO: look up stages by name/identifier
   # Name will match the "stagePath" basename if we have "exterior" stages
@@ -470,18 +460,19 @@ ve.model.run <- function(stage=NULL,lastStage=NULL,stageScript=NULL,lastScript=N
   ve.model <- visioneval::modelEnvironment()
 
   for ( ms in stageStart:lastStage ) {
-    stage <- self$stagePaths[ms]
+    stagePath <- self$stagePaths[ms]
     runModel <- self$stageScripts[ms]
+    stageInput <- file.path(self$modelPath,stagePath)
 
     if ( verbose ) {
-      if ( stage != "." ) {
+      if ( stagePath != "." ) {
         message("Running model stage:")
-        message(stage)
+        message(stagePath)
       } else {
         message("Running model ",self$modelName)
       }
     }
-    owd <- setwd(file.path(self$modelPath,stage))
+    owd <- setwd(file.path(self$modelPath,stagePath))
     self$status <- ""
 
     rm(list=ls(ve.model),envir=ve.model) # ve.model is always fresh for each model stage
@@ -494,8 +485,10 @@ ve.model.run <- function(stage=NULL,lastStage=NULL,stageScript=NULL,lastScript=N
 
         # Find and run the model script for the stage
         # Formally set run parameters for post mortem debugging
-        ModelDir <- normalizePath(file.path(self$modelPath,stage),winslash="/",mustWork=TRUE)
+        ModelDir <- normalizePath(file.path(self$modelPath,stagePath),winslash="/",mustWork=TRUE)
+        InputPath <- c(stageInput,BaseInputPath)
         modelRunParam_ls <- list(
+          InputPath=InputPath,
           ModelDir=ModelDir,
           ModelScriptFile=file.path(ModelDir,runModel)
         )
@@ -508,11 +501,11 @@ ve.model.run <- function(stage=NULL,lastStage=NULL,stageScript=NULL,lastScript=N
 
         sys.source(ModelScriptFile,envir=ve.model)
 
-        if (verbose) visioneval::writeLog(paste0("Model stage ",stage," complete"),Level="info")
+        if (verbose) visioneval::writeLog(paste0("Model stage ",stagePath," complete"),Level="info")
         self$status <- self$runStatus[ms] <- "Complete"
       },
       error = function(e) {
-        remark <- paste0("Model stage ",stage," failed")
+        remark <- paste0("Model stage ",stagePath," failed")
         msg <- as.character(e)
         if ( ! nzchar(msg) ) msg <- "Stopped."
         self$status <- "Error"
@@ -531,24 +524,24 @@ ve.model.run <- function(stage=NULL,lastStage=NULL,stageScript=NULL,lastScript=N
         if (verbose) {
           visioneval::writeLog(
             c(
-              paste("Model Stage:",stage),
+              paste("Model Stage:",stagePath),
               self$status
             )
           )
         }
-        modelStatePath <- file.path(resultsDir,self$stagePaths[ms],modelStateName)
-        visioneval::setModelState(
-          list(
-            runStatus=self$runStatus[ms]
-          ),
-          FileName=modelStatePath,
-          Save=file.exists(modelStatePath)
-        )
+        if ( is.list(ve.model$ModelState_ls) ) {
+          modelStatePath <- file.path(resultsDir,self$stagePaths[ms],modelStateName)
+          visioneval::setModelState(
+            list(
+              RunStatus=self$runStatus[ms]
+            ),
+            FileName=modelStatePath,
+            Save=file.exists(modelStatePath)
+          )
+          private$ModelState[[ toupper(basename(stagePath)) ]] <- ve.model$ModelState_ls
+        }
         setwd(owd)
       }
-      # NOTE: ve.model is left with all its elements in place for
-      # post mortem analysis. It will get cleared when the final
-      # stage
     )
     if (verbose) {
       cat("Status:",self$status,"\n")
@@ -557,7 +550,7 @@ ve.model.run <- function(stage=NULL,lastStage=NULL,stageScript=NULL,lastScript=N
       break;
     }
   }
-  # Reload the ModelState files for each stage
+  # Reload the ModelState files for each stage to synchronize with file system
   private$loadModelState()
 
   return(invisible(self$status))
@@ -779,7 +772,7 @@ openModel <- function(modelPath="",log="error") {
     } else {
       ve.runtime <- getwd()
     }
-    return(dir(file.path(ve.runtime,visioneval::getRunParameter("ModelDir",Default="models",Param_ls=Param_ls))))
+    return(dir(file.path(ve.runtime,visioneval::getRunParameter("ModelRoot",Default="models",Param_ls=Param_ls))))
   } else {
     return( VEModel$new(modelPath = modelPath,log=log) )
   }

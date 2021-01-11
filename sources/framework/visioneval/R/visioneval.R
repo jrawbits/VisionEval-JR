@@ -131,19 +131,21 @@ function(
   }
 
   # Process configuration files in relevant places
+  # ModelDir is the absolute path to the root for the model being run
+  # getwd() is a subdirectory of that (ResultsDir or ResultsDir/stagePath for a staged model)
   ModelDir <- getRunParameter("ModelDir",Default=getwd(),Param_ls=Param_ls)
 
   # Dots will override anything passed from the environment or loaded up from the current directory
   DotParam_ls <- addParameterSource(list(...),"initializeModel(...)")
   RunParam_ls <- loadConfiguration(ParamDir=getwd(),keep=DotParam_ls,override=Param_ls)
 
-  ParamDir <- getRunParameter("ParamDir",Default="defs",Param_ls=RunParam_ls)
-  RunParamFile <- getRunParameter("RunParamFile",Default="run_parameters.json",Param_ls=RunParam_ls)
-  InputPath <- getRunParameter("InputPath",Default=".",Param_ls=Param_ls)
+  # Look for defs along InputPath, and run_parameters.json. Fail if file not found.
+  ParamPath <- findRuntimeInputFile("run_parameters.json","ParamDir",DefaultDir="defs",Param_ls=RunParam_ls)
+  RunParam_ls <- loadConfiguration(ParamPath=ParamPath,override=RunParam_ls)
 
-  ParamPath <- normalizePath(file.path(InputPath,ParamDir),winslash="/",mustWork=FALSE) # might be more than one
-  RunParam_ls <- loadConfiguration(ParamDir=ParamPath,ParamFile=RunParamFile,override=RunParam_ls)
-
+  # ModelScriptFile is the absolute path to the run_model.R script (which could be in a
+  # subdirectory of ModelDir).
+  # Default is to look for run_model.R in the current directory.
   ModelScriptFile <- getRunParameter( # in old-style model, dots will have overridden
     "ModelScriptFile",
     Default=normalizePath(file.path(ModelDir,"run_model.R"),winslash="/"),
@@ -363,7 +365,7 @@ function(
     #----------------------------------------------
     # Establish the datastore interaction functions
     #----------------------------------------------
-    assignDatastoreFunctions(RunParam_ls$DatastoreType)
+    assignDatastoreFunctions(ve.model$ModelState_ls$DatastoreType)
 
     #=====================================
     #CHECK CONFLICTS WITH LOADED DATASTORE
@@ -435,12 +437,9 @@ function(
       }
 
       #Check that geography, units, deflators and base year are consistent
-      BadGeography <-
-      !all.equal(ve.model$ModelState_ls$Geo_df, LoadEnv$ModelState_ls$Geo_df)
-      BadUnits <-
-      !all.equal(ve.model$ModelState_ls$Units, LoadEnv$ModelState_ls$Units)
-      BadDeflators <-
-      !all.equal(ve.model$ModelState_ls$Deflators, LoadEnv$ModelState_ls$Deflators)
+      BadGeography <- !isTRUE(all.equal(ve.model$ModelState_ls$Geo_df, LoadEnv$ModelState_ls$Geo_df))
+      BadUnits <- !isTRUE(all.equal(ve.model$ModelState_ls$Units, LoadEnv$ModelState_ls$Units))
+      BadDeflators <- !isTRUE(all.equal(ve.model$ModelState_ls$Deflators, LoadEnv$ModelState_ls$Deflators))
       BadBaseYear <- ! (ve.model$ModelState_ls$BaseYear == LoadEnv$ModelState_ls$BaseYear)
 
       if ( BadGeography || BadUnits || BadDeflators || BadBaseYear) {
