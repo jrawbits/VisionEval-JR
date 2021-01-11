@@ -41,7 +41,7 @@ initModelState <- function(Save=TRUE,Param_ls=NULL) {
   # Other RunParam_ls elements will be placed in ModelState_ls$RunParam_ls
   RequiredParam_ <- c(
     "Model", "Scenario", "Description", "Region", "BaseYear", "Years",
-    "DatastoreName", "Seed"
+    "DatastoreName", "DatastoreType", "Seed"
   )
   ParamExists_ <- RequiredParam_ %in% names(Param_ls)
   if (any(!ParamExists_)) {
@@ -76,7 +76,6 @@ initModelState <- function(Save=TRUE,Param_ls=NULL) {
   GeoFile <- getRunParameter("GeoFile",Default="geo.csv",Param_ls=Param_ls)
   GeoFilePath <- findRuntimeInputFile(GeoFile,Dir="ParamDir",DefaultDir="defs",Param_ls=Param_ls)
   Geo_df <- read.csv(GeoFilePath, colClasses="character")
-  attr(Geo_df,"file") <- GeoFilePath
   CheckResults_ls <- checkGeography(Geo_df)
   Messages_ <- CheckResults_ls$Messages
   if (length(Messages_) > 0) {
@@ -310,7 +309,7 @@ readModelState <- function(Names_ = "All", FileName=NULL, envir=NULL) {
   if ( !is.null(FileName) || ! exists("ModelState_ls",envir=envir,inherits=FALSE) ) {
     if ( is.null(FileName) ) FileName <- getModelStateFileName()
     if ( ! loadModelState(FileName,envir) ) {
-      Msg <- paste("Could not load ModelState from",FileName,"in",getwd())
+      Msg <- paste("Could not load ModelState from",FileName)
       writeLog(Msg,Level="error")
       stop(Msg,call.=FALSE)
     }
@@ -1495,12 +1494,12 @@ loadModelParameters <- function(FlagChanges=FALSE) {
     )
   }
   writeLog("Loading model parameters file.",Level="info")
-  ParamFile <- file.path(RunParam_ls$ParamDir, RunParam_ls$ModelParamFile)
-  if (!file.exists(ParamFile)) {
-    # Not Found: Try again looking this time in InputPath
-    InputPath <- getRunParameter("InputPath",Default=getwd(),Param_ls=RunParam_ls)
-    ParamFile <- file.path(RunParam_ls$InputPath, RunParam_ls$ModelParamFile)
-    if (!any(file.exists(ParamFile))) {
+  ModelParamFile <- getRunParameter("ModelParamFile",Default="model_parameters.json",Param_ls=RunParam_ls)
+  ParamFile <- findRuntimeInputFile(ModelParamFile,"ParamDir",DefaultDir="defs",Param_ls=RunParam_ls,StopOnError=FALSE)
+  if ( is.na(ParamFile) ) {
+    # Not Found: Try again looking this time in InputDir (element of input path)
+    ParamFile <- findRuntimeInputFile(ModelParamFile,"InputDir",DefaultDir="inputs",Param_ls=RunParam_ls,StopOnError=FALSE)
+    if ( is.na(ParamFile) ) {
       # Still Not Found: Throw an error
       ErrorMsg <- paste0(
         "Model parameters file (",

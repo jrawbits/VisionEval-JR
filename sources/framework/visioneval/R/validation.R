@@ -1685,7 +1685,7 @@ processModuleInputs <-
     FilePath_ <- character(0)
     for (i in 1:length(InpSpec_ls)) {
       Spec_ls <- InpSpec_ls[[i]]
-      File <- basename(Spec_ls$FILE)
+      File <- basename(Spec_ls$FILE) # should already be a base name
       Spec_ls$FILEPATH <- file.path(Spec_ls$INPUTDIR,File)
       if ( is.na( FilePath_[File] ) ) {
         pos <- length(FilePath_)+1

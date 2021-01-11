@@ -201,22 +201,21 @@ readConfigurationFile <- function(ParamDir=NULL,ParamFile=NULL,mustWork=FALSE) {
     }
   }
   if ( all(!is.null(c(ParamDir,ParamFile))) ) {
+    if ( length(ParamDir)>1 ) {
+      stop(
+        writeLog(
+          c(
+            "Error: ParamDir has multiple components in readConfigurationFile:\n",
+            paste(ParamDir,"\n")
+          ),
+          Level="error"
+        )
+      )
+    }
     ParamFileExists <- FALSE
     if ( ! is.null(ParamFile) ) {
-      for ( pDir in ParamDir ) { # Might be more than one, depending on InputPath
-        ParamFilePath <- unique(file.path(ParamDir,ParamFile))
-        ParamFileExists <- file.exists(ParamFilePath)
-        ParamFilePath <- ParamFilePath[ParamFileExists] # Pick the first one
-        ParamFileExists <- any(ParamFileExists)         # Reduce to testable condition
-        if ( length(ParamFilePath)>1 ) {
-          for ( i in 1:length(ParamFilePath) ) {
-            writeLog(
-              paste("ParamFile",i,ParamFilePath[i]),Level="info")
-          }
-          ParamFilePath <- ParamFilePath[which(ParamFileExists)[1]]
-        }
-        if ( ParamFileExists ) break
-      }
+      ParamFilePath <- unique(file.path(ParamDir,ParamFile))
+      ParamFileExists <- file.exists(ParamFilePath)
     }
     formatErrors <- character(0)
     formatWarnings <- character(0)
@@ -450,6 +449,8 @@ mergeParameters <- function(Param_ls,Keep_ls) {
 #' @param ParamFile The name of a specific configuration file to retrieve. It is an error if this
 #'   file does not exist, unless "mustWork" is FALSE. ParamFile is ignored if ParamDir is not
 #'   provided.
+#' @param ParamPath The path of the file to open. If provided, then ParamDir/ParamFile are ignored
+#'   and this path is opened directly.
 #' @param keep A named list of run parameters whose values will be added to the items found in
 #'   the configuration file (these values take precedence over what is in the file)
 #' @param override A named list of run parameters whose values will be added to the items found
@@ -462,6 +463,7 @@ mergeParameters <- function(Param_ls,Keep_ls) {
 loadConfiguration <- function( # if all arguments are defaulted, return an empty list
   ParamDir=NULL,
   ParamFile=NULL,
+  ParamPath=NULL, # if provided, use this path and do not construct from ParamDir/ParamFile
   keep=list(),
   override=list(),
   mustWork=FALSE) {
@@ -476,6 +478,11 @@ loadConfiguration <- function( # if all arguments are defaulted, return an empty
   override.origin <- deparse(substitute(override))
   if ( is.list(override) && length(override)>0 && is.null(attr(override,"source") ) ) {
     override <- addParameterSource(override,override.origin)
+  }
+
+  if ( !is.null(ParamPath) ) {
+    ParamFile <- basename(ParamPath)
+    ParamDir <- dirname(ParamPath)
   }
 
   # if providing a ParamFile name, default to error if the file does not exist
