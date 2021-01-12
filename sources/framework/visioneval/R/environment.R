@@ -527,7 +527,7 @@ findRuntimeInputFile <- function(File,Dir="InputDir",DefaultDir="inputs",Param_l
     writeLog(paste("Input path:",paste(searchInDir,collapse=":")),Level="trace")
     stop( writeLog(paste("Could not locate",File,"in",searchDir),Level="error") )
   }
-  return(candidates[1]) # if StopOnError==FALSE, return NA
+  return(candidates[1]) # if StopOnError==FALSE, return NA if it does not exist
 }
 
 #INITIALIZE LOG
@@ -613,11 +613,6 @@ initLog <- function(TimeStamp = NULL, Threshold="info", Save=TRUE, Prefix = NULL
 
 # futile.logger layout for visioneval (adjusted from futile.logger::layout.simple)
 
-prepare_arg <- function(x) {
-  if (is.null(x) || length(x) == 0) return(deparse(x))
-  return(x)
-}
-
 log.appender.errtee <- function(file) {
   function(line) {
     cat(line,sep="",file=stderr())
@@ -625,16 +620,31 @@ log.appender.errtee <- function(file) {
   }
 }
 
+prepare_arg <- function(x) {
+  if (is.null(x) || length(x) == 0) return(deparse(x))
+  return(x)
+}
+
 log.layout.message <- function(level,msg,...) return(paste(msg,...,"\n",sep=""))
 
-log.layout.visioneval <- function(level, msg, id='', ...)
-{
+log.layout.simple <- function(level, msg, id='', ... ) {
+  log.layout.visioneval(level,msg,id,wantLevel=FALSE,...)
+}
+
+log.layout.visioneval <- function(level, msg, id='', wantLevel=TRUE, ...) {
   the.time <- format(Sys.time(), "%Y-%m-%d %H:%M:%S")
   if (length(list(...)) > 0) {
     parsed <- lapply(list(...), prepare_arg)
     msg <- do.call(sprintf, c(msg, parsed))
   }
-  return( sprintf("[%s] %s : %s\n", substr(names(level),1,1), the.time, msg) )
+  if ( wantLevel ) {
+    level <- names(level)[1]
+    level <- paste(substring(level, 1, 1), tolower(substring(level, 2)), sep = "")
+    log.msg <- sprintf("%s [%s]: %s\n", the.time, level, msg)
+  } else {
+    log.msg <- sprintf("%s : %s\n", the.time, msg)
+  }
+  return( log.msg )
 }
 
 # Internal log level translation table
@@ -680,7 +690,8 @@ writeLogMessage <- function(Msg = "", Logger="ve.logger", Level="") {
       "writeLogMessage(Msg): No message supplied\n",
     )
   } else {
-    futile.logger::flog.layout( log.layout.message, name=Logger )
+    on.exit(quote(futile.logger::flog.layout( log.layout.visioneval, name=Logger )))
+    futile.logger::flog.layout( log.layout.simple, name=Logger )
     if ( nzchar(Level) ) {
       # This message won't get out if Level is below the Logger threshold
       visioneval::writeLog(Msg,Level=Level,Logger=Logger)
@@ -688,7 +699,6 @@ writeLogMessage <- function(Msg = "", Logger="ve.logger", Level="") {
       # Otherwise, the message always gets out into the system log
       futile.logger::flog.fatal( Msg, name=Logger ) # "fatals" always get out...
     }
-    futile.logger::flog.layout( log.layout.visioneval, name=Logger )
   }
   invisible(Msg)
 }
@@ -710,12 +720,16 @@ writeLogMessage <- function(Msg = "", Logger="ve.logger", Level="") {
 #'   given explicitly, it will be written to (provided its own threshold is at a sufficient level).
 #'
 #' @param Msg A character vector, whose first element must not be empty.
-#' @param Level character string identifying log level
+#' @param Level character string identifying log level. If missing or invalid a log message will be
+#'   generated as a simple message (no log level in the message) at a level guaranteed to get out
+#'   ("FATAL" - though no error condition will be generated).
 #' @param Logger character string overriding default logger selection
 #' @return TRUE if the message is written to the log successfully.
 #' It appends the time and the message text to the run log.
 #' @export
-writeLog <- function(Msg = "", Level="INFO", Logger="") {
+writeLog <- function(Msg = "", Level="NONE", Logger="") {
+  noLevel <- ( missing(Level) || ! (Level <- toupper(Level) ) %in% log.threshold )
+  if ( noLevel ) Level <- "FATAL"
   if ( missing(Msg) || length(Msg)==0 || ! nzchar(Msg) ) {
     message(
       "writeLog(Msg,Level,Logger): No message supplied\n",
@@ -723,10 +737,14 @@ writeLog <- function(Msg = "", Level="INFO", Logger="") {
       paste(names(log.threshold),collapse=", ")
     )
   } else {
-    Level <- toupper(Level)
-    if ( ! Level %in% names(log.function) ) Level="INFO"
+    # Pick the logger
     if ( ! is.character(Logger) || ! nzchar(Logger) ) {
       Logger <- if ( which(log.threshold==Level) >= which(log.threshold=="WARN") ) "stderr" else "ve.logger"
+    }
+    # Pick the log format 
+    if ( noLevel ) {
+      on.exit(quote(futile.logger::flog.layout( log.layout.visioneval, name=Logger )))
+      futile.logger::flog.layout( log.layout.simple, name=Logger )
     }
     for ( m in Msg ) {
       log.function[[Level]](m,name=Logger)

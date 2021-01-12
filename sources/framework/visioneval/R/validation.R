@@ -1751,6 +1751,10 @@ processModuleInputs <-
         next()
       }
 
+      # TODO: Do a "try"/"recover" loop to check for encoding and use
+      # it if available; if the BOM is not found, re-try with plain
+      # UTF-8 encoding.
+      #
       # Remove the Byte order mark that sometimes appears in the beginning of
       # UTF-8 files on Windows.  Byte Order Mark can't be saved in this
       # windows encoded text file so I include it as raw

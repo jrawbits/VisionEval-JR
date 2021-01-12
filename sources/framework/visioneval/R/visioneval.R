@@ -196,7 +196,7 @@ function(
     RunModel || # always make a new one if running the model (and save the last one)
     ! currentModelStateExists ) # if just opening a fresh model, initialize one in memory
   {
-    if ( RunModel ) writeLog("Initializing Model. This may take a while",Level="warn")
+    if ( RunModel ) writeLog("Initializing Model. This may take a while")
 
     # If running and the ModelState already exists and we want to SaveDatastore
     #   Set the ModelState aside
@@ -317,8 +317,8 @@ function(
         stop(
           writeLog(
             c(
-              "Error in LoadDatastore.",
-              "The prior stage is missing; run it first.",
+              "Error in LoadDatastore:",
+              "The prior stage ModelState is missing; run it first.",
               paste("Prior stage:",LoadDstoreName),
               paste("Unable to load ModelState:",modelStatePath)
             ),
@@ -419,7 +419,8 @@ function(
           "Perhaps the full path name was not specified."
         )
       )
-    } else if ( LoadDatastore ) { # loading and file exists
+    } else if ( LoadDatastore && ! LoadExistingDatastore ) { # loading and file exists
+      # Presume that if we're loading the existing one, it's fine!
       # Check whether the datastore to be loaded is consistent with
       #  the current datastore (using its ModelState)
 
@@ -520,11 +521,12 @@ function(
         file.copy(LoadDstoreName, loadDatastoreCopy, recursive = TRUE)
         file.rename(file.path(loadDatastoreCopy,basename(LoadDstoreName)),RunDstoreName)
         unlink(loadDatastoreCopy,recursive=TRUE)
+        writeLog(paste("Copied previous datastore from:",LoadDstoreName),Level="info")
+        writeLog(paste("Copied datastore            to:",RunDstoreName),Level="info")
 
         # Copy datastore inventory for loaded datastore into current ModelState
         # TODO: use links to previous Datastore rather than copying it
-        ve.model$ModelState_ls$Datastore <- LoadEnv$ModelState_ls$Datastore
-        setModelState(ve.model$ModelState_ls,Save=RunModel)
+        setModelState(list(Datastore=LoadEnv$ModelState_ls$Datastore),Save=RunModel)
 
         # Initialize geography for years not present in datastore
         # Handles model stages where the new stage adds one or more Years
@@ -535,7 +537,7 @@ function(
           NewYears_ <- RunYears_[!(RunYears_ %in% LoadYears_)]
           # NOTE: initDatastore and initDatastoreGeography are performed separately
           # as initDatastore depends on DatastoreType (RD vs H5), whereas
-          # initDatastoreGeography wil 
+          # initDatastoreGeography will use the assigned functions 
           initDatastore(AppendGroups = NewYears_)
           initDatastoreGeography(GroupNames = NewYears_)
           loadModelParameters(FlagChanges=TRUE)
@@ -556,7 +558,7 @@ function(
     #CHECK AND PROCESS MODULE INPUTS
     #===============================
 
-    processInputFiles(AllSpecs_ls)
+    processInputFiles(AllSpecs_ls) # Add them to the Datastore
 
     # writeLogMessage adds "bare messages" to the "ve.logger"
     # intended as metadata for the model run
@@ -573,7 +575,7 @@ function(
 
   #Report done with initialization
   #-------------------------------
-  if ( RunModel ) writeLog("Model successfully initialized.", Level = "warn")
+  if ( RunModel ) writeLog("Model successfully initialized.")
   invisible(ve.model$ModelState_ls)
 }
 
@@ -633,10 +635,8 @@ runModule <- function(ModuleName, PackageName, RunFor, RunYear, StopOnErr = TRUE
   #------------------------------
   ModuleFunction <- paste0(PackageName, "::", ModuleName)
   ModuleSpecs <- paste0(ModuleFunction, "Specifications")
-  Msg <-
-    paste0("Start  module '", ModuleFunction,
-           "' for year '", RunYear, "'.")
-  writeLog(Msg,Level="warn")
+  Msg <- paste0("Start  module '", ModuleFunction, "' for year '", RunYear, "'.")
+  writeLog(Msg)
   #Load the package and module
   #---------------------------
   M <- list()
@@ -777,10 +777,8 @@ runModule <- function(ModuleName, PackageName, RunFor, RunYear, StopOnErr = TRUE
   }
   #Log and print ending message
   #----------------------------
-  Msg <-
-    paste0("Finish module '", ModuleFunction,
-           "' for year '", RunYear, "'.")
-  writeLog(Msg,Level="warn")
+  Msg <- paste0("Finish module '", ModuleFunction, "' for year '", RunYear, "'.")
+  writeLog(Msg)
 
   if ( length(Warnings_) > 0 ) {
     writeLog(Warnings_,Level="warn")
