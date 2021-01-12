@@ -234,25 +234,22 @@ getModelState <- function(...) {
 #' ModelState to its file (otherwise only ModelState_ls in ve.model environment is updated)
 #' @return always TRUE
 #' @export
-setModelState <-
-function(ChangeState_ls=list(), FileName = getModelStateFileName(), Save=TRUE) {
-  # Get current ModelState (providing FileName will force a "Read")
-  changeModelState_ls <- readModelState(FileName=FileName)
+setModelState <- function(ChangeState_ls=list(), FileName = NULL, Save=TRUE) {
+  # Get current ModelState
   ve.model=modelEnvironment()
+  currentModelState_ls <- readModelState(FileName=FileName)
 
   # Make requested changes, if any
   # (pass an empty list just to Save existing ModelState_Ls)
   if ( length(ChangeState_ls) > 0 ) {
-    changeModelState_ls[ names(ChangeState_ls) ] <- ChangeState_ls
-    changeModelState_ls$LastChanged <- Sys.time()
-    if ( "ModelState_ls" %in% ls(ve.model) ) {
-      ve.model$ModelState_ls <- changeModelState_ls
-    } else {
-      stop(writeLog("No ModelState_ls in model environment",Level="error"),call.=FALSE)
-    }
+    # Replace names in currentModelState_ls with corresponding names in ChangeState_ls
+    currentModelState_ls[ names(ChangeState_ls) ] <- ChangeState_ls
+    currentModelState_ls$LastChanged <- Sys.time()
+    ve.model$ModelState_ls <- currentModelState_ls
   }
 
   if ( Save ) {
+    if ( is.null(FileName) ) FileName <- getModelStateFileName()
     result <- try(save("ModelState_ls",envir=ve.model,file=FileName))
     if ( class(result) == 'try-error' ) {
       Msg <- paste('Could not write ModelState:', FileName)
@@ -280,7 +277,7 @@ function(ChangeState_ls=list(), FileName = getModelStateFileName(), Save=TRUE) {
 #' @export
 getModelStateFileName <- function(Param_ls=NULL) {
   # We'll look in envir$RunParam_ls for name and path information
-  return(basename(getRunParameter("ModelStateName", Default="ModelState.Rda")))
+  return(basename(getRunParameter("ModelStateFileName", Default="ModelState.Rda",Param_ls=Param_ls)))
 }
 
 #READ MODEL STATE FILE
@@ -304,10 +301,7 @@ getModelStateFileName <- function(Param_ls=NULL) {
 readModelState <- function(Names_ = "All", FileName=NULL, envir=NULL) {
   # Establish environment
   if ( is.null(envir) ) envir <- modelEnvironment()
-  # Load from FileName if we explicitly provide it, or if we do not already
-  # have a ModelState_ls in the environment
-  if ( !is.null(FileName) || ! exists("ModelState_ls",envir=envir,inherits=FALSE) ) {
-    if ( is.null(FileName) ) FileName <- getModelStateFileName()
+  if ( !is.null(FileName) ) {
     if ( ! loadModelState(FileName,envir) ) {
       Msg <- paste("Could not load ModelState from",FileName)
       writeLog(Msg,Level="error")

@@ -3,11 +3,10 @@
 #===================
 # This run_model.R script runs all of the VE modules to model the adopted plans powertrains and fuels scenario
 
-cat('run_model.R: Stage 3 script entered\n')
-
 #Load libraries
 #--------------
 library(visioneval)
+writeLog('run_model.R: Stage 3 script entered\n')
 
 #Initialize model
 #----------------
@@ -30,4 +29,4 @@ for(Year in getYears()) {
   runModule("AssignHhVehiclePowertrain",       "VEPowertrainsAndFuels", RunFor = "AllYears",    RunYear = Year)
 }
 
-cat('run_model.R: Stage 3 script complete\n')
+writeLog('run_model.R: Stage 3 script complete\n')
