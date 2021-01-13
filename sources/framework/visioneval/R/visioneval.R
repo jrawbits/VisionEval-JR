@@ -306,6 +306,9 @@ function(
         #  stage in the present model. In general, mixing unrelated staged models
         #  when you're not using them for model development will lead to possible
         #  nightmares of inconsistency.
+        # TODO: this may be a problem when we do scenarios; to fix it, use the
+        #  normalized path instead of the basename to index the model state stages,
+        #  including the ModelDir/ScenarioDir/ResultsDir/Stage
         if ( "ModelStateStages" %in% ls(ve.model) ) {
           LoadEnv$ModelState_ls <- ve.model$ModelStateStages[[toupper(basename(LoadDstoreDir))]]
           if ( ! is.null(LoadEnv$ModelState_ls) ) {

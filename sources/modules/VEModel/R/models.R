@@ -269,37 +269,35 @@ installStandardModel <- function( modelName, modelPath, confirm, skeleton, Param
 
 ve.model.copy <- function(newName=NULL,newPath=NULL) {
   if ( is.null(newPath) ) {
-    if ( self$stageCount>1 ) {
-      newPath <- dirname(self$stagePaths)
-      newPath <- stripPathPrefix(newPath)
-      if ( ! dir.exists(newPath) ) newPath <- dirname(newPath) # match might extend into basename
-      if ( ! nzchar(newPath) ) {
-        newPath <- dirname(self$stagePaths[1])
-      } else {   # assume there's an embracing directory
-        newPath <- dirname(newPath)
-      }
-    } else {
-      newPath <- dirname(self$modelPath[1])
-    }
+    newPath <- dirname(self$modelPath) # parent of current model
   } else {
-    if ( ! dir.exists(newPath) ) newPath <- dirname(newPath)
+    if ( ! dir.exists(newPath) ) {
+      newNewPath <- dirname(newPath)
+      if ( ! dir.exists(newNewPath) ) {
+        stop("Destination path for model copy does not exist:\n",newPath)
+      } else newPath <- newNewPath
+      if ( is.null( newName ) ) newName <- basename(newPath)
+    }
   }
 
   newPath <- normalizePath(newPath,winslash="/",mustWork=TRUE)
   if ( is.null(newName) ) newName <- paste0(self$modelName,"-Copy")
   newModelPath <- getUniqueName(newPath,newName)
-
-  get.destination <- 
   newModelPath <- normalizePath(newModelPath,winslash="/",mustWork=FALSE)
-  dir.create(newModelPath,showWarnings=FALSE)
-  for ( s in 1:self$stageCount ) {
-    copy.from <- setdiff(self$dir(state=s),private$artifacts(state=s))
-    copy.to <- file.path(newModelPath,self$stagePaths[s])
-    dir.create(copy.to,showWarnings=FALSE)
-    file.copy(copy.from,copy.to,recursive=TRUE)
-  }
 
-  return( openModel(newModelPath) )
+  dir.create(newModelPath,showWarnings=FALSE)
+  copy.from <- self$dir(root=TRUE)
+  copy.to <- file.path(newModelPath,self$stagePaths[s])
+  cat(paste("Copy from:",paste0("  ",copy.from),"Copy to",paste0("  ",copy.to),collapse="\n",sep="\n"))
+#  for ( s in 1:self$stageCount ) {
+#    copy.from <- self$dir(root=TRUE,stage=s)
+#    copy.to <- file.path(newModelPath,self$stagePaths[s])
+#    dir.create(copy.to,showWarnings=FALSE)
+#    file.copy(copy.from,copy.to,recursive=TRUE)
+#  }
+
+  return(NULL)
+#  return( openModel(newModelPath) )
 }
 
 ve.model.loadModelState <- function(log="error") {
@@ -556,80 +554,173 @@ ve.model.run <- function(stage=NULL,lastStage=NULL,log="ERROR",verbose=TRUE) {
   return(invisible(self$status))
 }
 
-ve.model.dir <- function(pattern=NULL,recursive=FALSE,shorten="",stage=NULL,stageScript=NULL) {
-  # path/stage can be a vector of discrete stages (e.g. c(1,3); only
-  # those will be inspected.
-  # TODO: separate script specification from stageScript specification
+ve.model.dir <- function(pattern=NULL,stage=NULL,root=FALSE,results=FALSE,outputs=FALSE,inputs=FALSE,shorten) {
+  # We're going to search up contents of these directories
+  #   self$modelPath
+  #   self$modelPath/ResultsDir
+  #   self$modelPath/ResultsDir/self$stagePaths[stage]
+  #   self$modelPath/InputDir
+  #   self$modelPath/self$stagePaths[stage]/InputDir
+  #   self$modelPath/OutputDir
+  #   self$modelPath/OutputDir/query
+  # If none root/results/outputs/inputs is TRUE, then all are TRUE
+  #   Otherwise, only report the ones actually asked for
+  inputDetails <- if ( ! missing(inputs) ) inputs else FALSE
+  if ( all(missing(root),missing(results),missing(outputs),missing(inputs)) ) {
+    root <- results <- outputs <- inputs <- TRUE
+  }
+
+  if ( missing(shorten) ) shorten <- self$modelPath
   if ( is.null(stage) ) stage<-c(1:self$stageCount)
-  files <- dir(self$modelPath[stage],pattern=pattern,recursive=recursive,full.names=TRUE)
-  if ( nzchar(shorten) ) files <- gsub(shorten,"",files)
+
+  if ( inputs ) {
+    inputPath <- file.path(
+      self$modelPath,c(
+        (InputDir <- getRunParameter("InputDir",Default="inputs",Param_ls=self$RunParam_ls)),
+        file.path(self$stagePaths[stage],InputDir)
+      )
+    )
+    inputFiles <- dir(normalizePath(inputPath,winslash="/",mustWork=FALSE),full.names=TRUE)
+    if ( inputDetails ) {
+      inputFiles <- inputFiles[ ! dir.exists(inputFiles) ] # keep only the files, not subdirectories
+    } else {
+      # no details: keep directories, not files
+      # but also show the input directory names themselves (but only if they exist)
+      inputFiles <- normalizePath(c(inputPath,inputFiles),winslash="/",mustWork=FALSE)
+      inputFiles <- inputFiles[ dir.exists(inputFiles) ]
+    }
+  } else inputFiles <- character(0)
+  if ( outputs ) {
+    outputPath <- file.path(
+      self$modelPath,c(
+        (OutputDir <- getRunParameter("OutputDir",Default="output",Param_ls=self$RunParam_ls)),
+        file.path(self$stagePaths[stage],OutputDir)
+      )
+    )
+    outputFiles <- dir(normalizePath(outputPath,winslash="/",mustWork=FALSE),full.names=TRUE)
+    outputFiles <- outputFiles[ ! dir.exists(outputFiles) ] # keep only the files, not subdirectories
+  } else outputFiles <- character(0)
+  ResultsDir <- normalizePath(
+    file.path(self$modelPath,getRunParameter("ResultsDir",Default=".",Param_ls=self$RunParam_ls)),
+    winslash="/",mustWork=FALSE
+  )
+  ResultsInRoot <- ( root && ResultsDir==self$modelPath )
+  if ( results || ResultsInRoot  ) {
+    # Handle the old-style case where ResultDir==modelPath
+    # ResultsDir is already normalized
+    # We're only going to look for known result types ("artifacts")
+    resultPath <- c(
+      ResultsDir,
+      file.path(ResultsDir,self$stagePaths[stage])
+    )
+    resultPath <- normalizePath(resultPath,winslash="/",mustWork=FALSE)
+    mstates <- dir(resultPath,pattern="^ModelState(_[[:digit:]]{4}-.*)*\\.Rda$",full.names=TRUE)
+    dstores <- dir(resultPath,pattern="^Datastore(_[[:digit:]]{4}-.*)*$",full.names=TRUE)
+    logs    <- dir(resultPath,pattern="Log(_[[:digit:]]{4}-.*)*\\.txt",full.names=TRUE)
+    resultFiles <- c(mstates,dstores,logs)
+  } else resultFiles <- character(0)
+  if ( root ) {
+    rootPath <- c(self$modelPath,file.path(self$modelPath,self$stagePaths[stage]))
+    rootPath <- unique(normalizePath(rootPath,winslash="/",mustWork=FALSE))
+    rootFiles <- dir(rootPath,full.names=TRUE)
+    if ( ResultsInRoot ) rootFiles <- setdiff(rootFiles,resultFiles)
+    rootFiles <- setdiff(rootFiles, file.path(self$modelPath,self$stagePaths[stage]))
+  } else rootFiles <- character(0)
+
+  files <- sort(unique(c(
+    # in case nothing was asked for: list(list()[x]) would return NULL, not character(0)
+    # So force the type for files by providing an empty string to to add to NULL/nothing
+    character(0), 
+    unlist(
+      list(inputFiles,outputFiles,resultFiles,rootFiles)[c(inputs,outputs,results,root)]
+    )
+  )))
+  if ( nzchar(shorten) ) files <- sub(paste0(shorten,"/"),"",files)
   return(files)
 }
 
-# outputOnly will just report the extraction results
-# (not the model run results)
-ve.artifacts <- function(stage=NULL,outputOnly=FALSE) {
-  if ( ! outputOnly ) {
-    mstates <- self$dir(pattern=".*(Previous)*ModelState\\.Rda",stage=stage)
-    mstates <- mstates[!dir.exists(mstates)]
-    dstores <- self$dir(pattern="Datastore_*",stage=stage)
-    dstores <- dstores[dir.exists(dstores)]
-    logs    <- self$dir(pattern="Log_*.*\\.txt",stage=stage)
-    logs    <- logs[!dir.exists(logs)]
-    artifacts <- c(mstates,dstores,logs)
-  } else artifacts <- character(0)
-  outputs <- self$dir(pattern="output",stage=stage)
-  return(c(artifacts,outputs))
-}
+ve.model.clear <- function(force=FALSE,outputOnly=NULL,stage=NULL,show=10) {
+  # Remove outputs and/or results, either interactivel or in batch
+  # 'show' controls maximum number of outputs to display
+  # Can limit to outputs in a certain 'stage'
+  # outputOnly will show results as well as outputs for deletion;
+  #   if outputs exist, we only show those by default
+  # force says "just go ahead and delete everything", respecting outputOnly,
+  #   so the default is to delete the outputs and leave the results, but if
+  #   called a second time, will delete the results.
 
-ve.model.clear <- function(force=FALSE,outputOnly=NULL,stage=NULL) {
+  to.delete <- self$dir(outputs=TRUE)
   if ( missing( outputOnly ) ) {
-    # If "output" exists in any stage, only offer to clear outputs
-    # unless the user manually overrides. Makes it harder to
-    # accidentally delete a model run.
-    outputOnly = any( dir.exists( file.path(self$modelPath,"output") ) )
+    outputOnly <- length(to.delete)>0
   }
-  to.delete <- private$artifacts(stage=stage,outputOnly=outputOnly)
-  if ( length(to.delete)>0 ) {
-    to.delete <- gsub(paste0("^",getwd(),"/"),"",to.delete)
-    print(to.delete)
-    if ( interactive() ) {
-      choices <- to.delete
-      preselect <- if (force || outputOnly ) to.delete else character(0)
-      to.delete <- utils::select.list(choices=choices,preselect=preselect,multiple=TRUE,title="Delete Selected Outputs")
-      force <- length(to.delete)>0
-    } else {
-      force <- ( force || length(to.delete)>0 )
-    }
-    if ( force) {
-      print(dir(to.delete),recursive=TRUE)
-      unlink(to.delete,recursive=TRUE)
-      private$ModelState <- lapply(
-        self$modelPath,
-        function(x) list()
-      )
-      cat("Model",(if(outputOnly) "outputs" else "results"),"cleared.\n")
-    } else {
-      cat("Model results NOT cleared.\n")
-    }
-  } else {
-    cat("No prior results to clear.\n")
-    force = FALSE
+  if ( ! isTRUE(outputOnly) ) to.delete <- c(to.delete,self$dir(results=TRUE))
+  # note, by default $dir shortens by removing self$modelPath
+  # so this deletion will only work if getwd()==self$modelPath
+  if ( normalizePath(getwd(),winslash="/") != self$modelPath ) {
+    owd <- setwd(self$modelPath)
+    on.exit(setwd(owd))
   }
-  return(invisible(force))
-}
 
-stripPathPrefix <- function(x) {
-    x   <-sort(x)                          # sort the vector
-    d_x <-strsplit(x[c(1,length(x))],"")   # split the first and last element by character (list of two vectors of single characters)
-    pfx <-match(FALSE,do.call("==",d_x))-1 # match the first not common element and back up to last matching one
-    if(is.na(pfx)) {                       # all vector elements are the same
-      return(x[1])
-    } else if (pfx==0) {                   # if there is no matching element, return an empty vector, else return the common part
-      return(character(0))
-    } else {
-      return(substr(x[1],1,pfx))
+  force <- ( force || ( interactive() && length(to.delete)>0 ) )
+  if ( force ) {
+    action = "h"
+    start = 1
+    stop <- min(start+show-1,length(to.delete))
+    while ( action != "q" ) {
+      print(to.delete[start:stop])
+      cat("Enter an item number to delete it, or a selection (2,3,7) or range (1:5)\n")
+      if ( action == "h" ) {
+        cat("'q' to quit, 'all' to delete all on this screen")
+        if ( start>1 )               cat(", 'p' for previous files")
+        if ( length(to.delete)>stop ) cat(", 'n' for more files")
+        cat("\n")
+      }
+      cat("Your choice: ")
+      response <- tolower(readline())
+      if ( grepl("^all$",response) ) {
+        response <- paste0(start,":",stop)
+      } else {
+        if ( grepl("[^hnpq0-9:, ]",response) ) { # if any illegal character, loop back to help
+          action = "h"
+          next
+        }
+        response <- sub("^ *","",response)
+      }
+      if ( grepl("^[0-9:, ]+$",response) ) {
+        response <- try ( eval(parse(text=paste("c(",response,")"))) )
+        # Look for character command
+        candidates <- to.delete[start:stop]
+        unlink(candidates[response],recursive=TRUE)
+        cat("Deleted:\n",paste(candidates[response],collapse="\n"),"\n")
+        to.delete <- self$dir(outputs=TRUE)
+        if ( ! isTRUE(outputOnly) ) to.delete <- c(to.delete,self$dir(results=TRUE))
+        if ( length(to.delete) > 0 ) {
+          start = 1
+          stop <- min(start+show-1,length(to.delete))
+          action = "h"
+        } else {
+          cat("No files remaining to delete.\n")
+          action = "q"
+        }
+      } else {
+        action <- substr(response[1],1,1)
+        if ( action %in% c("n","p") ) {
+          if ( action == "n" ) {
+            start <- min(start + show,length(to.delete))
+            if ( start == length(to.delete) ) start <- max(length(to.delete),1)
+            stop <- min(start+show-1,length(to.delete))
+          } else if ( action == "p" ) {
+            start <- max(start - show,1)
+            stop <- min(start+show-1,length(to.delete))
+          }
+        } else if ( action %in% c("h","q") ) {
+          next
+        } else action = "h"
+      }
     }
+  }
+  if ( ! force ) cat("Nothing to delete.\n")
+  return(invisible(force))
 }
 
 ve.model.print <- function() {
@@ -718,7 +809,6 @@ VEModel <- R6::R6Class(
   private = list(
     # Private Members
     runError=NULL,
-    artifacts = ve.artifacts,               # Function may interrogate an existing Output
     ModelState=NULL,                        # ModelState placeholder
     # Private Methods
     loadModelState=ve.model.loadModelState  # Function to load a model state file
