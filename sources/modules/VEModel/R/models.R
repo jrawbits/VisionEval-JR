@@ -286,18 +286,21 @@ ve.model.copy <- function(newName=NULL,newPath=NULL) {
   newModelPath <- normalizePath(newModelPath,winslash="/",mustWork=FALSE)
 
   dir.create(newModelPath,showWarnings=FALSE)
-  copy.from <- self$dir(root=TRUE)
-  copy.to <- file.path(newModelPath,self$stagePaths[s])
-  cat(paste("Copy from:",paste0("  ",copy.from),"Copy to",paste0("  ",copy.to),collapse="\n",sep="\n"))
-#  for ( s in 1:self$stageCount ) {
-#    copy.from <- self$dir(root=TRUE,stage=s)
-#    copy.to <- file.path(newModelPath,self$stagePaths[s])
-#    dir.create(copy.to,showWarnings=FALSE)
-#    file.copy(copy.from,copy.to,recursive=TRUE)
-#  }
-
-  return(NULL)
-#  return( openModel(newModelPath) )
+  model.files <- self$dir(root=TRUE)
+  copy.subdir <- dirname(model.files)
+  unique.dirs <- unique(copy.subdir)
+  for ( d in unique.dirs ) {
+    copy.from <- file.path(self$modelPath,model.files[copy.subdir==d])
+    copy.to <- newModelPath
+    if ( d == "." ) { # modelPath
+      file.copy( copy.from, newModelPath, recursive=TRUE )
+    } else {
+      copy.to <- file.path(copy.to,d)
+      if ( ! dir.exists(copy.to) ) dir.create(copy.to)
+      file.copy( copy.from, copy.to ) # non-recursive in stages
+    }
+  }
+  return( openModel(newModelPath) )
 }
 
 ve.model.loadModelState <- function(log="error") {
