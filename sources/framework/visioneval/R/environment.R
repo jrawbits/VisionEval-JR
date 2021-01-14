@@ -88,14 +88,24 @@ modelRunning <- function() {
 #' @export
 getRunParameter <- function(Parameter,Default=NA,Param_ls=NULL,logSource=FALSE) {
   param.source <- NULL
-  if ( ! is.list(Param_ls) ) { # look only there
-    envir <- if ( "ve.model" %in% search() ) {
-      param.source <- "ve.model$RunParam_ls"
-      as.environment("ve.model")
+  defaultParams_ls <- list()
+  defaultMissing <- missing(Default)
+  envir <- if ( "ve.model" %in% search() ) {
+    # Cache defaults in ve.model if we're doing "model-like" things
+    ve.model <- as.environment("ve.model")
+    param.source <- "ve.model$RunParam_ls"
+    defaultParams_ls <- if ( exists("VERuntimeDefaults",envir=as.environment("ve.model" )) ) {
+      ve.model$VERuntimeDefaults
     } else {
-      param.source <- paste("Calling environment:",as.character(.traceback(2)),collapse=", ")
-      parent.frame()
+      ve.model$VERuntimeDefaults <- defaultVERunParameters(defaultParams_ls)
     }
+    ve.model
+  } else {
+    param.source <- paste("Calling environment:",as.character(.traceback(2)),collapse=", ")
+    defaultParams_ls <- defaultVERunParameters(defaultParams_ls)
+    parent.frame()
+  }
+  if ( ! is.list(Param_ls) ) { # look only there
     Param_ls <- get0("RunParam_ls",envir=envir,ifnotfound=list())
   }
   if ( is.null(attr(Param_ls,"source")) ) {
@@ -107,8 +117,11 @@ getRunParameter <- function(Parameter,Default=NA,Param_ls=NULL,logSource=FALSE) 
   if ( length(Param_ls)==0 || ! Parameter %in% names(Param_ls) ) {
     if ( logSource ) writeLog(
       paste(Parameter,"using Default, called from:",as.character(.traceback(2)),collapse=", "),
-      Level="info"
+      Level="debug"
     )
+    if ( defaultMissing && Parameter %in% names(defaultParams_ls) ) {
+      Default <- defaultParams_ls[[Parameter]]
+    }
     return( Default )
   } else {
     if ( logSource ) {
@@ -116,17 +129,76 @@ getRunParameter <- function(Parameter,Default=NA,Param_ls=NULL,logSource=FALSE) 
       if ( is.null(sources) ) {
         writeLog(
           paste("Unknown source for",Parameter,"at",as.character(.traceback(2)),collapse=", "),
-          Level="info"
+          Level="debug"
         )
       } else {
         writeLog(
           paste("Source for",Parameter,":",sources[Parameter,"Source"]),
-          Level="info"
+          Level="debug"
         )
       }
     }
     return( Param_ls[[Parameter]] )
   }
+}
+
+# These are default parameters used by the framework functions
+# e.g. in intializeModel or initModelSTate.
+default.parameters.table = list(
+  Seed = 1,
+  DatastoreName = "Datastore",
+  ModelScriptFile = "run_model.R",
+  ModelStateFileName = "ModelState.Rda",
+  RunParamFile = "run_parameters.json",
+  GeoFile = "geo.csv",
+  UnitsFile = "units.csv",
+  DeflatorsFile = "deflators.csv",
+  ModelParamFile = "model_parameters.json",
+  InputDir = "inputs",
+  ParamDir = "defs",
+  ResultsDir = "results",
+  OutputDIr = "output",
+  QueryDir = "queries",
+  DatastoreType = "RD",
+  SaveDatastore = FALSE
+)
+
+#GET DEFAULT PARAMETERS
+#======================
+#' Report useful default values for key parameters
+#'
+#' \code{defaultVERuntimeParameters} is a visioneval model developer function takes an (optional,
+#' default empty) list of RunParams and reports the default values for any parameter not already in
+#' that list. It will look in attached VisionEval packages (names starting with
+#' \code{"package:VE..."} for an exported defaultVERunParameters function, and those will be given
+#' priority when loading (with the most recently loaded packages having the highest priority).
+#' \code{getRunParameter} handles that seamlessly if no inline default is provided.
+#'
+#' @param Param_ls a list (possibly empty) of already-defined parameters
+#' @return a named list for parameters not present in Param_ls containing default values for those
+#'   parameters
+#' @export
+defaultVERunParameters <- function(Param_ls) {
+  defaultParams_ls <- list()
+  otherVEDefaults <- grep("^package:VE",find("defaultVERunParameters",mode="function"),value=TRUE)
+  if ( length(otherVEDefaults)>0 ) {
+    for ( defs in otherVEDefaults[length(otherVEDefaults):1] ) {
+      # process in reverse order so most recently loaded packages "win" any collisions
+      packageParams_ls <- as.environment(defs)$defaultVERunParameters
+      defaultParams_ls <- mergeParameters(defaultParams_ls,packageParams_ls)
+    }
+  }
+  # Now add the framework defaults to anything missing from the packages
+  defaultParams_ls <- default.parameters.table[
+    which( ! names(default.parameters.table) %in% names(Param_ls) )
+  ]
+  if ( length(defaultParams_ls)>0 ) {
+    defaultParams_ls <- visioneval::addParameterSource(defaultParams_ls,"VisionEval Framework Defaults")
+    Param_ls <- visioneval::mergeParameters(defaultParams_ls,Param_ls)
+  }
+  return(Param_ls)
+
+  return(Param_ls)
 }
 
 #READ CONFIGURATION FILE
