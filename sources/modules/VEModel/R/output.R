@@ -4,7 +4,7 @@ self=private=NULL
 # Output just wraps a ModelState and Datastore for one stage
 # It maintains everything we need for a QueryPrep_ls structure for queries
 # Plus it can export slices of the Datastore into .csv or data.frame
-ve.init.output <- function(OutputPath,Param_ls) {
+ve.init.output <- function(OutputPath,Param_ls=NULL) {
   # OutputPath is the normalized path to a directory containing the model results
   #  typically from the last model stage. Expect to find a ModelState.Rda file
   #  and a Datastore in that folder.
@@ -52,19 +52,22 @@ attributeGet <- function(variable, attr_name){
 ve.output.index <- function() {
   # Load model state from self$path
   ve.model <- new.env()
-  FileName=file.path(self$path,visioneval::getModelStateFileName())
+  FileName=file.path(self$path,visioneval::getModelStateFileName(Param_ls=self$RunParam_ls))
   # TODO: Make this work with archived ModelState (if it has a timestamp in its name)
-  ms <- private$ModelState <- try(readModelState(FileName=FileName))
+  ms <- private$ModelState <- try(visioneval::readModelState(FileName=FileName))
   if ( ! is.list(private$ModelState) ) {
     private$ModelState <- NULL
     visioneval::writeLog(Level="error",paste("Cannot load ModelState from:",FileName))
     return(list())
   }
+  if ( is.null(self$RunParam_ls) && is.list(private$ModelState ) ) {
+    self$RunParam_ls <-private$ModelState$RunParam_ls
+  }
   owd <- setwd(self$path)
   on.exit(setwd(owd))
     
   # TODO: sort out the "Load" DatastoreName parameter and the "Run" DatastoreName
-  if ( ! file.exists( ms$DatastoreName ) {
+  if ( ! file.exists( ms$DatastoreName ) ) {
     message("Datastore for this model is not available. Has it run successfully?")
     return(list())
   }
@@ -100,8 +103,8 @@ ve.output.index <- function() {
     File        = File[InputIndex],
     Description = Description[InputIndex],
     Units       = Units[InputIndex],
-    Scenario    = visioneval::getRunParameter("Scenario",Default="Unknown Scenario",Param_ls=self$RunParam_ls)
-    Path        = model.path
+    Scenario    = visioneval::getRunParameter("Scenario",Default="Unknown Scenario",Param_ls=self$RunParam_ls),
+    Path        = self$path
   )
   Inputs <- rbind(Inputs,inputs)
 
@@ -358,8 +361,10 @@ ve.output.extract <- function(
     stop("Model State contains no results.")
   }
   saving <- is.character(saveTo) && nzchar(saveTo)[1]
+
+  ms <- private$ModelState
   
-  visioneval::assignDatastoreFunctions(private$ModelState$DatastoreType)
+  visioneval::assignDatastoreFunctions(ms$DatastoreType)
   fields <- ( self$fields )
 
   extract <- fields[ ( fields$Selected=="Yes" ) ,c("Name","Table","Group")]
@@ -438,7 +443,7 @@ VEOutput <- R6::R6Class(
     search=ve.output.list,
     inputs=ve.output.inputs,
     print=ve.output.print,
-    units=ve.output.units,          # Set units on field list (modifies private$modelIndex)
+    units=ve.output.units           # Set units on field list (modifies private$modelIndex)
   ),
   active = list(
     groups=ve.output.groups,

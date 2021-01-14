@@ -146,9 +146,12 @@ getRunParameter <- function(Parameter,Default=NA,Param_ls=NULL,logSource=FALSE) 
 # e.g. in intializeModel or initModelSTate.
 default.parameters.table = list(
   Seed = 1,
+  LogLevel = "error",
   DatastoreName = "Datastore",
+  ModelDir = ".", # directory containing run_model.R
   ModelScriptFile = "run_model.R",
   ModelStateFileName = "ModelState.Rda",
+  InputPath = ".", # same directory as ModelDir
   RunParamFile = "run_parameters.json",
   GeoFile = "geo.csv",
   UnitsFile = "units.csv",
@@ -178,26 +181,26 @@ default.parameters.table = list(
 #' @return a named list for parameters not present in Param_ls containing default values for those
 #'   parameters
 #' @export
-defaultVERunParameters <- function(Param_ls) {
+defaultVERunParameters <- function(Param_ls=list()) {
   defaultParams_ls <- list()
-  otherVEDefaults <- grep("^package:VE",find("defaultVERunParameters",mode="function"),value=TRUE)
+  otherVEDefaults <- grep("^package:VE",find("VEPackageRunParameters",mode="function"),value=TRUE)
   if ( length(otherVEDefaults)>0 ) {
     for ( defs in otherVEDefaults[length(otherVEDefaults):1] ) {
       # process in reverse order so most recently loaded packages "win" any collisions
-      packageParams_ls <- as.environment(defs)$defaultVERunParameters
+      packageParams_ls <- as.environment(defs)$VEPackageRunParameters(Param_ls)
       defaultParams_ls <- mergeParameters(defaultParams_ls,packageParams_ls)
     }
   }
-  # Now add the framework defaults to anything missing from the packages
-  defaultParams_ls <- default.parameters.table[
+  Param_ls <- visioneval::mergeParameters(defaultParams_ls,Param_ls)
+  
+  # Now add the framework defaults (packages take precedence)
+  tableParams_ls <- default.parameters.table[
     which( ! names(default.parameters.table) %in% names(Param_ls) )
   ]
-  if ( length(defaultParams_ls)>0 ) {
-    defaultParams_ls <- visioneval::addParameterSource(defaultParams_ls,"VisionEval Framework Defaults")
-    Param_ls <- visioneval::mergeParameters(defaultParams_ls,Param_ls)
+  if ( length(tableParams_ls)>0 ) {
+    tableParams_ls <- visioneval::addParameterSource(tableParams_ls,"VisionEval Framework Default")
+    Param_ls <- visioneval::mergeParameters(tableParams_ls,Param_ls)
   }
-  return(Param_ls)
-
   return(Param_ls)
 }
 
@@ -578,17 +581,19 @@ loadConfiguration <- function( # if all arguments are defaulted, return an empty
 #'
 #' @param File The name of the file to seek (NOT a run parameter)
 #' @param Dir The name of a run parameter specifying a directory relative to getwd()
-#' @param DefaultDir The default value for the run parameter directory
 #' @param Param_ls The run parameters in which to seek InputPath and Dir (default
 #'   is the one in ve.model environment)
 #' @param StopOnError logical, if TRUE stop if no existing file is found, else return NA
 #' @return the path of a file existing on InputDir/Dir/File or NA if not found
 #' @export
-findRuntimeInputFile <- function(File,Dir="InputDir",DefaultDir="inputs",Param_ls=NULL,StopOnError=TRUE) {
-  inputPath <- getRunParameter("InputPath",Default=".",Param_ls=Param_ls)
+findRuntimeInputFile <- function(File,Dir="InputDir",Param_ls=NULL,StopOnError=TRUE) {
+  inputPath <- getRunParameter("InputPath",Param_ls=Param_ls)
   writeLog(paste("Input path raw:",inputPath,collapse=":"),Level="trace")
-  searchDir <- getRunParameter(Dir,Default=NA,Param_ls=Param_ls)
+  searchDir <- getRunParameter(Dir,Param_ls=Param_ls)
   searchInDir <- file.path(inputPath,searchDir) # might yield more than one
+  searchInDir <- unique(
+    normalizePath(searchInDir,winslash="/",mustWork=FALSE)
+  )
   candidates <- character(0)
   if ( any(!is.na(searchInDir)) && !is.na(File) )  {
     searchInDir <- searchInDir[!is.na(searchInDir)]
