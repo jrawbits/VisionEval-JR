@@ -277,7 +277,7 @@ setModelState <- function(ChangeState_ls=list(), FileName = NULL, Save=TRUE) {
 #' @export
 getModelStateFileName <- function(Param_ls=NULL) {
   # We'll look in envir$RunParam_ls for name and path information
-  return(basename(getRunParameter("ModelStateFileName", Default="ModelState.Rda",Param_ls=Param_ls)))
+  return(basename(getRunParameter("ModelStateFileName", Param_ls=Param_ls)))
 }
 
 #READ MODEL STATE FILE
