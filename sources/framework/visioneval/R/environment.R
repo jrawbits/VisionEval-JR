@@ -5,6 +5,9 @@
 #This script defines functions used to establish the model
 #environment and configuration parameters.
 
+# Experimental approach to "ve.model" environment
+ve.model <- new.env()
+
 #CREATE R ENVIRONMENT FOR MODEL
 #==============================
 #' Attach an R environment to the search path for the active model
@@ -12,24 +15,39 @@
 #' \code{modelEnvironment} a visioneval framework control function that locates
 #' the environment for elements of the active model, creating it and placing it
 #' on the search path if necessary. That environment contains the ModelState,
-#' the Datastore access function aliases and related information. If create is
-#' \code{FALSE}, throw an error instead of creating a new environment
-#' if it does not already exist. The environment should be emptied and
-#' recreated whenever a new model is initialized, either to load or run
-#' it.
+#' the Datastore access function aliases and related information. If Clear is
+#' provided as a character string, clear the environment and set the environment
+#' owner. If an empty string, clear the environment if no Owner, otherwise
+#' just clear the Owner. Call modelEnvironment with Clear whenever starting
+#' a new model.
 #'
-#' @param Create a logical indicating whether a missing model environment
-#' should be created.
+#' @param Clear if supplied as a non-empty character string, sets the
+#'   environment owner and clears the model environment. If an empty string
+#'   and no Owner, clear the environment, and if Owner just clear the Owner.
 #' @return an R environment attached to "ve.model" on the search path.
 #' @export
-modelEnvironment <- function(Create=TRUE) {
+modelEnvironment <- function(Clear=NULL) {
   # export this function since it can be useful in the VEModel
   # package
-  if ( ! "ve.model" %in% search() ) {
-    if ( ! Create ) stop("Missing ve.model environment.")
-    ve.model <- attach(NULL,name="ve.model")
-  } else {
-    ve.model <- as.environment("ve.model")
+#   if ( ! "ve.model" %in% search() ) {
+#     if ( ! Create ) stop("Missing ve.model environment.")
+#     ve.model <- attach(NULL,name="ve.model")
+#   } else {
+#     ve.model <- as.environment("ve.model")
+#   }
+  if ( is.character(Clear) ) {
+    if ( nzchar(Clear) ) { # optionally set owner flag
+      rm(list=ls(ve.model),envir=ve.model)
+      ve.model$Owner <- Clear
+    } else {
+      # suppress ve.model initialization if "owned"
+      if ( is.null(ve.model$Owner) ) { # probably called initializeModel from "source"
+        rm(list=ls(ve.model),envir=ve.model)
+      } else {
+        writeLog(paste0("ve.model NOT cleared due to Owner: ",ve.model$Owner),Level="debug")
+        rm("Owner",envir=ve.model) # Owner protection is now over.
+      }
+    }
   }
   return(ve.model)
 }
@@ -44,16 +62,16 @@ modelEnvironment <- function(Create=TRUE) {
 #' @return TRUE if ve.model$RunModel is TRUE, otherwise FALSE
 #' @export
 modelRunning <- function() {
-  if ( ! "ve.model" %in% search() ) { # have not performed initializeModel
-    return(FALSE)
-  } else {
-    ve.model <- as.environment("ve.model")
+#   if ( ! "ve.model" %in% search() ) { # have not performed initializeModel
+#     return(FALSE)
+#   } else {
+#     ve.model <- as.environment("ve.model")
     if ( "RunModel" %in% ls(ve.model) ) { # VEModel will set during "open" or "run" model
       return(ve.model$RunModel)
     } else { # The model is running in backward-compatible mode
       return(ve.model$RunModel <- TRUE)
     }
-  }
+#   }
 }
 
 #GET VISIONEVAL RUN PARAMETER
@@ -90,23 +108,15 @@ getRunParameter <- function(Parameter,Default=NA,Param_ls=NULL,logSource=FALSE) 
   param.source <- NULL
   defaultParams_ls <- list()
   defaultMissing <- missing(Default)
-  envir <- if ( "ve.model" %in% search() ) {
-    # Cache defaults in ve.model if we're doing "model-like" things
-    ve.model <- as.environment("ve.model")
-    param.source <- "ve.model$RunParam_ls"
-    defaultParams_ls <- if ( exists("VERuntimeDefaults",envir=as.environment("ve.model" )) ) {
-      ve.model$VERuntimeDefaults
-    } else {
-      ve.model$VERuntimeDefaults <- defaultVERunParameters(defaultParams_ls)
-    }
-    ve.model
+  ve.model <- modelEnvironment()
+  defaultParams_ls <- if ( ! is.null(ve.model$VERuntimeDefaults) ) {
+    ve.model$VERuntimeDefaults
   } else {
-    param.source <- paste("Calling environment:",as.character(.traceback(2)),collapse=", ")
-    defaultParams_ls <- defaultVERunParameters(defaultParams_ls)
-    parent.frame()
+    ve.model$VERuntimeDefaults <- defaultVERunParameters(defaultParams_ls)
   }
   if ( ! is.list(Param_ls) ) { # look only there
-    Param_ls <- get0("RunParam_ls",envir=envir,ifnotfound=list())
+    param.source <- "ve.model$RunParam_ls"
+    Param_ls <- get0("RunParam_ls",envir=ve.model,ifnotfound=list())
   }
   if ( is.null(attr(Param_ls,"source")) ) {
     if ( is.null(param.source) ) {
@@ -151,7 +161,7 @@ default.parameters.table = list(
   ModelDir = ".", # directory containing run_model.R
   ModelScriptFile = "run_model.R",
   ModelStateFileName = "ModelState.Rda",
-  InputPath = ".", # same directory as ModelDir
+  InputPath = ".", # should default to same directory as ModelDir
   RunParamFile = "run_parameters.json",
   GeoFile = "geo.csv",
   UnitsFile = "units.csv",
