@@ -336,7 +336,7 @@ ve.model.loadModelState <- function(log="error") {
       self$runStatus[stage] <- "Not Run"
       scriptFile <- self$stageScripts[stage]
       modelScriptFile <- normalizePath(file.path(stageInput,scriptFile),winslash="/")
-      ve.model <- visioneval::modelEnvironment()
+      ve.model <- visioneval::modelEnvironment(Clear="VEModel::loadModelState")
       ve.model$RunModel <- FALSE
       ve.model$ModelStateStages <- private$ModelState; # previously loaded model states
       Param_ls$InputPath <- c(stageInput,BaseInputPath)
@@ -349,10 +349,10 @@ ve.model.loadModelState <- function(log="error") {
       initArgs$ModelScriptFile   <- modelScriptFile
       initArgs$ParsedModelScript <- parsedScript
       initArgs$LogLevel          <- log
-      do.call(visioneval::initializeModel,args=initArgs)
-
+      private$ModelState[[ toupper(basename(stagePath)) ]] <- do.call(visioneval::initializeModel,args=initArgs)
+      
       # Keep the model state so later stages can refer to it
-      private$ModelState[[ toupper(basename(stagePath)) ]] <- ve.model$ModelState_ls
+#      private$ModelState[[ toupper(basename(stagePath)) ]] <- ve.model$ModelState_ls
     }
   }
   if ( length(private$ModelState)!=length(self$stagePaths) ) {
@@ -489,7 +489,7 @@ ve.model.run <- function(stage=NULL,lastStage=NULL,log="ERROR",verbose=TRUE) {
   if ( is.null(lastStage) ) lastStage <- self$stageCount;
 
   # Set up the model runtime environment
-  ve.model <- visioneval::modelEnvironment()
+  ve.model <- visioneval::modelEnvironment(Clear="VEModel::run")
 
   for ( ms in stageStart:lastStage ) {
     stagePath <- self$stagePaths[ms]
@@ -695,8 +695,8 @@ ve.model.clear <- function(force=FALSE,outputOnly=NULL,stage=NULL,show=10) {
     on.exit(setwd(owd))
   }
 
-  force <- ( force || ( interactive() && length(to.delete)>0 ) )
-  if ( force ) {
+  force <- ( force || ! ( interactive() && length(to.delete)>0 ) )
+  if ( ! force && length(to.delete)>0 ) {
     action = "h"
     start = 1
     stop <- min(start+show-1,length(to.delete))

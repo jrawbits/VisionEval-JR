@@ -63,9 +63,9 @@ initModelState <- function(Save=TRUE,Param_ls=NULL) {
   newModelState_ls$LastChanged <- Sys.time()
 
   # Also load the complete deflators and units files, which will be accessed later via ModelState_ls
-  DeflatorFile <- getRunParameter("DeflatorFile",Param_ls=Param_ls)
-  DeflatorFilePath <- findRuntimeInputFile(DeflatorFile,Dir="ParamDir",Param_ls=Param_ls)
-  newModelState_ls$Deflators <- read.csv(DeflatorFilePath, as.is = TRUE)
+  DeflatorsFile <- getRunParameter("DeflatorsFile",Param_ls=Param_ls)
+  DeflatorsFilePath <- findRuntimeInputFile(DeflatorsFile,Dir="ParamDir",Param_ls=Param_ls)
+  newModelState_ls$Deflators <- read.csv(DeflatorsFilePath, as.is = TRUE)
   # NOTE: no error-checking on deflators
 
   UnitsFile <- getRunParameter("UnitsFile",Param_ls=Param_ls)

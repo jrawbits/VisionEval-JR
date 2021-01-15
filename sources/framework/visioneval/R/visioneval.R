@@ -4,8 +4,6 @@
 
 #This script defines the functions that are used to write VisionEval models.
 
-utils::globalVariables(c("initDatastore","Year"))
-
 #INITIALIZE MODEL
 #================
 #' Initialize model.
@@ -103,10 +101,10 @@ function(
   #===========================================================================
 
   # Access the model environment and check for RunModel condition
-  ve.model <- modelEnvironment()
+  ve.model <- modelEnvironment(Clear="") # clear ve.model environment
   RunModel <- modelRunning()
 
-  # Check for pre-existing ve.model environment (e.g. from VEModel$run) and RunParam_ls found there
+  # Check for pre-existing elements in ve.model environment (e.g. from VEModel$run) and RunParam_ls found there
   if ( is.null(Param_ls) ) {
     Param_ls <- addParameterSource(
       get0( "RunParam_ls", envir=ve.model, ifnotfound=list() ),
@@ -124,7 +122,6 @@ function(
   RunParam_ls <- loadConfiguration(ParamDir=getwd(),keep=DotParam_ls,override=Param_ls)
 
   # Look for defs along InputPath, and run_parameters.json. Fail if file not found.
-  browser()
   ParamPath <- findRuntimeInputFile("run_parameters.json","ParamDir",Param_ls=RunParam_ls)
   RunParam_ls <- loadConfiguration(ParamPath=ParamPath,override=RunParam_ls)
 
@@ -136,11 +133,13 @@ function(
   # getwd() is a subdirectory of that (ResultsDir or ResultsDir/stagePath for a staged model)
   ModelScriptFile <- getRunParameter("ModelScriptFile",Param_ls=RunParam_ls)
 
-  if ( ! any(grepl("^([[:alpha:]]:[\\/]|[\\/])",modelPath)) ) { # relative path in ModelScriptFile, either c: or / to start
+  if ( ! any(grepl("^([[:alpha:]]:[\\/]|[\\/])",ModelScriptFile)) ) {
+    # if relative path, normalize relative to ModelDir (defaulting to ".")
     ModelScriptFile <- normalizePath(
-      getRunParameter("ModelDir",Param_ls=Param_ls),
-      ModelScriptFile,
-      winslash="/"
+      file.path(
+        getRunParameter("ModelDir",Param_ls=Param_ls),
+        ModelScriptFile
+      ), winslash="/"
     )
   }
 
@@ -217,7 +216,7 @@ function(
   # Note that the DatastoreName in RunParam_ls is decidedly NOT the same as the DatastoreName
   #   in the parameter list to initializeModel; see above for initializing LoadDatastoreName
   #   (the parameter is the path/filename for the *other* Datastore from a previous stage)
-  RunDstoreName <- normalizePath(RunParam_ls$LoadDatastoreName, winslash = "/", mustWork = FALSE)
+  RunDstoreName <- normalizePath(RunParam_ls$DatastoreName, winslash = "/", mustWork = FALSE)
   RunDstoreDir <- dirname(RunDstoreName)
   RunDstoreFile <- basename(RunDstoreName)
 
@@ -675,11 +674,11 @@ runModule <- function(ModuleName, PackageName, RunFor, RunYear, StopOnErr = TRUE
   #----------
   if (M$Specs$RunBy == "Region") {
     #Get data from datastore
-    L <- getFromDatastore(M$Specs, RunYear = Year)
+    L <- getFromDatastore(M$Specs, RunYear = RunYear)
     if (exists("Call")) {
       for (Alias in names(Call$Specs)) {
         L[[Alias]] <-
-          getFromDatastore(Call$Specs[[Alias]], RunYear = Year)
+          getFromDatastore(Call$Specs[[Alias]], RunYear = RunYear)
       }
     }
     #Run module
@@ -716,11 +715,11 @@ runModule <- function(ModuleName, PackageName, RunFor, RunYear, StopOnErr = TRUE
     #Identify the units of geography to iterate over
     GeoCategory <- M$Specs$RunBy
     #Create the geographic index list
-    GeoIndex_ls <- createGeoIndexList(c(M$Specs$Get, M$Specs$Set), GeoCategory, Year)
+    GeoIndex_ls <- createGeoIndexList(c(M$Specs$Get, M$Specs$Set), GeoCategory, RunYear)
     if (exists("Call")) {
       for (Alias in names(Call$Specs)) {
         GeoIndex_ls[[Alias]] <-
-          createGeoIndexList(Call$Specs[[Alias]]$Get, GeoCategory, Year)
+          createGeoIndexList(Call$Specs[[Alias]]$Get, GeoCategory, RunYear)
       }
     }
     #Run module for each geographic area
@@ -732,7 +731,7 @@ runModule <- function(ModuleName, PackageName, RunFor, RunYear, StopOnErr = TRUE
       if (exists("Call")) {
         for (Alias in names(Call$Specs)) {
           L[[Alias]] <-
-            getFromDatastore(Call$Specs[[Alias]], RunYear = Year, Geo, GeoIndex_ls = GeoIndex_ls[[Alias]])
+            getFromDatastore(Call$Specs[[Alias]], RunYear = RunYear, Geo, GeoIndex_ls = GeoIndex_ls[[Alias]])
         }
       }
       #Run model for geographic area
@@ -927,11 +926,11 @@ runScript <- function(Module, Specification=NULL, RunFor, RunYear, writeDatastor
   R <- list()
   if (M$Specs$RunBy == "Region") {
     #Get data from datastore
-    L <- getFromDatastore(M$Specs, RunYear = Year)
+    L <- getFromDatastore(M$Specs, RunYear = RunYear)
     if (exists("Call")) {
       for (Alias in names(Call$Specs)) {
         L[[Alias]] <-
-          getFromDatastore(Call$Specs[[Alias]], RunYear = Year)
+          getFromDatastore(Call$Specs[[Alias]], RunYear = RunYear)
       }
     }
     #Run module
@@ -965,11 +964,11 @@ runScript <- function(Module, Specification=NULL, RunFor, RunYear, writeDatastor
     #Identify the units of geography to iterate over
     GeoCategory <- M$Specs$RunBy
     #Create the geographic index list
-    GeoIndex_ls <- createGeoIndexList(c(M$Specs$Get, M$Specs$Set), GeoCategory, Year)
+    GeoIndex_ls <- createGeoIndexList(c(M$Specs$Get, M$Specs$Set), GeoCategory, RunYear)
     if (exists("Call")) {
       for (Alias in names(Call$Specs)) {
         GeoIndex_ls[[Alias]] <-
-          createGeoIndexList(Call$Specs[[Alias]]$Get, GeoCategory, Year)
+          createGeoIndexList(Call$Specs[[Alias]]$Get, GeoCategory, RunYear)
       }
     }
     #Run module for each geographic area
@@ -981,7 +980,7 @@ runScript <- function(Module, Specification=NULL, RunFor, RunYear, writeDatastor
       if (exists("Call")) {
         for (Alias in names(Call$Specs)) {
           L[[Alias]] <-
-            getFromDatastore(Call$Specs[[Alias]], RunYear = Year, Geo, GeoIndex_ls = GeoIndex_ls[[Alias]])
+            getFromDatastore(Call$Specs[[Alias]], RunYear = RunYear, Geo, GeoIndex_ls = GeoIndex_ls[[Alias]])
         }
       }
       #Run model for geographic area
