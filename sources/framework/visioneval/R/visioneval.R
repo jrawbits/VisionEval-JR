@@ -55,9 +55,6 @@
 #' SaveDatastore A logical identifying whether if an existing datastore
 #' should be renamed rather than removed.
 #'
-#' @param Param_ls A list of run parameters from the environment. These will
-#' be overridden by anything in ... (first) or in ParamDir/RunParamFile
-#' (highest priority).
 #' @param LoadDatastore A logical identifying whether an existing datastore
 #' should be loaded.
 #' @param DatastoreName A string identifying the full path name of a datastore
@@ -73,7 +70,6 @@
 #' @export
 initializeModel <-
 function(
-  Param_ls = NULL,
   LoadDatastore = FALSE,
   DatastoreName = NULL, # WARNING: different from "DatastoreName" loaded as a run parameter
   SimulateRun = FALSE,
@@ -105,21 +101,17 @@ function(
   RunModel <- modelRunning()
 
   # Check for pre-existing elements in ve.model environment (e.g. from VEModel$run) and RunParam_ls found there
-  if ( is.null(Param_ls) ) {
-    Param_ls <- addParameterSource(
-      get0( "RunParam_ls", envir=ve.model, ifnotfound=list() ),
-      "RunParam_ls in modelEnvironment()"
-   ) 
-  } else {
-    Param_ls <- addParameterSource(Param_ls, "initializeModel(Param_ls=)")
-  }
+  Param_ls <- addParameterSource(
+    get0( "RunParam_ls", envir=ve.model, ifnotfound=list() ),
+    "RunParam_ls in modelEnvironment()"
+ ) 
 
-  # Dots will override anything passed from the environment or loaded up from the current directory
+  # External environment will override dots (which are vestigial)
   DotParam_ls <- addParameterSource(list(...),"initializeModel(...)")
   if ( is.character(DatastoreName) ) { # the function parameter, not the Run Parameter
     DotParam_ls[["LoadDatastoreName"]] <- DatastoreName
   }
-  RunParam_ls <- loadConfiguration(ParamDir=getwd(),keep=DotParam_ls,override=Param_ls)
+  RunParam_ls <- loadConfiguration(ParamDir=getwd(),keep=Param_ls,override=DotParam_ls)
 
   # Look for defs along InputPath, and run_parameters.json. Fail if file not found.
   ParamPath <- findRuntimeInputFile("run_parameters.json","ParamDir",Param_ls=RunParam_ls)

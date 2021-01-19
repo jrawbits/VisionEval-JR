@@ -27,7 +27,7 @@ confirmDialog <- function(msg) {
 #  return TRUE if modelPath looks like an absolute file path
 isAbsolutePath <- function(modelPath) {
   # TODO: may need a more robust regular expression
-  any(grepl("^([[:alpha:]]:|/)",modelPath))
+  any(grepl("^([[:alpha:]]:[\\/]*|[\\/])",modelPath))
 }
 
 ## Helper
@@ -308,6 +308,9 @@ ve.model.loadModelState <- function(log="error") {
   ResultsDir <- visioneval::getRunParameter("ResultsDir",Param_ls=self$RunParam_ls)
   ModelStateFileName <- visioneval::getRunParameter("ModelStateFileName",Param_ls=self$RunParam_ls)
   BaseInputPath <- visioneval::getRunParameter("InputPath",Param_ls=self$RunParam_ls)
+  if ( ! isAbsolutePath(BaseInputPath) ) {
+    BaseInputPath <- file.path(self$modelPath,BaseInputPath)
+  }
   private$ModelState <- list()
   owd <- setwd(file.path(self$modelPath,ResultsDir))
   on.exit(setwd(owd))
@@ -446,13 +449,6 @@ ve.model.run <- function(stage=NULL,lastStage=NULL,log="ERROR",verbose=TRUE) {
   # subdirectories)
   # If self$stagePaths has length > 1, stage refers to that *exterior* stage unless stageScript is
   #   also provided (in which case stageScript is the exterior stage, and stage is the interior)
-  # TODO: implement for interior scripts
-
-  resultsDir <- file.path(self$modelPath,visioneval::getRunParameter("ResultsDir",Param_ls=self$RunParam_ls))
-  modelStateName <- visioneval::getRunParameter("ModelStateFileName",Param_ls=self$RunParam_ls)
-  BaseInputPath <- visioneval::getRunParameter("InputPath",Param_ls=self$RunParam_ls)
-
-  # TODO: look up stages by name/identifier
   # Name will match the "stagePath" basename if we have "exterior" stages
   #   (explicit directories with their own run_model.R script)
   # If interior stages, we can match those too
@@ -488,9 +484,15 @@ ve.model.run <- function(stage=NULL,lastStage=NULL,log="ERROR",verbose=TRUE) {
 
   if ( is.null(lastStage) ) lastStage <- self$stageCount;
 
-  # Set up the model runtime environment
-  ve.model <- visioneval::modelEnvironment(Clear="VEModel::run")
+  # Set up model constants for running multiple stages
+  resultsDir <- file.path(self$modelPath,visioneval::getRunParameter("ResultsDir",Param_ls=self$RunParam_ls))
+  modelStateName <- visioneval::getRunParameter("ModelStateFileName",Param_ls=self$RunParam_ls)
+  BaseInputPath <- visioneval::getRunParameter("InputPath",Param_ls=self$RunParam_ls)
+  if ( ! isAbsolutePath(BaseInputPath) ) {
+    BaseInputPath <- normalizePath(file.path(self$modelPath,BaseInputPath),winslash="/",mustWork=FALSE)
+  }
 
+  # Set up the model runtime environment
   for ( ms in stageStart:lastStage ) {
     stagePath <- self$stagePaths[ms]
     runModel <- self$stageScripts[ms]
@@ -507,7 +509,7 @@ ve.model.run <- function(stage=NULL,lastStage=NULL,log="ERROR",verbose=TRUE) {
     owd <- setwd(file.path(self$modelPath,stagePath))
     self$status <- ""
 
-    rm(list=ls(ve.model),envir=ve.model) # ve.model is always fresh for each model stage
+    ve.model <- visioneval::modelEnvironment(Clear="VEModel::run")
     ve.model$RunParam_ls <- self$RunParam_ls; # put it where initializeModel can see it
     ve.model$RunParam_ls$LogLevel <- log
     tryCatchLog::tryCatchLog(
@@ -546,6 +548,7 @@ ve.model.run <- function(stage=NULL,lastStage=NULL,log="ERROR",verbose=TRUE) {
       },
       finally =
       {
+        ve.model <- modelEnvironment()
         ve.model$RunModel <- FALSE
         if ( self$status == "Running" ) {
           self$status <- "Failed"
