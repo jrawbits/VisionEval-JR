@@ -43,7 +43,7 @@ getModelRoots <- function(Param_ls,get.root=0) {
   #    getwd()/ModelRoot (if exists)
   #    ve.runtime
   #    getwd()
-  modelRoot <- file.path(roots,visioneval::getRunParameter("ModelRoot",Param_ls))
+  modelRoot <- file.path(roots,visioneval::getRunParameter("ModelRoot",Param_ls=Param_ls))
   if ( length(modelRoot)>0 ) {
     if ( isAbsolutePath(modelRoot[1]) ) {
       modelRoot <- modelRoot[1]
@@ -306,6 +306,10 @@ ve.model.copy <- function(newName=NULL,newPath=NULL) {
 ve.model.loadModelState <- function(log="error") {
   # Load all the ModelStates for the model stages, using initializeModel with RunModel=FALSE
   ResultsDir <- visioneval::getRunParameter("ResultsDir",Param_ls=self$RunParam_ls)
+  if ( ! dir.exists(ResultsDir) ) {
+    # Use current directory for ResultsDir if it's not out there yet
+    ResultsDir <- "."
+  }
   ModelStateFileName <- visioneval::getRunParameter("ModelStateFileName",Param_ls=self$RunParam_ls)
   BaseInputPath <- visioneval::getRunParameter("InputPath",Param_ls=self$RunParam_ls)
   if ( ! isAbsolutePath(BaseInputPath) ) {
@@ -548,7 +552,7 @@ ve.model.run <- function(stage=NULL,lastStage=NULL,log="ERROR",verbose=TRUE) {
       },
       finally =
       {
-        ve.model <- modelEnvironment()
+        ve.model <- visioneval::modelEnvironment()
         ve.model$RunModel <- FALSE
         if ( self$status == "Running" ) {
           self$status <- "Failed"
