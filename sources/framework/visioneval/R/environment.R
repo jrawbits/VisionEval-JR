@@ -158,7 +158,7 @@ default.parameters.table = list(
   Seed = 1,
   LogLevel = "error",
   DatastoreName = "Datastore",
-  ModelDir = ".", # directory containing run_model.R
+  ModelDir = ".", # subdirectory containing run_model.R (e.g. "script")
   ModelScriptFile = "run_model.R",
   ModelStateFileName = "ModelState.Rda",
   InputPath = ".", # should default to same directory as ModelDir
@@ -201,15 +201,15 @@ defaultVERunParameters <- function(Param_ls=list()) {
       defaultParams_ls <- mergeParameters(defaultParams_ls,packageParams_ls)
     }
   }
-  Param_ls <- visioneval::mergeParameters(defaultParams_ls,Param_ls)
+  Param_ls <- mergeParameters(defaultParams_ls,Param_ls)
   
   # Now add the framework defaults (packages take precedence)
   tableParams_ls <- default.parameters.table[
     which( ! names(default.parameters.table) %in% names(Param_ls) )
   ]
   if ( length(tableParams_ls)>0 ) {
-    tableParams_ls <- visioneval::addParameterSource(tableParams_ls,"VisionEval Framework Default")
-    Param_ls <- visioneval::mergeParameters(tableParams_ls,Param_ls)
+    tableParams_ls <- addParameterSource(tableParams_ls,"VisionEval Framework Default")
+    Param_ls <- mergeParameters(tableParams_ls,Param_ls)
   }
   return(Param_ls)
 }
@@ -385,12 +385,12 @@ readConfigurationFile <- function(ParamDir=NULL,ParamFile=NULL,mustWork=FALSE) {
 #' @return Param_ls, with a "source" data.frame attached (if possible)
 #' @export
 addParameterSource <- function(Param_ls,Source="Manually added") {
-  if (
-    is.list(Param_ls) &&
+  if ( # Param_ls should be a named list of parameters in it
+    is.list(Param_ls) && # must be a list
     (
-      length(Param_ls)==0 ||
+      length(Param_ls)==0 || # Okay for it to be an empty list
       (
-        !is.null(names(Param_ls)) &&
+        !is.null(names(Param_ls)) && # But if not empty, everything needs a name
         all(nzchar(names(Param_ls)))
       )
     )
@@ -403,6 +403,7 @@ addParameterSource <- function(Param_ls,Source="Manually added") {
     }
     attr(Param_ls,"source") <- src.df
   } else {
+    # Invalid Param_ls
     writeLog(
       c(
         "Warning: Attempted to add source to invalid parameter list",
