@@ -1,11 +1,5 @@
 # Author: Jeremy Raw
 
-# TODO: get the dir() and clear() functions working on multi-stage models
-# Should take a stage parameter on any of those. Shows all the "Results"
-# subdirectories for the stages, and all relevant files inside those
-# (Datastore, model state).  Also show the outputs folder (if it exists)
-# and allow clearing that too.
-
 # VEModel Package Code
 
 # R6 Class documentation example:
@@ -13,6 +7,126 @@
 # https://github.com/r-lib/processx/blob/bc7483237b0fbe723390cbb74951221968fdb963/R/process.R#L2
 # https://www.tidyverse.org/blog/2019/11/roxygen2-7-0-0/#r6-documentation
 # https://roxygen2.r-lib.org/articles/rd.html#r6
+
+#####################
+# DOCUMENTATION BLOCK
+#####################
+#' VisionEval model manager class and functions
+#'
+#' The VisionEval model manager (VEModel) provides a simple way to run VisionEval models, and to
+#' access the model results. The framework itself contains full support for running a model, so
+#' if you have a model, you can still change into its directory and do
+#' \code{source('run_model.R')}.
+#'
+#' Creating a model is still a manual process, so you're usually better off duplicating one of the
+#' standard models The VEModel manager makes that very easy! See \code{vignette('VEModel')} for full
+#' instructions. A simple introduction is found on the VisionEval wiki, in the Getting-Started
+#' document.
+#'
+#' Here are the details the VEModel manager.
+#'
+#' @section Usage:
+#' \preformatted{model <- VEModel$new(modelName,log="error")
+#'
+#' p$is_alive()
+#' p$kill(grace = 0.1)
+#' p$wait()
+#' p$get_exit_status()
+#' p$restart()
+#'
+#' p$read_output_lines(...)
+#' p$read_error_lines(...)
+#' p$can_read_output()
+#' p$can_read_error()
+#' p$is_eof_output()
+#' p$is_eof_error()
+#' p$get_output_connection()
+#' p$get_error_connection()
+#'
+#' print(p)
+#' }
+#'
+#' @section Arguments:
+#' \describe{
+#'   \item{modelName}{The path or basename of a directory containing a VisionEval model setup; if
+#'   it's a relatie path, the model will be sought in the current directory plus standard places
+#'   like ve.runtime/models}
+
+#'   \item{command}{Character scalar, the command to run. It will be
+#'     escaped via \code{\link[base]{shQuote}}.}
+#'   \item{args}{Character vector, arguments to the command. The will be
+#'     escaped via \code{\link[base]{shQuote}}.}
+#'   \item{commandline}{A character scalar, a full command line.
+#'     No escaping will be performed on it.}
+#'   \item{stdout}{What to do with the standard output. Possible values:
+#'     \code{FALSE}: discard it; a string, redirect it to this file,
+#'     \code{TRUE}: redirect it to a temporary file.}
+#'   \item{stdout}{What to do with the standard error. Possible values:
+#'     \code{FALSE}: discard it; a string, redirect it to this file,
+#'     \code{TRUE}: redirect it to a temporary file.}
+#'   \item{grace}{Grace pediod between the TERM and KILL signals, in
+#'     seconds.}
+#'   \item{...}{Extra arguments are passed to the
+#'     \code{\link[base]{readLines}} function.}
+#' }
+#'
+#' @section Details:
+#' \code{$new()} starts a new process, it uses \code{\link[base]{pipe}}.
+#' R does \emph{not} wait for the process to finish, but returns
+#' immediately.
+#'
+#' \code{$is_alive()} checks if the process is alive. Returns a logical
+#' scalar.
+#'
+#' \code{$kill()} kills the process. It also kills all of its child
+#' processes. First it sends the child processes a \code{TERM} signal, and
+#' then after a grace period a \code{KILL} signal. Then it does the same
+#' for the process itself. A killed process can be restarted using the
+#' \code{restart} method. It returns the process itself.
+#'
+#' \code{$wait()} waits until the process finishes. Note that if the
+#' process never finishes, then R will never regain control. It returns
+#' the process itself.
+#'
+#' \code{$get_exit_code} returns the exit code of the process if it has
+#' finished and \code{wait} was called on it. Otherwise it will return
+#' \code{NULL}.
+#'
+#' \code{$restart()} restarts a process. It returns the process itself.
+#'
+#' \code{$read_output_lines()} reads from standard output of the process.
+#' If the standard output was not requested, then it returns an error.
+#' It uses a non-blocking text connection.
+#'
+#' \code{$read_error_lines()} is similar to \code{$read_output_lines}, but
+#' it reads from the standard error stream.
+#'
+#' \code{$can_read_output()} checks if there is any standard output
+#' immediately available.
+#'
+#' \code{$can_read_error()} checks if there is any standard error
+#' immediately available.
+#'
+#' \code{$is_eof_output()} checks if the standard output stream has
+#' ended. This means that the process is finished and all output has
+#' been processed.
+#'
+#' \code{$is_eof_error()} checks if the standard error stream has
+#' ended. This means that the process is finished and all output has
+#' been processed.
+#'
+#' \code{$get_output_connection()} returns a connection object, to the
+#' standard output stream of the process.
+#'
+#' \code{$get_error_conneciton()} returns a connection object, to the
+#' standard error stream of the process.
+#'
+#' \code{print(p)} or \code{p$print()} shows some information about the
+#' process on the screen, whether it is running and it's process id, etc.
+#'
+#' @importFrom R6 R6Class
+#' @name VEModel
+NULL
 
 self=private=NULL # To avoid R6 class "undefined global" errors
 
@@ -869,13 +983,20 @@ prepSelect <- function(self,what,details=FALSE) {
   return( list(choices=choices,selected=selected,names=names) )
 }
 
-ve.model.output <- function(stage) {
+ve.model.results <- function(stage) {
   # Create an output object wrapping the directory that contains the model
   # results for the given stage (or last stage if not given)
   if ( missing(stage) || !is.numeric(stage) ) {
     stage <- self$stageCount
+  } else if ( length(stage)>1 ) {
+    stage <- stage[length(stage)] # use last one listed
   }
-  output <- VEOutput$new(private$ModelState,self,stage) # parameters TBD
+  stagePath <- self$stagePaths[stage]
+  visioneval::writeLog(paste("Loading Outputs for Model Stage:",stagePath),Level="info")
+  Param_ls <- self$modelStates[stage]$RunParam_ls
+  outputPath <- Param_ls$ResultsDir; # may be NULL!
+  
+  output <- VEResults$new(outputPath,Param_ls)
   if ( output$valid() ) {
     return(output)
   } else {
@@ -911,7 +1032,7 @@ VEModel <- R6::R6Class(
     dir=ve.model.dir,                       # list model elements (output, scripts, etc.)
     clear=ve.model.clear,                   # delete results or outputs (current or past)
     copy=ve.model.copy,                     # copy a self$modelPath to another path (ignore results/outputs)
-    output=ve.model.output                  # Create a VEOutput object (if model is run); option to open a past result
+    results=ve.model.results                # Create a VEResults object (if model is run); option to open a past result
   ),
   private = list(
     # Private Members
