@@ -1,17 +1,14 @@
-# Output.R
+# Results.R
 self=private=NULL
 
 # Output just wraps a ModelState and Datastore for one stage
 # It maintains everything we need for a QueryPrep_ls structure for queries
 # Plus it can export slices of the Datastore into .csv or data.frame
-ve.init.output <- function(OutputPath,Param_ls=NULL) {
+ve.output.init <- function(OutputPath,Param_ls=NULL) {
   # OutputPath is the normalized path to a directory containing the model results
   #  typically from the last model stage. Expect to find a ModelState.Rda file
   #  and a Datastore in that folder.
   # Param_ls is the list of Run Parameters used by the model
-  # We will reload the model state (rather than rely on the cached one in the model)
-  #  so there is always the option of just creating an output object from folder
-  #  directly.
   self$path <- OutputPath
   private$RunParam_ls <- Param_ls
   private$index()
@@ -423,18 +420,18 @@ ve.output.extract <- function(
 
 ve.output.print <- function() {
   # Update for output
-  cat("VEOutput object for these results:\n")
+  cat("VEResults object for these results:\n")
   print(basename(self$path))
   cat("Output is valid:",self$valid(),"\n")
 }
 
-# Here is the VEOutput R6 class
+# Here is the VEResults R6 class
 # One of these is constructed by VEModel$output()
 
-VEOutput <- R6::R6Class(
-  "VEOutput",
+VEResults <- R6::R6Class(
+  "VEResults",
   public = list(
-    initialize=ve.init.output,
+    initialize=ve.output.init,
     path=NULL,                      # Back-reference to the VEModel for this output
     valid=ve.output.valid,          # has the model been run, etc.
     select=ve.output.select,
@@ -463,3 +460,32 @@ VEOutput <- R6::R6Class(
     index=ve.output.index
   )
 )
+
+#' Open VisionEval results from a directory
+#'
+#' @description
+#' `openResults` opens a directory containing VisionEval model run results and
+#'    returns a VEObject instance that can be used to extract the results or
+#'    to perform queries.
+#'
+#' @details
+#' See `vignette(package='VEModel')` for available help and reference materials.
+#'   The basic use of `openModel` is also described in the VisionEval Getting-Started
+#'   document on the VisionEval website (also in the VisionEval installer).
+#'
+#' The path provided as a parameterneeds to contain ModelState.Rda and Datastore, using the
+#'   names for those elements in the VisionEval run parameters ModelStateFileName and
+#'   DatastoreName respectively. Generally, it is most reliable to open an output using
+#'   the model object returned by VEModel::openModel, since that will ensure that the same
+#'   run environment is used to find the result files as when those results were created.
+#'   The openResults file does not load any configurations.
+#'
+#' @param path A relative or absolute path to a directory (default is the working directory)
+#'   in which VisionEval results can be found for a single model run, stage or scenario
+#'   combination.
+#' @return A VEResults object giving access to the VisionEval results in `path`
+#' @export
+openResults <- function(path=NULL) {
+  if ( ! dir.exists(path) ) path <- getwd()
+  return(VEResults$new(path))
+}
