@@ -984,7 +984,7 @@ prepSelect <- function(self,what,details=FALSE) {
 }
 
 ve.model.results <- function(stage) {
-  # Create an output object wrapping the directory that contains the model
+  # Create a results object wrapping the directory that contains the model
   # results for the given stage (or last stage if not given)
   if ( missing(stage) || !is.numeric(stage) ) {
     stage <- self$stageCount
@@ -992,25 +992,30 @@ ve.model.results <- function(stage) {
     stage <- stage[length(stage)] # use last one listed
   }
   stagePath <- self$stagePaths[stage]
-  visioneval::writeLog(paste("Loading Outputs for Model Stage:",stagePath),Level="info")
+  visioneval::writeLog(paste("Loading Results for Model Stage:",stagePath),Level="info")
   Param_ls <- private$ModelState[[stage]]$RunParam_ls
-  outputPath <- normalizePath(   # may be NULL!
+  resultsPath <- normalizePath(   # may be NULL!
     file.path(self$modelPath,Param_ls$ResultsDir,stagePath),
     winslash="/",
     mustWork=FALSE
   );
   
-  output <- VEResults$new(outputPath,Param_ls)
-  if ( output$valid() ) {
-    return(output)
-  } else {
+  results <- VEResults$new(resultsPath,Param_ls)
+  if ( ! results$valid() ) {
+    private$lastResult <- list()
     if (stage!=self$stageCount) {
-      warning("There is no output for stage ",stage," of this model yet.")
+      warning("There are no results for stage ",stage," of this model yet.")
     } else {
-      warning("There is no output for this model yet.")
+      warning("There are no results for this model yet.")
     }
+  } else {
+    private$lastResults <- list(
+      results=results,
+      stage=stage
+    )
   }
-  return(output)
+    
+  return(results)
 }
 
 # Here is the VEModel R6 class
@@ -1042,6 +1047,7 @@ VEModel <- R6::R6Class(
     # Private Members
     runError=NULL,
     ModelState=NULL,                        # ModelState placeholder
+    lastResults=list(),                      # Cache previous results object
     # Private Methods
     loadModelState=ve.model.loadModelState  # Function to load a model state file
   )
@@ -1135,5 +1141,17 @@ installModel <- function(modelName=NULL, modelPath=NULL, skeleton=FALSE, confirm
     return( VEModel$new( modelPath=model$modelPath, log=log ) )
   } else {
     return( model ) # should be a character vector of available standard models
+  }
+}
+
+# Shortcut to getting the model results (index is the stage)
+#' @export
+`[.VEModel` <- function( self, stage=1 ) {
+  if ( stage==0 ) {
+    return(self$dir())
+  } else if ( length(self$lastResults)!=2 || self$lastResults$stage!=stage ) {
+    return(self$results(stage))
+  } else {
+    return(self$lastResults$results)
   }
 }
