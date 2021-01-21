@@ -425,8 +425,8 @@ ve.model.setupRunEnvironment <- function(
   Param_ls=list(),
   RunModel=FALSE,
   ModelDir=getwd(),
-  ResultsDir=".",
-  InputPath=".",
+  ResultsDir=".",       # Should be relative to ModelDir
+  InputPath=".",        # Should be relative to ModelDir
   ModelScriptFile=NULL,
   LogLevel="info"
 ) {
@@ -450,7 +450,7 @@ ve.model.setupRunEnvironment <- function(
 ve.model.loadModelState <- function(log="error") {
   # Load all ModelStates for each model stage, using initializeModel with RunModel=FALSE
   # If ModelState exists from a prior run, load that rather than rebuild
-  ResultsDir <- visioneval::getRunParameter("ResultsDir",Param_ls=self$RunParam_ls)
+  ResultsDir <- file.path(self$modelPath,visioneval::getRunParameter("ResultsDir",Param_ls=self$RunParam_ls))
   if ( ! dir.exists(ResultsDir) ) {
     dir.create(ResultsDir,showWarnings=FALSE)
   }
@@ -461,7 +461,7 @@ ve.model.loadModelState <- function(log="error") {
     BaseInputPath <- file.path(self$modelPath,BaseInputPath)
   }
   private$ModelState <- list()
-  owd <- setwd(file.path(self$modelPath,ResultsDir))
+  owd <- setwd(ResultsDir)
   on.exit(setwd(owd))
   
   initMsg <- "Loading ModelState"
@@ -477,7 +477,6 @@ ve.model.loadModelState <- function(log="error") {
     if ( self$stageCount>1 ) {
       visioneval::writeLog(paste(initMsg,stage,":",stagePath),Level="info")
     }
-
     modelState <- normalizePath(file.path(ResultsDir,stagePath,ModelStateFileName),winslash="/",mustWork=FALSE)
     if ( visioneval::loadModelState(modelState, ( ms.env <- new.env() )) ) {
       # Attempt to load existing ModelState
@@ -509,6 +508,7 @@ ve.model.loadModelState <- function(log="error") {
       parsedScript <- visioneval::parseModelScript(Param_ls$ModelScriptFile)
 
       # Execute the initializeModel function from the model script
+      # (RunModel==FALSE so working directory is irrelevant).
       initArgs                   <- parsedScript$InitParams_ls; # includes LoadDatastore etc.
       # Naming explicit arguments below (e.g. ModelScriptFile) makes them higher priority than Param_ls
       initArgs$ModelScriptFile   <- Param_ls$ModelScriptFile
@@ -827,7 +827,7 @@ ve.model.dir <- function(pattern=NULL,stage=NULL,root=FALSE,results=FALSE,output
   )
   ResultsInRoot <- ( root && ResultsDir==self$modelPath )
   if ( results || ResultsInRoot  ) {
-    # Handle the old-style case where ResultDir==modelPath
+    # Handle the old-style case where ResultsDir==modelPath
     # ResultsDir is already normalized
     # We're only going to look for known result types ("artifacts")
     resultPath <- c(
@@ -993,8 +993,12 @@ ve.model.results <- function(stage) {
   }
   stagePath <- self$stagePaths[stage]
   visioneval::writeLog(paste("Loading Outputs for Model Stage:",stagePath),Level="info")
-  Param_ls <- self$modelStates[stage]$RunParam_ls
-  outputPath <- Param_ls$ResultsDir; # may be NULL!
+  Param_ls <- private$ModelState[[stage]]$RunParam_ls
+  outputPath <- normalizePath(   # may be NULL!
+    file.path(self$modelPath,Param_ls$ResultsDir,stagePath),
+    winslash="/",
+    mustWork=FALSE
+  );
   
   output <- VEResults$new(outputPath,Param_ls)
   if ( output$valid() ) {

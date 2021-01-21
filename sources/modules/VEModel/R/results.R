@@ -49,7 +49,7 @@ attributeGet <- function(variable, attr_name){
 ve.output.index <- function() {
   # Load model state from self$path
   ve.model <- new.env()
-  FileName=file.path(self$path,visioneval::getModelStateFileName(Param_ls=self$RunParam_ls))
+  FileName=file.path(self$path,visioneval::getModelStateFileName(Param_ls=private$RunParam_ls))
   # TODO: Make this work with archived ModelState (if it has a timestamp in its name)
   ms <- private$ModelState <- try(visioneval::readModelState(FileName=FileName))
   if ( ! is.list(private$ModelState) ) {
@@ -57,8 +57,8 @@ ve.output.index <- function() {
     visioneval::writeLog(Level="error",paste("Cannot load ModelState from:",FileName))
     return(list())
   }
-  if ( is.null(self$RunParam_ls) && is.list(private$ModelState ) ) {
-    self$RunParam_ls <-private$ModelState$RunParam_ls
+  if ( is.null(private$RunParam_ls) && is.list(private$ModelState ) ) {
+    private$RunParam_ls <-private$ModelState$RunParam_ls
   }
   owd <- setwd(self$path)
   on.exit(setwd(owd))
@@ -100,7 +100,7 @@ ve.output.index <- function() {
     File        = File[InputIndex],
     Description = Description[InputIndex],
     Units       = Units[InputIndex],
-    Scenario    = visioneval::getRunParameter("Scenario",Default="Unknown Scenario",Param_ls=self$RunParam_ls),
+    Scenario    = visioneval::getRunParameter("Scenario",Default="Unknown Scenario",Param_ls=private$RunParam_ls),
     Path        = self$path
   )
   Inputs <- rbind(Inputs,inputs)
@@ -126,8 +126,8 @@ ve.output.index <- function() {
       Description[i],
       Units[i],
       Module[i],
-      self$path,
-      visioneval::getRunParameter("Scenario",Default="Unknown Scenario",Param_ls=self$RunParam_ls)
+      visioneval::getRunParameter("Scenario",Default="Unknown Scenario",Param_ls=private$RunParam_ls),
+      self$path
     )
   }
   if ( any((cls<-lapply(PathGroupTableName,class))!="character") ) {
@@ -203,7 +203,7 @@ ve.output.groups <- function(groups) {
   if ( ! all(file.exists(file.path(self$model$modelPath,"ModelState.Rda"))) ) {
     stop("Model has not been run yet.")
   }
-  idxGroups <- unique(private$modelIndex[,c("Group")])
+  idxGroups <- unique(private$modelIndex[,c("Group"),drop=FALSE])
   row.names(idxGroups) <- NULL
   if ( ! missing(groups) ) {
     years <- ( tolower(groups) %in% c("years","year") ) # magic shortcut
@@ -305,7 +305,7 @@ ve.output.list <- function(selected=TRUE, pattern="", details=FALSE) {
     stop("Model has not been run yet.")
   }
   filter <- if ( missing(selected) || selected ) {
-    private$fields$Selected=="Yes"
+    self$fields$Selected=="Yes"
   } else {
     rep(TRUE,nrow(private$modelIndex))
   }
