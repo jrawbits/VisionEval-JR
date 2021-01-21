@@ -588,6 +588,8 @@ ve.model.run <- function(stage=NULL,lastStage=NULL,log="info") {
 
             RunDir <- normalizePath(file.path(self$modelPath,Param_ls$ResultsDir),winslash="/",mustWork=FALSE)
             if ( ! dir.exists(RunDir) ) dir.create(RunDir,showWarnings=FALSE,recursive=TRUE)
+            setwd(RunDir) # Set working directory each time through each loop
+            # Model needs to run in "ResultsDir" (where ModelState and Datastore are written)
             sys.source(Param_ls$ModelScriptFile,envir=new.env())
 
             visioneval::writeLog(paste0("Model stage ",stagePath," complete"),Level="info")
