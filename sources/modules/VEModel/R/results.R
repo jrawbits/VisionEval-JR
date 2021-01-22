@@ -289,13 +289,14 @@ ve.field.selected <- function(test.field,fields) {
   return ( test.field %in% fields$Name[fields$Selected=="Yes"] )
 }
 
-ve.results.list <- function(pattern="", details=FALSE, selected=TRUE) {
+ve.results.list <- function(pattern="", details=FALSE, selected=TRUE, ...) {
   # Show details about model fields
   # selected = TRUE shows just the selected fields
   # selected = FALSE shows all fields (not just unselected)
   # pattern matches (case-insensitive regexp) some portion of field name
   # details = TRUE returns a data.frame private$modelIndex (units, description)
   # detail = FALSE returns just the "Name" vector from private$modelIndex
+  
   if ( ! self$valid() ) stop("Model has not been run yet.")
 
   filter <- if ( missing(selected) || selected ) {

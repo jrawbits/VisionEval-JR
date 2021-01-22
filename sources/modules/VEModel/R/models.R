@@ -242,7 +242,7 @@ findModel <- function( modelPath, Param_ls ) {
   find_ls$isValid <- FALSE # we'll change our mind later...
 
   if ( missing(modelPath) || ! is.character(modelPath) ) {
-    message("Must provide modelPath locator.")
+    visioneval::writeLog("findModel: Must provide modelPath locator.",Level="warn")
     return( find_ls )
   }
 
@@ -260,12 +260,12 @@ findModel <- function( modelPath, Param_ls ) {
   findPath <- grep(modelPath,searchScript,fixed=searchExact,ignore.case=TRUE,value=TRUE)
   if ( length(findPath>0) ) {
     modelPath <- findPath[1]
-    message("Using explicit script matching ",searchScript,":\n")
+    visioneval::writeLog(paste0("Using explicit script matching ",searchScript,":\n"),Level="debug")
     find_ls$modelPath <- normalizePath(dirname(modelPath),winslash="/")
     find_ls$stagePaths <- "." # modelPath root is the only stagePath
     find_ls$stageScripts <- basename(modelPath)
     find_ls$isValid <- TRUE
-    message( modelPath )
+    visioneval::writeLog( modelPath, Level="info")
     return(find_ls)
   }
 
@@ -275,7 +275,10 @@ findModel <- function( modelPath, Param_ls ) {
     possiblePaths <- file.path(roots,modelPath)
     existing <- dir.exists(possiblePaths)
     if ( ! any(existing) ) {
-      message("Failed find to model ",modelPath," in these locations:\n",paste(roots,collapse="\n"))
+      visioneval::writeLog(
+        paste0("Failed find to model ",modelPath," in these locations:\n",paste(roots,collapse="\n")),
+        level="error"
+      )
       find_ls$modelPath <- modelPath
       return(find_ls)
     } else {
@@ -283,45 +286,54 @@ findModel <- function( modelPath, Param_ls ) {
       find_ls$modelPath <- normalizePath(possiblePaths[existing][1],winslash="/")
     }
   } else if ( ! dir.exists(modelPath) ) {
-    message("Model directory ",modelPath," does not exist")
+    visioneval::writeLog(
+      paste0("Model directory ",modelPath," does not exist"), Level="error"
+    )
     return(find_ls)
   } else {
     find_ls$modelPath <- modelPath
   }
 
   # Attempt to locate runModelName in directory and first-level sub-directories
-  # The resulting vector are the stage paths (relative to find_ls$modelPath)
+  # The stagePaths need to be relative to modelPath
   find_ls$stagePaths <- modelInRoot(find_ls$modelPath,searchScript,searchExact)
   if ( length(find_ls$stagePaths)<=0 ) {
-    message("No matching pattern for",searchScript," found in ",find_ls$modelPath)
+    visioneval::writeLog(
+      paste0("No matching pattern for",searchScript," found in ",find_ls$modelPath),Level="error"
+    )
   } else {
     find_ls$stageScripts <- basename(find_ls$stagePaths)
-    find_ls$stagePaths <- dirname(find_ls$stagePaths)
+    find_ls$stagePaths <- sub(
+      find_ls$modelPath,"",
+      dirname(find_ls$stagePaths),
+      fixed=TRUE
+    )
+    find_ls$stagePaths[ ! nzchar(find_ls$stagePaths) ] <- "."
     find_ls$isValid <- TRUE
   }
   
   return( find_ls )
 }
 
-## Dir
-#  Look up a standard model
-#  model is bare name of standard model
+## Look up a standard model
+#  'model' is bare name of standard model
+#  returns the full path to that model template
 findStandardModel <- function( model ) {
   standardModels <- system.file("models",package="VEModel")
-  if ( is.null(model) || ! nzchar(model) ) return( dir(standardModels) )
-
-  model <- model[1]
-  if ( ! nzchar(standardModels) || ! model %in% dir(standardModels) ) {
+  if ( ! nzchar(standardModels) ) {
     standardModels <- getOption("VEStandardModels",default=normalizePath("inst/models"))
   }
+  if (is.null(model) || ! nzchar(model)) {
+    return( dir(standardModels) )
+  }
+
+  model <- model[1]
   model <- file.path(standardModels,model)
   if ( ! dir.exists(model) ) {
-    stop(
-      "No standard model called ",model,"\n",
-      "installModel() to list available models"
-      )
+    visioneval::writeLog(paste("No standard model called ",model),Level="error")
+    return( findStandardModel("") )
   }
-  return(model)
+  return(model) # absolute path to standard model matching name
 }
 
 ## install a standard model either as a template (skeleton==TRUE) or
@@ -332,14 +344,20 @@ findStandardModel <- function( model ) {
 
 SampleModelDataFormat <- c( templ="Template",samp="Sample" )
 
-installStandardModel <- function( modelName, modelPath, confirm, skeleton, Param_ls=NULL ) {
+installStandardModel <- function( modelName, modelPath, confirm, skeleton, Param_ls=NULL, log="error" ) {
   # Locate and install standard modelName into modelPath
   #   If modelPath is NULL or empty string, create conflict-resolved modelName in first available standard root
   #   If modelPath is an existing directory, put modelName into it (conflict-resolved name)
   #   If modelPath does not exist, but dirname(modelPath) exists, create new directory and put the model there
-  #   If dirname(modelPath) also does not exist, tell user dirname(modelPath) does not exist and they have to try again
+  #   If dirname(modelPath) also does not exist, tell user dirname(modelPath) does not exist and
+  #   they have to try again
+  
+  visioneval::initLog(Save=FALSE,Threshold=log)
+  
   model <- findStandardModel( modelName )
-  if ( is.null(modelName) || ! nzchar(modelName) ) return(model) # Vector of available standard model names
+  if ( is.null(modelName) || ! nzchar(modelName) ) {
+    return(model) # Expecting a vector of available standard model names
+  } # Otherwise model is the path to them model we will install
 
   # Set up destination modelPath
   if ( ! is.list(Param_ls) ) Param_ls <- list()
@@ -363,7 +381,7 @@ installStandardModel <- function( modelName, modelPath, confirm, skeleton, Param
   if ( ! install ) stop("Model ",modelName," not installed.",call.=FALSE)
 
   # Now do the installation
-  message("Installing ",modelName," from ",model," as ",SampleModelDataFormat[skeleton])
+  visioneval::writeLog(paste0("Installing ",modelName," from ",model," as ",SampleModelDataFormat[skeleton]),Level="info")
   dir.create(installPath)
 
   # Locate the model and data source files
@@ -376,7 +394,7 @@ installStandardModel <- function( modelName, modelPath, confirm, skeleton, Param
 
   file.copy(model.files,installPath,recursive=TRUE) # Copy standard model into modelPath
   file.copy(data.files,installPath,recursive=TRUE) # Copy skeleton data into modelPath
-  message("Installed ",modelName," in ",installPath)
+  visioneval::writeLog(paste0("Installed ",modelName," in ",installPath),Level="info")
 
   return( list(modelName=modelName,modelPath=installPath) )
 }
@@ -428,7 +446,7 @@ ve.model.setupRunEnvironment <- function(
   ResultsDir=".",       # Should be relative to ModelDir
   InputPath=".",        # Should be relative to ModelDir
   ModelScriptFile=NULL,
-  LogLevel="info"
+  LogLevel="warn"
 ) {
   # Set up ve.model environment
   ve.model <- visioneval::modelEnvironment(Clear=Owner)
@@ -460,7 +478,7 @@ ve.model.loadModelState <- function(log="error") {
   if ( ! isAbsolutePath(BaseInputPath) ) {
     BaseInputPath <- file.path(self$modelPath,BaseInputPath)
   }
-  private$ModelState <- list()
+  self$ModelState <- list()
   owd <- setwd(ResultsDir)
   on.exit(setwd(owd))
   
@@ -468,19 +486,19 @@ ve.model.loadModelState <- function(log="error") {
   if ( self$stageCount>1 ) {
     initMsg <- paste(initMsg,"for Stage ")
   } else {
-    visioneval::writeLog(initMsg,Level="info")
+    visioneval::writeLog(initMsg,Level="debug")
   }
 
   for ( stage in 1:self$stageCount ) {
     stagePath <- self$stagePaths[stage]
 
     if ( self$stageCount>1 ) {
-      visioneval::writeLog(paste(initMsg,stage,":",stagePath),Level="info")
+      visioneval::writeLog(paste(initMsg,stage,":",stagePath),Level="debug")
     }
     modelState <- normalizePath(file.path(ResultsDir,stagePath,ModelStateFileName),winslash="/",mustWork=FALSE)
     if ( visioneval::loadModelState(modelState, ( ms.env <- new.env() )) ) {
       # Attempt to load existing ModelState
-      private$ModelState[[ basename(stagePath) ]] <- ms.env$ModelState_ls
+      self$ModelState[[ basename(stagePath) ]] <- ms.env$ModelState_ls
       if ( "RunStatus" %in% ms.env$ModelState_ls ) {
         self$runStatus[stage] <- ms.env$ModelState_ls$RunStatus
       } else {
@@ -494,7 +512,7 @@ ve.model.loadModelState <- function(log="error") {
       scriptFile <- self$stageScripts[stage]
       Param_ls <- ve.model.setupRunEnvironment(
         "VEModel::loadModelState",
-        PreviousState=private$ModelState, # previously loaded model states
+        PreviousState=self$ModelState, # previously loaded model states
         Param_ls=self$RunParam_ls,
         RunModel=FALSE,
         ModelDir=stageInput,
@@ -514,22 +532,26 @@ ve.model.loadModelState <- function(log="error") {
       initArgs$ModelScriptFile   <- Param_ls$ModelScriptFile
       initArgs$ParsedModelScript <- parsedScript
       initArgs$LogLevel          <- log
-      private$ModelState[[ toupper(basename(stagePath)) ]] <- do.call(visioneval::initializeModel,args=initArgs)
+      self$ModelState[[ toupper(basename(stagePath)) ]] <- do.call(visioneval::initializeModel,args=initArgs)
     }
   }
-  if ( length(private$ModelState)!=self$stageCount ) {
+
+  if ( length(self$ModelState)!=self$stageCount ) {
+    self$status <- "Failed to Load"
     stop(
       visioneval::writeLog(
         c(
           "Failed to load all ModelStates",
           "ModelState list not the same length as stagePaths list: ",
-          length(private$ModelState)," ",self$stageCount
+          length(self$ModelState)," ",self$stageCount
         ),
         Level="error"
       )
     )
+  } else {
+    self$status <- self$runStatus[length(self$runStatus)]
   }
-  invisible(private$ModelState)
+  invisible(self$ModelState)
 }
 
 getRuntimeConfig <- function(ParamDir=NULL) {
@@ -550,12 +572,20 @@ ve.model.init <- function(modelPath=NULL,log="error") {
   # Load system and user model configuration
   # Opportunity to override names of ModelState, run_model.R, Datastore, etc.
   # Also to ejstablish standard model directory structure (inputs, results)
+  visioneval::initLog(Save=FALSE,Threshold=log)
   self$RunParam_ls <- getRuntimeConfig()
 
   # Identify the run_model.R root location(s)
   modelPaths <- findModel(modelPath,self$RunParam_ls)
   if ( ! modelPaths$isValid ) {
-    stop("No VisionEval model (",modelPaths$runModelName,") found at ",modelPath)
+    stop(
+      visioneval::writeLog(
+        c(
+          paste0("No VisionEval model (",modelPaths$runModelName,") found at"),
+          modelPath
+        ), Level="error"
+      )
+    )
   }
 
   # Set up the model name, folder tree and script files
@@ -565,17 +595,14 @@ ve.model.init <- function(modelPath=NULL,log="error") {
   self$stageScripts <- modelPaths$stageScripts; # actual names of ModelScriptFile for each stage
   self$stageCount <- length(self$stagePaths)
 
-  visioneval::initLog(Save=FALSE,Threshold=log)
-  initMsg <- paste("Initializing Model",self$modelName)
+  initMsg <- paste("Loading Model",self$modelName)
+  visioneval::writeLog(initMsg,Level="info")
 
   # Load the Model State
   private$loadModelState(log=log)
 
-  # TODO: Distinguish between a "virtual" model state and one loaded from disk
-  # Move the runStatus setup to loadModelState
-  self$status <- self$runStatus[length(self$runStatus)]
   visioneval::writeLogMessage(self$modelPath)
-  visioneval::writeLog("Initialization Complete.",Level="info")
+  visioneval::writeLog("Model Load Complete.",Level="info")
   invisible(self$status)
 }
 
@@ -614,7 +641,7 @@ VEPackageRunParameters <- function(Param_ls=list()) {
 # Find the runModel script
 # Work in the Results directory - need to relay locations from here to initializeModel
 # Need to set Inputs directory
-ve.model.run <- function(stage=NULL,lastStage=NULL,log="info") {
+ve.model.run <- function(stage=NULL,lastStage=NULL,log="warn") {
   # stage and lastStage will run a sequence of *exterior* model stages (separate run_model.R in
   # subdirectories)
   # If self$stagePaths has length > 1, stage refers to that *exterior* stage unless stageScript is
@@ -652,6 +679,9 @@ ve.model.run <- function(stage=NULL,lastStage=NULL,log="info") {
 
   if ( is.null(lastStage) ) lastStage <- self$stageCount;
 
+  # Set up default logging
+  visioneval::initLog(Save=FALSE,Threshold=log)
+
   # Set up model constants for running multiple stages
   ResultsDir <- visioneval::getRunParameter("ResultsDir",Param_ls=self$RunParam_ls)
   BaseInputPath <- visioneval::getRunParameter("InputPath",Param_ls=self$RunParam_ls)
@@ -668,7 +698,6 @@ ve.model.run <- function(stage=NULL,lastStage=NULL,log="info") {
     scriptFile <- self$stageScripts[ms]
     stageInput <- file.path(self$modelPath,stagePath)
 
-    visioneval::initLog(Save=FALSE,Threshold=log)
     initMsg <- paste("Running Model",self$modelName)
     if ( self$stageCount>1 ) {
       visioneval::writeLog(paste(initMsg,"Stage",stage,": ",stagePath),Level="info")
@@ -688,7 +717,7 @@ ve.model.run <- function(stage=NULL,lastStage=NULL,log="info") {
             # Set up run environment
             Param_ls <- ve.model.setupRunEnvironment(
               "VEModel::run",
-              PreviousState=private$ModelState, # previously loaded model states
+              PreviousState=self$ModelState, # previously loaded model states
               Param_ls=self$RunParam_ls,
               RunModel=TRUE,
               ModelDir=stageInput,
@@ -747,7 +776,7 @@ ve.model.run <- function(stage=NULL,lastStage=NULL,log="info") {
                 ),
                 Save=file.exists(visioneval::getModelStateFileName()) # expecting to be in ResultsDir
               )
-              private$ModelState[[ toupper(basename(stagePath)) ]] <- ve.model$ModelState_ls
+              self$ModelState[[ toupper(basename(stagePath)) ]] <- ve.model$ModelState_ls
             }
             setwd(owd)
           }
@@ -993,16 +1022,20 @@ ve.model.results <- function(stage) {
   }
   stagePath <- self$stagePaths[stage]
   visioneval::writeLog(paste("Loading Results for Model Stage:",stagePath),Level="info")
-  Param_ls <- private$ModelState[[stage]]$RunParam_ls
+  Param_ls <- self$ModelState[[stage]]$RunParam_ls
+  ResultsDir <- visioneval::getRunParameter("ResultsDir",Param_ls=Param_ls)
+  if ( ! dir.exists( file.path(self$modelPath,ResultsDir) ) ) {
+    ResultsDir = "."
+  } # Old style model run won't have ResultsDir in Param_ls, nor the right default
   resultsPath <- normalizePath(   # may be NULL!
-    file.path(self$modelPath,Param_ls$ResultsDir,stagePath),
+    file.path(self$modelPath,ResultsDir,stagePath),
     winslash="/",
     mustWork=FALSE
   );
   
   results <- VEResults$new(resultsPath,Param_ls)
   if ( ! results$valid() ) {
-    private$lastResult <- list()
+    private$lastResults <- list()
     if (stage!=self$stageCount) {
       warning("There are no results for stage ",stage," of this model yet.")
     } else {
@@ -1030,6 +1063,7 @@ VEModel <- R6::R6Class(
     stagePaths=NULL,
     stageScripts=NULL,
     stageCount=NULL,
+    ModelState=NULL,                        # ModelState placeholder
     RunParam_ls=NULL,
     runStatus=NULL,
     status="Uninitialized",
@@ -1046,7 +1080,6 @@ VEModel <- R6::R6Class(
   private = list(
     # Private Members
     runError=NULL,
-    ModelState=NULL,                        # ModelState placeholder
     lastResults=list(),                      # Cache previous results object
     # Private Methods
     loadModelState=ve.model.loadModelState  # Function to load a model state file
@@ -1136,22 +1169,10 @@ openModel <- function(modelPath="",log="error") {
 #' @return A VEModel object of the model that was just installed
 #' @export
 installModel <- function(modelName=NULL, modelPath=NULL, skeleton=FALSE, confirm=!skeleton, log="error") {
-  model <- installStandardModel(modelName, modelPath, confirm, skeleton)
+  model <- installStandardModel(modelName, modelPath, confirm, skeleton, log=log)
   if ( is.list(model) ) {
     return( VEModel$new( modelPath=model$modelPath, log=log ) )
   } else {
     return( model ) # should be a character vector of available standard models
-  }
-}
-
-# Shortcut to getting the model results (index is the stage)
-#' @export
-`[.VEModel` <- function( self, stage=1 ) {
-  if ( stage==0 ) {
-    return(self$dir())
-  } else if ( length(self$lastResults)!=2 || self$lastResults$stage!=stage ) {
-    return(self$results(stage))
-  } else {
-    return(self$lastResults$results)
   }
 }
