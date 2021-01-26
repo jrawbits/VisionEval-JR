@@ -1,9 +1,135 @@
 # Query.R
 #' @include results.R
+#' @import visioneval
+
 self=private=NULL
 
-ve.init.query <- function() { # parameters yet to come - hook to model
+ve.init.query <- function(FileName,querySpec=NULL,OutputDir=getwd(),QueryDir="queries") {
+  if ( ! missing(FileName) && is.character(FileName) {
+    self$load(FileName)
+  } else if ( is.list(querySpec) || "VEQuery" %in% class(querySpec) ) {
+    self$
+  self$OutputDir <- OutputDir
+  self$QueryDir <- QueryDir
+}
+
+ve.query.save <- function(saveTo=TRUE) {
+  if ( missing(saveTo) || ! is.character(saveTo) ) {
+    saveTo <- file.path(self$QueryDir,self$QueryFile)
+  } else if ( nzchar(saveTo) ) {
+    saveTo <- file.path(self$QueryDir,saveTo)
+  } else stop("Invalid saveTo parameter: ",saveTo)
+  # TODO: Add a timestamp plus extension to saveTo file name?
+  # TODO: Or at least disambiguate the name
+
+  dump("querySpec",file=saveTo,envir=private) # save the private object
+}
+
+ve.query.load <- function(FileName) {
+  if ( ! file.exists(FileName) {
+    FileName2 <- file.path(self$QueryDir,FileName)
+    if ( ! file.exists(FileName2) ) {
+      stop("Query file ",FileName," was not found.")
+    } else FileName <- FileName2
+  }
+  ve.model <- visioneval::modelEnvironment(Clear="")
+  sys.source(FileName,envir=ve.model)
+  private$querySpec <- ve.model$querySpec
+}
+
+# Helper
+makeQuerySpecList <- function (obj) {
+  if ( ! "VEQuerySpec" %in% class(obj) ) {
+    stop("Cannot make Query Specification list from object")
+  }
+  spec <- list()
+  spec[[ obj$Name ]] <- obj
+  return(spec)
+}
+
+ve.query.add <- function(SpecListOrObject,location=NULL,before=FALSE,after=TRUE) {
+  if ( ! is.list(SpecListOrObject) ) {
+    # Not a list: is it a single VEQuerySpec object of some sort?
+    if ( "VEQuerySpec" %in% class(SpecListOrObject) ) {
+      spec <- SpecListOrObject$check()
+    } else {
+      stop("Unrecognized object as specification")
+    spec <- makeQuerySpecList(spec)
+    }
+  } else {
+    if ( ! "VEQuerySpec" %in% class(SpecListOrObject[[1]]) ) {
+      spec <- VEQuerySpec$new(SpecListOrObject[[1]])
+      spec <- makeQuerySpecList(SpecListOrObject)
+    } else {
+      spec <- SpecListOrObject
+    }
+  }
+    
+    
+  # Add a VEQuerySpec to the list
+  # location is a name or position in private$querySpec
+  # if location is NULL, we look at before (first element) or after
+  # (last element). If it is not NULL, we find that location and then
+  # do either before or after (depending on what is TRUE; before
+  # dominates)
+  # run a check on the resulting private$queryCheck
+  # Extract names from SpecListOrObject to apply in the list.
+  # Ideally always assign the items by name (and replace any spec
+  # that has the same name, with a warning). Named items go at the
+  # end of a list if they are new, so we'll do this in two stages:
+  # Get the original list names from both lists (dig into the
+  # VEQuerySpec if it is not a list, or if the list is unnamed)
+  # Assign the new list into the existing one (overwriting and
+  # adding). Split the original list of names at location, remove
+  # names from each half that are in the new list, then concatenate
+  # first half, new list, second half.
   NULL
+}
+
+ve.query.subset <- function(SpecToExtract) {
+  # Return a new VEQuery that contains the indexed specifications
+  subset <- private$querySpec[SpecToExtract]
+  return(
+    VEQuery$new(
+      querySpec=subset,
+      QueryDir=self$QueryDir,
+      OutputDir=self$OutputDir
+    )
+  )
+}
+
+ve.query.remove <- function(SpecToRemove) {
+  # like subset, but remove the elements that match and return them
+  extract <- private$querySpec[SpecToExtract]
+  if ( any(!nzchar(names(extract))) ) {
+    stop("VEQuery specification list has unnamed elements.")
+  }
+  private$querySpec[names(extract)] <- NULL
+  return(
+    VEQuery$new(
+      querySpec=subset,
+      QueryDir=self$QueryDir,
+      OutputDir=self$OutputDir
+    )
+  )
+}
+
+ve.query.index <- function(SpecToRemove) {
+  self$subset(SpecToRemove) # do we need more to implement "["?
+}
+
+ve.query.spec <- function(SpecNameOrPosition) {
+  # Use a name or number to find and return a VEQuerySpec object
+  # Use the add function to put it back into the list
+  return( private$querySpec[[SpecNameOrPosition]] ) # with all the usual caveats
+}
+
+ve.query.run <- function() {
+  NULL
+}
+
+ve.query.copy <- function(newName=NULL) {
+  
 }
 
 ve.query.print <- function() {
@@ -14,6 +140,19 @@ ve.query.print <- function() {
   cat("Datastore Type:",self$runParams$DatastoreType,"\n")
   cat("Status:", self$status,"\n")
   self$status
+}
+
+ve.query.check <- function() {
+  # Check the list (individual specifications need to be checked)
+  # are all the elements named?
+  # are the individual specs valid?
+  # can the Function specs be processed based on what was earlier
+  # computed
+  return(TRUE)
+}
+
+ve.query.results <- function() {
+  NULL
 }
 
 ###########################################################################
@@ -152,9 +291,9 @@ makeMeasureDataFrame <- function(measureEnv) {
 }
 
 ###########################################################################
-# FUNCTION: ve.output.query
+# FUNCTION: ve.query.run
 #
-# VEModel function to process a query specification against a Datastore
+# VEQuery function to process a query specification against a Datastore
 #
 
 #PROCESS QUERY DEFINITIONS AGAINST A DATASTORE
@@ -611,55 +750,6 @@ doQuery <- function (
   return(outputFiles)
 }
 
-ve.query.load <- function() {
-  NULL
-}
-
-ve.query.save <- function() {
-  NULL
-}
-
-ve.query.insert <- function() {
-  NULL
-}
-
-ve.query.check <- function() {
-  NULL
-}
-
-ve.query.geography <- function() {
-  NULL
-}
-
-ve.query.geovalue <- function() {
-  NULL
-}
-
-ve.query.specs <- function() {
-  NULL
-}
-
-ve.query.search <- function() {
-  NULL
-}
-
-ve.query.move <- function(from,to="top") {
-  # from is a vector of indices into self$querySpec, either integers or names
-  # to is an index (integer or name) of length 1, which must not exist in "from"
-  #  (moving a slice inside itself is a noop).
-  NULL
-}
-
-ve.query.copy <- function(newName=NULL,newPath=NULL) {
-  NULL
-}
-
-# S3 classes and generic functions to support them (used by VEResults)
-# These wrap a data.frame (subset from VEResults$modelIndex)
-# VEfields
-# VEgroups
-# VEtables
-
 # S3 class wrapping a single query spec
 # Could construct an edit function for it...
 # Helper function creates an individual spec from parameters
@@ -672,30 +762,31 @@ ve.query.copy <- function(newName=NULL,newPath=NULL) {
 VEQuery <- R6::R6Class(
   "VEQuery",
   public = list(
+    # Data
+    OutputDir = NULL,               # Where the results will go after run
+    QueryResults = NULL,            # Data Frame holding results of doing the queries
+    QueryFile = "New-Query.VEqry",  # Name of file holding VEQuery dump (load/save)
+
+    # Methods
     initialize=ve.init.query,
-    print=ve.query.print,           # With optional details
-    run=ve.query.run,               # Option to save
-    copy=ve.query.copy,             # Duplicates the query (for further editing)
     save=ve.query.save,             # With optional file name prefix (this does an R 'dump' to source)
     load=ve.query.load,             # With a file selection dialog if no name available and interactive()
-    search=ve.query.search,         # Search for a spec by some feature (returns a list)
-    insert=ve.query.insert,         # Add a pre-constructed spec (list element class VEQuerySpec) to querySpec list (before param)
-    move=ve.query.move,             # Reorder querySpec using from/to specification
-    check=ve.query.check            # Ensure specs are all valid (can use a subset from search)
+    add=ve.query.add,               # Add a VEQuerySpec (or list of them)
+    remove=ve.query.add,            # Remove a VEQuerySpec
+    subset=ve.query.subset,         # Return a new VEQuery with a subset (or reordered) list of specs
+    `[`=ve.query.index,             # Alternate notation for subset
+    spec=ve.query.spec,             # Return a single VEQuerySpec from the list
+    run=ve.query.run,               # Option to save; results are cached in private$queryResults
+    copy=ve.query.copy,             # Duplicates the query (for further editing)
+    print=ve.query.print,           # List names of Specs in order, or optionally with details
+    check=ve.query.check,           # Make sure all the specs work (including Function order)
+    results=ve.query.results,       # report results of last run
   ),
-  active = list(
-    geography=ve.query.geography,
-    geovalue=ve.query.geovalue,
-    specs=ve.query.specs            # Active interface to querySpec
-    ),
   private = list(
-    queryGeo=NULL,
-    queryGeoValue=NULL,
-    queryFile="",
-    queryResults=NULL,              # list of data.frames with query results
-    querySpec=list(),               # access via active specs
-    queryPrep=NULL,                 # structure for running with summarizeDatasets code
-    queryRunSpec=NULL,              # specs after filtering for validity against geography, etc.
-    outputObject=NULL               # VEResults object, passed through "$new"
+    saved=TRUE,                     # Flag whether spec list has unsaved changes
+    queryGeo=NULL,                  # Run Parameter from ve.query.run
+    queryGeoValue=NULL,             # Run Parameter from ve.query.run
+    querySpec=list(),               # access via public functions
+    queryPrep=NULL                  # structure for running with summarizeDatasets code
   )
 )

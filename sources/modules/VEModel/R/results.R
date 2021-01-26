@@ -466,12 +466,12 @@ VEResults <- R6::R6Class(
 #'   The basic use of `openModel` is also described in the VisionEval Getting-Started
 #'   document on the VisionEval website (also in the VisionEval installer).
 #'
-#' The path provided as a parameterneeds to contain ModelState.Rda and Datastore, using the
-#'   names for those elements in the VisionEval run parameters ModelStateFileName and
-#'   DatastoreName respectively. Generally, it is most reliable to open an output using
-#'   the model object returned by VEModel::openModel, since that will ensure that the same
-#'   run environment is used to find the result files as when those results were created.
-#'   The openResults file does not load any configurations.
+#' The path provided as a parameter needs to contain ModelState.Rda and Datastore, using the names
+#'   for those elements in the VisionEval run parameters ModelStateFileName and DatastoreName
+#'   respectively. Generally, it is most reliable to open an output using the model object returned
+#'   by VEModel::openModel, since that will ensure that the same run environment is used to find the
+#'   result files as when those results were created. The openResults file does not load any
+#'   configurations.
 #'
 #' @param path A relative or absolute path to a directory (default is the working directory)
 #'   in which VisionEval results can be found for a single model run, stage or scenario
