@@ -4,6 +4,7 @@
 
 self=private=NULL
 
+# TODO: add queryName (basename of disambiguated FileName)
 ve.init.query <- function(FileName,querySpec=NULL,OutputDir=getwd(),QueryDir="queries") {
   if ( ! missing(FileName) && is.character(FileName) {
     self$load(FileName)
@@ -11,6 +12,12 @@ ve.init.query <- function(FileName,querySpec=NULL,OutputDir=getwd(),QueryDir="qu
     self$
   self$OutputDir <- OutputDir
   self$QueryDir <- QueryDir
+  if ( length(self$check())>0 ) {
+    message("Query specification contains errors")
+    print(self$checkResults)
+  } else {
+    message("Loaded Query")
+  }
 }
 
 ve.query.save <- function(saveTo=TRUE) {
@@ -37,8 +44,9 @@ ve.query.load <- function(FileName) {
   private$querySpec <- ve.model$querySpec
 }
 
-# Helper
-makeQuerySpecList <- function (obj) {
+# Helper to wrap a VEQuerySpec in a list so it can be manipulated by
+# VEQuery
+wrapQuerySpecList <- function (obj) {
   if ( ! "VEQuerySpec" %in% class(obj) ) {
     stop("Cannot make Query Specification list from object")
   }
@@ -47,43 +55,67 @@ makeQuerySpecList <- function (obj) {
   return(spec)
 }
 
-ve.query.add <- function(SpecListOrObject,location=NULL,before=FALSE,after=TRUE) {
+ve.query.add <- function(SpecListOrObject,location=0,before=FALSE,after=TRUE) {
   if ( ! is.list(SpecListOrObject) ) {
     # Not a list: is it a single VEQuerySpec object of some sort?
-    if ( "VEQuerySpec" %in% class(SpecListOrObject) ) {
-      spec <- SpecListOrObject$check()
-    } else {
+    if ( ! "VEQuerySpec" %in% class(SpecListOrObject) ) {
       stop("Unrecognized object as specification")
-    spec <- makeQuerySpecList(spec)
+    }
+    spec <- wrapQuerySpecList(spec)
     }
   } else {
     if ( ! "VEQuerySpec" %in% class(SpecListOrObject[[1]]) ) {
-      spec <- VEQuerySpec$new(SpecListOrObject[[1]])
-      spec <- makeQuerySpecList(SpecListOrObject)
-    } else {
-      spec <- SpecListOrObject
+      spec <- VEQuerySpec$new(SpecListOrObject[[1]]) # May fail if it's not one of us
+      spec <- wrapQuerySpecList(spec)
     }
   }
-    
-    
-  # Add a VEQuerySpec to the list
-  # location is a name or position in private$querySpec
-  # if location is NULL, we look at before (first element) or after
-  # (last element). If it is not NULL, we find that location and then
-  # do either before or after (depending on what is TRUE; before
-  # dominates)
-  # run a check on the resulting private$queryCheck
-  # Extract names from SpecListOrObject to apply in the list.
-  # Ideally always assign the items by name (and replace any spec
-  # that has the same name, with a warning). Named items go at the
-  # end of a list if they are new, so we'll do this in two stages:
-  # Get the original list names from both lists (dig into the
-  # VEQuerySpec if it is not a list, or if the list is unnamed)
-  # Assign the new list into the existing one (overwriting and
-  # adding). Split the original list of names at location, remove
-  # names from each half that are in the new list, then concatenate
-  # first half, new list, second half.
-  NULL
+  # Arrive here with spec containing a list of VEQuerySpec objects
+  specNames <- names(spec)
+  if ( ! all(nzchar(specNames) ) ) stop("List of specifications is missing names")
+
+  currentNames <- names(private$querySpec)
+  nameLen <- length(currentNames)
+  if ( is.character(location) ) {
+    if ( ! location %in% currentNames ) stop("Location is not in current Spec list")
+  } else {
+    location <- which(currentNames %in% location)[1]
+  }
+  if ( ! is.numeric(location) ) stop("Could not interpet location for new Spec")
+  location <- if ( location < 1 ) {
+    1
+  } else if ( location > nameLen ) {
+    nameLen
+  }
+  if ( before ) {
+    location <- location - 1
+    after <- FALSE # Can't have both
+  } else if ( after ) {
+    location <- location + 1
+  }
+  if ( location > nameLen ) {
+    beforeList <- 1:nameLen
+    afterList <- 0
+  } else if ( location < 1 ) {
+    beforeList <- 0
+    afterList <- 1:nameLen
+  } else {
+    beforeList <- 1:(location-1)
+    afterList <- location:nameLen
+  }
+  namesBefore <- currentNames[beforeList]
+  namesAfter <- currentNames[afterList]
+  namesBefore <- namesBefore[ - which(namesBefore %in% specNames) ]
+  namesAfter <- namesAfter[ - which(namesAfter %in% specNames) ]
+
+  private$querySpec <- c( private$querySpec[namesBefore], spec, private$querySpec[namesAfter] )
+
+  specNames <- names(private$querySpec)
+  self$checkResults <- self$check() # run through the list and report names and errors of ones that failed
+  if ( length(self$checkResults)>0 ) {
+    message("querySpec contains errors")
+    print(self$checkResults) # a named character string
+  }
+  return(self)
 }
 
 ve.query.subset <- function(SpecToExtract) {
@@ -148,6 +180,9 @@ ve.query.check <- function() {
   # are the individual specs valid?
   # can the Function specs be processed based on what was earlier
   # computed
+  # Return a named character vector where name is the specItem, and
+  #   the value is the error message. An empty vector if no errors.
+  # Stash the result in self$checkResults
   return(TRUE)
 }
 
@@ -766,6 +801,7 @@ VEQuery <- R6::R6Class(
     OutputDir = NULL,               # Where the results will go after run
     QueryResults = NULL,            # Data Frame holding results of doing the queries
     QueryFile = "New-Query.VEqry",  # Name of file holding VEQuery dump (load/save)
+    checkResults = character(0)     # Named character vector of check errors from last self$check
 
     # Methods
     initialize=ve.init.query,
