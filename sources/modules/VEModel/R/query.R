@@ -1,65 +1,115 @@
 # Query.R
+#' @include defaults.R
 #' @include results.R
 #' @import visioneval
 
 self=private=NULL
 
-# TODO: add queryName (basename of disambiguated FileName)
-ve.init.query <- function(FileName,querySpec=NULL,OutputDir=getwd(),QueryDir="queries") {
-  if ( ! missing(FileName) && is.character(FileName) {
-    self$load(FileName)
-  } else if ( is.list(querySpec) || "VEQuery" %in% class(querySpec) ) {
-    self$
-  self$OutputDir <- OutputDir
-  self$QueryDir <- QueryDir
-  if ( length(self$check())>0 ) {
-    message("Query specification contains errors")
-    print(self$checkResults)
+# VEModel should, when opening query, provide QueryDir for the model
+ve.init.query <- function(
+  QueryName=NULL,
+  FileName=visioneval::getRunParameter("QueryFileName"),
+  QuerySpec=NULL,
+  OutputDir=visioneval::getRunParameter("OutputDir"),
+  QueryDir=visioneval::getRunParameter("QueryDir")
+) {
+  if ( is.list(QuerySpec) || "VEQuery" %in% class(QuerySpec) ) {
+    # Possibly using default QueryDir/FileName
+    self$load(FileName=FileName,QueryDir=QueryDir,QuerySpec=QuerySpec,QueryName=QueryName)
   } else {
-    message("Loaded Query")
+    FileName <- paste0(QueryName,".VEqry")
+    self$load(FileName,QueryDir=QueryDir,QueryName=QueryName)
+  } # load sets QueryName   
+
+  self$QueryDir <- QueryDir;
+  self$OutputDir <- OutputDir;      # Where to write an output file
+
+  if ( length(self$checkResults)>0 ) {
+    visioneval::writeLogMessage("Query specification contains errors")
+  } else {
+    visioneval::writeLogMessage("Loaded Query")
   }
+  return(self$checkResults)
 }
 
+ve.query.load <- function(FileName=NULL,QueryName=NULL,QueryDir=NULL,QuerySpec=NULL) {
+  # Load from a list, if provided
+  if ( ! is.null(QuerySpec) ) {
+    private$QuerySpec <- QuerySpec
+    return( self$check() )
+  }
+
+  # Otherwise, attempt to load from a file
+  if ( is.null(FileName) ) {
+    FileName <- visioneval::getRunParameter("QueryFileName")
+  }
+  if ( is.null(self$QueryFile) || FileName != self$QueryFile ) {
+    self$QueryFile <- FileName
+  }
+  if ( ! is.null(QueryDir) ) self$QueryDir <- QueryDir
+  if ( is.null(QueryName) ) {
+    QueryName <- sub("\\.[^.]*$","",basename(self$QueryFile))
+  }
+  if ( is.null(self$QueryName) ) {
+    self$QueryName <- QueryName;    # Do not overwrite if self$QueryName already assigned
+  }
+
+  sourceFile <- normalizePath(file.path(self$QueryDir,self$FileName),winslash="/",mustWork=FALSE)
+  existingFile <- file.exists(sourceFile)
+  if ( ! existingFile ) {
+    sourceFile <- normalizePath(self$FileName,winslash="/",mustWork=FALSE)
+  }
+  if ( ! file.exists(sourceFile) ) {
+    visioneval::writeLogMessage("New Query:",self$QueryName)
+    return( self.check() )
+  }
+
+  # Load the query from sourceFile
+  ve.model <- visioneval::modelEnvironment() # Don't need to clear ve.model
+  sys.source(sourceFile,envir=ve.model)
+  private$QuerySpec <- ve.model$QuerySpec
+  return( self$check() )
+}
+
+# TODO: one day allow alternate storage formats
+# However, because the existing query spec format uses named vectors,
+#  it is difficult to recover full information from JSON or YAML
 ve.query.save <- function(saveTo=TRUE) {
-  if ( missing(saveTo) || ! is.character(saveTo) ) {
+  if ( ! is.character(saveTo) ) {
     saveTo <- file.path(self$QueryDir,self$QueryFile)
   } else if ( nzchar(saveTo) ) {
     saveTo <- file.path(self$QueryDir,saveTo)
-  } else stop("Invalid saveTo parameter: ",saveTo)
-  # TODO: Add a timestamp plus extension to saveTo file name?
-  # TODO: Or at least disambiguate the name
-
-  dump("querySpec",file=saveTo,envir=private) # save the private object
-}
-
-ve.query.load <- function(FileName) {
-  if ( ! file.exists(FileName) {
-    FileName2 <- file.path(self$QueryDir,FileName)
-    if ( ! file.exists(FileName2) ) {
-      stop("Query file ",FileName," was not found.")
-    } else FileName <- FileName2
-  }
-  ve.model <- visioneval::modelEnvironment(Clear="")
-  sys.source(FileName,envir=ve.model)
-  private$querySpec <- ve.model$querySpec
+  } # else its an empty string, which says dump to console
+  dump("QuerySpec",file=saveTo,envir=private) # dump the QuerySpec as R
 }
 
 # Helper to wrap a VEQuerySpec in a list so it can be manipulated by
 # VEQuery
 wrapQuerySpecList <- function (obj) {
   if ( ! "VEQuerySpec" %in% class(obj) ) {
-    stop("Cannot make Query Specification list from object")
+    msg <- visioneval::writeLogMessage("Invalid VEQuerySpec:")
+    visioneval::writeLogMessage(deparse(obj))
+    stop(msg)
   }
   spec <- list()
   spec[[ obj$Name ]] <- obj
   return(spec)
 }
 
+ve.query.update <- function(SpecListOrObject) {
+  # TODO: find the name of the SpecListOrObject
+  # If it's not already in the QuerySpec, return an error
+  self$add(SpecListOrObject)
+  return(self)
+}
+
 ve.query.add <- function(SpecListOrObject,location=0,before=FALSE,after=TRUE) {
+  # Really, add or update - if the name(s) of SpecListOrObject is/are already
+  #   in QuerySpec, the existing value(s) will be over-written, regardless of location
   if ( ! is.list(SpecListOrObject) ) {
     # Not a list: is it a single VEQuerySpec object of some sort?
     if ( ! "VEQuerySpec" %in% class(SpecListOrObject) ) {
-      stop("Unrecognized object as specification")
+      stop(visioneval::writeLogMessage"Unrecognized object as specification"))
     }
     spec <- wrapQuerySpecList(spec)
     }
@@ -71,16 +121,25 @@ ve.query.add <- function(SpecListOrObject,location=0,before=FALSE,after=TRUE) {
   }
   # Arrive here with spec containing a list of VEQuerySpec objects
   specNames <- names(spec)
-  if ( ! all(nzchar(specNames) ) ) stop("List of specifications is missing names")
+  if ( ! all(nzchar(specNames) ) ) {
+    stop(visioneval::writeLogMessage("List of specifications is missing names"))
+  }
 
-  currentNames <- names(private$querySpec)
+  currentNames <- names(private$QuerySpec)
   nameLen <- length(currentNames)
   if ( is.character(location) ) {
-    if ( ! location %in% currentNames ) stop("Location is not in current Spec list")
-  } else {
-    location <- which(currentNames %in% location)[1]
+    if ( ! location %in% currentNames ) {
+      stop(visioneval::writeLogMessage("Location is not in current QuerySpec"))
+    } else {
+      location <- which(currentNames %in% location)[1]
+    }
   }
-  if ( ! is.numeric(location) ) stop("Could not interpet location for new Spec")
+  if ( ! is.numeric(location) ) {
+    msg <- visioneval::writeLogMessage("Could not find QuerySpec location for new Spec")
+    visioneval::writeLogMessage(deparse(location))
+    stop(msg)
+  }
+  
   location <- if ( location < 1 ) {
     1
   } else if ( location > nameLen ) {
@@ -107,12 +166,12 @@ ve.query.add <- function(SpecListOrObject,location=0,before=FALSE,after=TRUE) {
   namesBefore <- namesBefore[ - which(namesBefore %in% specNames) ]
   namesAfter <- namesAfter[ - which(namesAfter %in% specNames) ]
 
-  private$querySpec <- c( private$querySpec[namesBefore], spec, private$querySpec[namesAfter] )
+  private$QuerySpec <- c( private$QuerySpec[namesBefore], spec, private$QuerySpec[namesAfter] )
 
-  specNames <- names(private$querySpec)
-  self$checkResults <- self$check() # run through the list and report names and errors of ones that failed
+  specNames <- names(private$QuerySpec)
+  self$check() # run through the list and report names and errors of ones that failed
   if ( length(self$checkResults)>0 ) {
-    message("querySpec contains errors")
+    visioneval::writeLogMessage("QuerySpec contains errors")
     print(self$checkResults) # a named character string
   }
   return(self)
@@ -120,10 +179,10 @@ ve.query.add <- function(SpecListOrObject,location=0,before=FALSE,after=TRUE) {
 
 ve.query.subset <- function(SpecToExtract) {
   # Return a new VEQuery that contains the indexed specifications
-  subset <- private$querySpec[SpecToExtract]
+  subset <- private$QuerySpec[SpecToExtract]
   return(
     VEQuery$new(
-      querySpec=subset,
+      QuerySpec=subset,
       QueryDir=self$QueryDir,
       OutputDir=self$OutputDir
     )
@@ -132,14 +191,14 @@ ve.query.subset <- function(SpecToExtract) {
 
 ve.query.remove <- function(SpecToRemove) {
   # like subset, but remove the elements that match and return them
-  extract <- private$querySpec[SpecToExtract]
+  extract <- private$QuerySpec[SpecToExtract]
   if ( any(!nzchar(names(extract))) ) {
-    stop("VEQuery specification list has unnamed elements.")
+    stop(visioneval::writeLogMessage("VEQuery specification list has unnamed elements."))
   }
-  private$querySpec[names(extract)] <- NULL
+  private$QuerySpec[names(extract)] <- NULL
   return(
     VEQuery$new(
-      querySpec=subset,
+      QuerySpec=subset,
       QueryDir=self$QueryDir,
       OutputDir=self$OutputDir
     )
@@ -153,7 +212,7 @@ ve.query.index <- function(SpecToRemove) {
 ve.query.spec <- function(SpecNameOrPosition) {
   # Use a name or number to find and return a VEQuerySpec object
   # Use the add function to put it back into the list
-  return( private$querySpec[[SpecNameOrPosition]] ) # with all the usual caveats
+  return( private$QuerySpec[[SpecNameOrPosition]] ) # with all the usual caveats about [[
 }
 
 ve.query.run <- function() {
@@ -234,7 +293,11 @@ makeMeasure <- function(measureSpec,thisYear,Geography,QPrep_ls,measureEnv) {
     if ( ! byRegion ) {
       if ( ! "By" %in% names(sumSpec) ||
            ! Geography["Type"] %in% sumSpec$By ) {
-        stop(paste("Script wants Geography Type ",Geography["Type"]," in 'By' but got ",sumSpec$By,"",sep="'"))
+        stop(
+          visioneval::writeLogMessage(
+            paste("Script wants Geography Type ",Geography["Type"]," in 'By' but got ",sumSpec$By,"",sep="'")
+          )
+        )
       }
     }
     usingBreaks <- "Breaks" %in% names(sumSpec) && ! is.null(sumSpec$Breaks)
@@ -275,14 +338,14 @@ makeMeasure <- function(measureSpec,thisYear,Geography,QPrep_ls,measureEnv) {
         names(measure) <- paste(measureName,c("min",breakNames),sep=".")
       } else {
         if ( length(measure) != 1 ) {
-          message("Processing measure: ",measureName)
-          stop("Program error: expected scalar measure, got vector:",measure)
+          visioneval::writeLogMessage("Processing measure: ",measureName)
+          stop(visioneval::writeLogMessage("Program error: expected scalar measure, got vector:",measure))
         }
         names(measure) <- measureName
       }
     }
   } else {
-    stop("Invalid Measure Specification")
+    stop(visioneval::writeLogMessage("Invalid Measure Specification"))
   }
   
   # Stash the measure results in measureEnv
@@ -371,12 +434,12 @@ ve.query.run <- function(
     ( ! is.character(Geography) ) ||
     ( ! Geography %in% c("Region", "Azone","Marea") ) )
   {
-    message("Geography must be one of 'Region','Marea' or 'Azone'")
+    visioneval::writeLogMessage("Geography must be one of 'Region','Marea' or 'Azone'")
     return(character(0))
   }
   if ( Geography %in% c("Azone","Marea") ) {
     if ( missing(GeoValue) || ! is.character(GeoValue) || length(GeoValue)>1 || ! nzchar(GeoValue) ) {
-      message("Not supported: Breaking measures by ",Geography,"; including all values")
+      visioneval::writeLogMessage("Not supported: Breaking measures by ",Geography,"; including all values")
       # TODO: need to assemble proper combinations of By/GeoValues when unpacking results from
       # summarizeDatasets in makeMeasure: we end up with a 2-D matrix, not a vector or scalar, and
       # we need to transform that to a long form with suitable names for each element
@@ -387,11 +450,11 @@ ve.query.run <- function(
       # Use those by default (but we can override the break descriptions)
       return(character(0))
     } else {
-      message("Evaluating measures for each ",Geography,": ",GeoValue)
+      visioneval::writeLogMessage("Evaluating measures for each ",Geography,": ",GeoValue)
     }
   } else {
     GeoValue <- "" # Region has no GeoValue
-    message("Evaluating measures for region")
+    visioneval::writeLogMessage("Evaluating measures for region")
   }
   Geography <- c(Type=Geography,Value=GeoValue) # prepare to do the query
 
@@ -412,7 +475,7 @@ ve.query.run <- function(
     # TODO: this may work with a vector of Scenarios; we can use the grep
     #   results to determine which of Scenarios has model outputs
     # TODO: eventually open the ModelState and determine the run status
-    message("Model appears not to have been run yet: ",self$status)
+    visioneval::writeLogMessage("Model appears not to have been run yet: ",self$status)
     return(character(0))
   }
 
@@ -429,13 +492,13 @@ ve.query.run <- function(
     } # else use saveTo as it is
     if ( ! dir.exists(saveTo) ) dir.create(saveTo,recursive=TRUE,showWarnings=FALSE)
     if ( ! dir.exists(saveTo) ) { # which it won't if saveTo was absolute but made no sense, e.g. missing drive
-      message("saveTo directory invalid: ",saveTo)
+      visioneval::writeLogMessage("saveTo directory invalid: ",saveTo)
       saveTo <- FALSE
     } else {
-      message("Writing query output into directory: ",saveTo)
+      visioneval::writeLogMessage("Writing query output into directory: ",saveTo)
     }
   } else {
-    if ( ! is.logical(saveTo) ) message("saveTo parameter is invalid: ",saveTo)
+    if ( ! is.logical(saveTo) ) visioneval::writeLogMessage("saveTo parameter is invalid: ",saveTo)
     saveTo <- FALSE
   }
 
@@ -445,7 +508,7 @@ ve.query.run <- function(
   groups <- self$groups
   Years <- Years[Years %in% groups$Group[groups$Selected=="Yes"]]
   if ( length(Years)==0 || any(is.na(Years)) ) {
-    message("Invalid Years specified")
+    visioneval::writeLogMessage("Invalid Years specified")
     cat("No years appear to be selected (check VEmodel$groups)\n")
     cat("Model has these Years available:",self$runParams$Years,"\n")
     return(character(0))
@@ -454,7 +517,7 @@ ve.query.run <- function(
   # Gather the specifications, if they're not supplied via "Spec" parameter
   if ( ! missing(Spec) && ! is.list(Spec) ) {
     PMSpecifications <- Spec
-    message("Specifications from existing list")
+    visioneval::writeLogMessage("Specifications from existing list")
   } else {
     Spec <- NULL
   }
@@ -462,7 +525,7 @@ ve.query.run <- function(
     # No pre-manufactured Spec.
     # Read SpecFile if Spec not passed as a parameter
     if ( ! is.character(SpecFile) || ! nzchar(SpecFile[1]) ) {
-      message("Invalid SpecFile")
+      visioneval::writeLogMessage("Invalid SpecFile")
       cat("Provide the name, with optional path, to the file with the Query Specifications.\n")
       cat("SpecFile Path is relative to the model directory.\n")
       return(character(0))
@@ -478,7 +541,7 @@ ve.query.run <- function(
     }
     SpecFile = normalizePath(SpecFile,winslash="/",mustWork=FALSE)
     if ( ! file.exists(SpecFile) ) {
-      message("Specification File ",SpecFile," does not exist")
+      visioneval::writeLogMessage("Specification File ",SpecFile," does not exist")
       return(character(0))
     } else {
       specEnv <- new.env()
@@ -486,7 +549,7 @@ ve.query.run <- function(
       specs <- objects(specEnv)
       if ( length(specs) != 1 ) {
         print(specs)
-        message("Must define a single specification list in ",SpecFile)
+        visioneval::writeLogMessage("Must define a single specification list in ",SpecFile)
         cat(SpecFile,"contains: ",paste(specs,collapse=", "),"\n")
         return(character(0))
       }
@@ -496,7 +559,7 @@ ve.query.run <- function(
       } else {
         SpecFile
       }
-      message(paste("Specification File: ",displaySpec,"",sep="'"))
+      visioneval::writeLogMessage(paste("Specification File: ",displaySpec,"",sep="'"))
       rm(specEnv)
     }
   }
@@ -518,11 +581,11 @@ ve.query.run <- function(
         spec.valid <- all(have.names)
         if ( ! spec.valid ) {
           if ( !all(is.na(have.names)) ) {
-            message("Unknown specification elements: ",
+            visioneval::writeLogMessage("Unknown specification elements: ",
               paste(nm.test.spec[!have.names],collapse=", ")
             )
           } else {
-            message("Unrecognized specification list element:")
+            visioneval::writeLogMessage("Unrecognized specification list element:")
             print(test.spec)
           }
           spec.valid <- FALSE
@@ -558,7 +621,7 @@ ve.query.run <- function(
             # with a message (or we could use Require). So any dip into the Marea table or the
             # Azone table only gets processed if we are running for that GeographyType.
             if ( ! Geography["Type"] %in% small.geo ) {
-              message("Invalid Geography Type for query specification: ",Geography["Type"])
+              visioneval::writeLogMessage("Invalid Geography Type for query specification: ",Geography["Type"])
               spec.valid <- FALSE
               next
             }
@@ -566,7 +629,7 @@ ve.query.run <- function(
             # Write the following in case more than one Table element is a small geography
             # Mostly, that would probably be a logic error in the query specification
             if ( any( geotest) && any(test.sum[["Table"]][geotest] != Geography["Type"]) ) {
-              message(
+              visioneval::writeLogMessage(
                 "Skipping specification ",test.spec[["Name"]],
                 " due to Table mismatch: ",
                 Geography["Type"]," vs. Table ",paste(test.sum[["Table"]][geotest],collapse=", ")
@@ -623,11 +686,11 @@ ve.query.run <- function(
   if ( ! spec.valid ) {
     # Report failing spec name, if it has one...
     if ( !is.na(have.names) && have.names[1] ) cat("In Specification '",test.spec$Name,"\n")
-    message("Invalid measure specification.")
+    visioneval::writeLogMessage("Invalid measure specification.")
     return(character(0))
   }
   if ( length(specProcessed) == 0 ) {
-    message("No valid measure specifications provided.")
+    visioneval::writeLogMessage("No valid measure specifications provided.")
     return(character(0))
   }
 
@@ -672,7 +735,7 @@ doQuery <- function (
     missing(outputFile) ||
     missing(DatastoreType)
   ) {
-    message("Invalid Setup for doQuery function")
+    visioneval::writeLogMessage("Invalid Setup for doQuery function")
     return(character(0))
   }
     
@@ -798,16 +861,19 @@ VEQuery <- R6::R6Class(
   "VEQuery",
   public = list(
     # Data
+    QueryDir = NULL,                # Default directory from which to load queries (see initialize and load)
     OutputDir = NULL,               # Where the results will go after run
     QueryResults = NULL,            # Data Frame holding results of doing the queries
-    QueryFile = "New-Query.VEqry",  # Name of file holding VEQuery dump (load/save)
-    checkResults = character(0)     # Named character vector of check errors from last self$check
+    QueryFile = NULL,               # Name of file holding VEQuery dump (load/save)
+    checkResults = "",              # Named character vector of check errors from last self$check
+    QueryName = NULL,               # Display name for Query (default basename(Query-File)
 
     # Methods
-    initialize=ve.init.query,
+    initialize=ve.init.query,       # initialize a new VEQuery object
     save=ve.query.save,             # With optional file name prefix (this does an R 'dump' to source)
     load=ve.query.load,             # With a file selection dialog if no name available and interactive()
     add=ve.query.add,               # Add a VEQuerySpec (or list of them)
+    update=ve.query.update,         # Update an existing VEQuerySpec
     remove=ve.query.add,            # Remove a VEQuerySpec
     subset=ve.query.subset,         # Return a new VEQuery with a subset (or reordered) list of specs
     `[`=ve.query.index,             # Alternate notation for subset
@@ -819,10 +885,10 @@ VEQuery <- R6::R6Class(
     results=ve.query.results,       # report results of last run
   ),
   private = list(
+    QuerySpec=list(),               # access via public functions
     saved=TRUE,                     # Flag whether spec list has unsaved changes
     queryGeo=NULL,                  # Run Parameter from ve.query.run
     queryGeoValue=NULL,             # Run Parameter from ve.query.run
-    querySpec=list(),               # access via public functions
     queryPrep=NULL                  # structure for running with summarizeDatasets code
   )
 )
