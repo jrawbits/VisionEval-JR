@@ -1,4 +1,5 @@
 # Results.R
+#' @include defaults.R
 self=private=NULL
 
 # Output just wraps a ModelState and Datastore for one stage
