@@ -11,6 +11,7 @@ ve.results.init <- function(OutputPath,Param_ls=NULL) {
   #  and a Datastore in that folder.
   # Param_ls is the list of Run Parameters used by the model
   self$path <- OutputPath
+  self$Name <- basename(OutputPath)
   private$RunParam_ls <- Param_ls
   private$index()
   return(self$valid())
@@ -425,6 +426,10 @@ ve.results.print <- function() {
 VEResults <- R6::R6Class(
   "VEResults",
   public = list(
+    # public data
+    Name = NULL,
+
+    # methods
     initialize=ve.results.init,
     path=NULL,
     valid=ve.results.valid,          # has the model been run, etc.
