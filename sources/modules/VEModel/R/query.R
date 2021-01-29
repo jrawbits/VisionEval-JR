@@ -494,6 +494,11 @@ ve.spec.check <- function() {
       )
     }
     # TODO: examine "Summarize" and "Function" sub-elements
+    ## TODO: See the parameter conversions done in doQuery - what gets passed
+    ##       to summarizeDataset will differ from the general purpose spec that VEModel
+    ##       uses.
+    checkedSpec <- visioneval::checkQuerySpec(self$QuerySpec)
+    ## TODO: evaluate what we found by checking the spec
   }
   return(self)
 }
@@ -662,7 +667,8 @@ makeMeasure <- function(measureSpec,thisYear,Geography,QPrep_ls,measureEnv) {
     names(measure) <- measureName
   } else
   if ( "Summarize" %in% names(measureSpec) ) {
-    sumSpec <- measureSpec$Summarize
+    sumSpec <- measureSpec$Summarize;
+    ## TODO: Push the following checks up to evaluate the query spec earlier
     if ( ! byRegion ) {
       if ( ! "By" %in% names(sumSpec) ||
            ! Geography["Type"] %in% sumSpec$By ) {
