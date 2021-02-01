@@ -911,9 +911,11 @@ ve.model.clear <- function(force=FALSE,outputOnly=NULL,stage=NULL,show=10) {
       if ( grepl("^[0-9:, ]+$",response) ) {
         response <- try ( eval(parse(text=paste("c(",response,")"))) )
         # Look for character command
-        candidates <- to.delete[start:stop]
-        unlink(candidates[response],recursive=TRUE)
-        cat("Deleted:\n",paste(candidates[response],collapse="\n"),"\n")
+        if ( is.numeric(response) ) {
+          candidates <- to.delete[start:stop]
+          unlink(candidates[response],recursive=TRUE)
+          cat("Deleted:\n",paste(candidates[response],collapse="\n"),"\n")
+        }
         to.delete <- self$dir(outputs=TRUE)
         if ( ! isTRUE(outputOnly) ) to.delete <- c(to.delete,self$dir(results=TRUE))
         if ( length(to.delete) > 0 ) {
@@ -1009,9 +1011,9 @@ ve.model.results <- function(stage) {
   if ( ! results$valid() ) {
     private$lastResults <- list()
     if (stage!=self$stageCount) {
-      warning("There are no results for stage ",stage," of this model yet.")
+      visioneval::writeLog("There are no results for stage ",stage," of this model yet.",Level="warn")
     } else {
-      warning("There are no results for this model yet.")
+      visioneval::writeLog("There are no results for this model yet.",Leven="warn")
     }
   } else {
     private$lastResults <- list(
@@ -1019,8 +1021,22 @@ ve.model.results <- function(stage) {
       stage=stage
     )
   }
-    
   return(results)
+}
+
+ve.model.query <- function(QueryName=NULL,FileName=NULL,new=FALSE) {
+  # Get the Query directory for the model
+  QueryDir <- visioneval::getRunParameter("QueryDir",Param_ls=self$RunParam_ls)
+  QueryDir <- file.path(self$modelPath,QueryDir)
+  if ( ! is.null(QueryName) && is.null(FileName) ) {
+    FileName <- paste0(QueryName,".VEqry")
+  if ( new ) {
+    return(VEQuery$new(QueryName=QueryName,FileName=FileName,QueryDir=QueryDir,Param_ls=self$RunParam_ls))
+  } else if ( all(is.null(c(QueryName,FileName,))) ) {
+    cat("Available Queries:\n")
+    print(dir(QueryDir))
+    return(NULL)
+  }
 }
 
 # Here is the VEModel R6 class
@@ -1047,7 +1063,8 @@ VEModel <- R6::R6Class(
     dir=ve.model.dir,                       # list model elements (output, scripts, etc.)
     clear=ve.model.clear,                   # delete results or outputs (current or past)
     copy=ve.model.copy,                     # copy a self$modelPath to another path (ignore results/outputs)
-    results=ve.model.results                # Create a VEResults object (if model is run); option to open a past result
+    results=ve.model.results,               # Create a VEResults object (if model is run); option to open a past result
+    query=ve.model.query                    # Create a VEQuery object (or show a list of queries).
   ),
   private = list(
     # Private Members

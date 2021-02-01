@@ -59,7 +59,7 @@ prepareForDatastoreQuery <- function(DstoreLocs_, DstoreType) {
   } else {
     Prep_ls$Dir <- DstoreLocs_
   }
-  #Assign datastore reading functions
+  # Assign datastore reading functions
   Prep_ls$Functions <- list()
   DstoreFuncs_ <- c("readFromTable", "listDatastore")
   for(DstoreFunc in DstoreFuncs_) {
@@ -472,17 +472,17 @@ getOperators <- function(AST) {
 #'   expression involves the calculation from datasets in different tables and
 #'   if those are not merged using keys (see 'Key' below), only summations are
 #'   allowed in the expression ('sum', '+').
-#' @param Units_ a named character vector identifying the units to be used for
-#'   each operand in 'Expr' and each 'By_' dataset. The element names
+#' @param Units a named character vector identifying the units to be used for
+#'   each operand in 'Expr' and each 'By' dataset. The element names
 #'   are the operands identified in the expression and any dataset names
-#'   identified in the 'By_' argument. The element values are the units that the
+#'   identified in the 'By' argument. The element values are the units that the
 #'   data are to be converted to when retrieved from the datastore. If no
 #'   conversion is required (i.e. retaining the units as they are in the
 #'   datastore), set the value equal to "". The specified units value for a
 #'   dataset must be consistent with the data type of the dataset. Note that the
 #'   'documentDatastoreTables' function can be used to document all the datasets
 #'   in a datastore including their unit.
-#' @param By_ an optional character vector identifying the names of the datasets
+#' @param By an optional character vector identifying the names of the datasets
 #'   to use for grouping the expression calculation. The default value is NULL
 #'   (no grouping is done). If one dataset is identified, the function returns a
 #'   vector of values by group. If two datasets are identified, the function
@@ -493,24 +493,24 @@ getOperators <- function(AST) {
 #'   values into categories must be specified in the 'Breaks_ls' argument.
 #' @param Breaks_ls a named list of vectors identifying the values to use for
 #'   splitting numeric datasets into categories. This parameter is optional
-#'   unless one or more datasets specified for the 'By_' parameter contain
+#'   unless one or more datasets specified for the 'By' parameter contain
 #'   non-integer numeric values. The names of the list components must be the
-#'   same as names of the numeric datasets identified in the 'By_' vector. Each
+#'   same as names of the numeric datasets identified in the 'By' vector. Each
 #'   named component of the list is a vector of values to be used to split the
 #'   respective By dataset into groups. Minimum and maximum values do not need
 #'   to be specified as they are computed from the dataset.
 #' @param Table a string or named list identifying the datastore table(s) where
-#'   the datasets identified in the 'Expr' argument and 'By_' argument are
+#'   the datasets identified in the 'Expr' argument and 'By' argument are
 #'   located. If all datasets are located in the same table, then the value of
 #'   'Table' should be a string. If the datasets are located in more than one
 #'   table, then the value of 'Table' must be a named list where the names are
 #'   the names of the tables where the datasets are located and the respective
 #'   values are character vectors identifying the names of the datasets located
-#'   in each of the tables. Note that if the 'By_' argument is not NULL and no
+#'   in each of the tables. Note that if the 'By' argument is not NULL and no
 #'   keys for merging table datasets are identified (see 'Key' below) then the
-#'   datasets identified in the 'By_' argument must be included in the
+#'   datasets identified in the 'By' argument must be included in the
 #'   identification of datasets for every table. However, if keys for merging
-#'   table datasets are identified, then each dataset identified in the 'By_'
+#'   table datasets are identified, then each dataset identified in the 'By'
 #'   argument can't be listed for more than one table.
 #' @param Key a optional parameter that may be either a string or named list.
 #'   This parameter is used to identify keys to be used for merging datasets
@@ -536,8 +536,8 @@ getOperators <- function(AST) {
 #' @export
 checkQuerySpec <- function(
     Expr = NULL,
-    Units_ = NULL,
-    By_ = NULL,
+    Units = NULL,
+    By = NULL,
     Breaks_ls = NULL,
     Table = NULL,
     Key = NULL,
@@ -546,16 +546,16 @@ checkQuerySpec <- function(
   ) {
 
   # Based on QuerySpec, override with named function parameters
-  params <- list( Expr = Expr, Units_ = Units_,
-    By_ = By_, Breaks_ls = Breaks_ls, Table = Table,
+  params <- list( Expr = Expr, Units = Units,
+    By = By, Breaks_ls = Breaks_ls, Table = Table,
     Key = Key, Group = Group
   )
   params <- params[ ! sapply(params,is.null) ]
   QuerySpec[ names(params) ] <- params;
 
-  # By_, Breaks_ls and Key are optional
-  # Expr, Units_, Table, and Group are required
-  if ( ! all( (reqd<-c("Expr","Units_","Table","Group")) %in% names(QuerySpec)) ) {
+  # By, Breaks_ls and Key are optional
+  # Expr, Units, Table, and Group are required
+  if ( ! all( (reqd<-c("Expr","Units","Table","Group")) %in% names(QuerySpec)) ) {
     Errors_ <- c(
       "Required Query Specification elements are missing:",
       paste( reqd,collapse=", ")
@@ -581,21 +581,21 @@ checkQuerySpec <- function(
         #Identify the operators of the Expr
         Operators_ <- unique(getOperators(str2lang(Expr)))
         #------------------------------
-        #Check Units_ and By_ arguments
+        #Check Units and By arguments
         #------------------------------
         #Check that all operands have units
-        if (!all(Operands_ %in% names(Units_))) {
+        if (!all(Operands_ %in% names(Units))) {
           Errors_ <- "Some of the operands in the expression don't have specified units."
           break
         }
-        #Check that all datasets named in the By_ argument have units
-        if (!all(By_ %in% names(Units_))) {
-          Errors_ <- "Some datasets in the 'By_' argument don't have specified units."
+        #Check that all datasets named in the By argument have units
+        if (!all(By %in% names(Units))) {
+          Errors_ <- "Some datasets in the 'By' argument don't have specified units."
           break
         }
-        #Check the not more than 2 By_ datasets
-        if (length(By_) > 2) {
-          Errors_ <- "More than 2 'By_' arguments are not current supported."
+        #Check the not more than 2 By datasets
+        if (length(By) > 2) {
+          Errors_ <- "More than 2 'By' arguments are not current supported."
           break
         }
         #---------------------------------------------------------------
@@ -603,11 +603,11 @@ checkQuerySpec <- function(
         #---------------------------------------------------------------
         if (is.list(Table)) {
           DsetNames_ <- as.vector(unlist(Table))
-          MsngNames_ <- names(Units_)[!(names(Units_) %in% DsetNames_)]
+          MsngNames_ <- names(Units)[!(names(Units) %in% DsetNames_)]
           #Check for missing names
           if (length(MsngNames_) != 0) {
             Errors_ <- c(
-              "Missing datasets required to compute 'By_' categories:",
+              "Missing datasets required to compute 'By' categories:",
               paste(MsngNames_, collapse = ", ")
             )
             break
@@ -618,7 +618,7 @@ checkQuerySpec <- function(
             Errors_ <- c(
               "Tables joined by 'Key' argument contain duplicated Datasets:",
               paste(DupNames_, collapse = ", "),
-              "Duplicate names will cause problems with the 'By_' argument",
+              "Duplicate names will cause problems with the 'By' argument",
               "Change the 'Table' argument so there is only one instance of each name."
               #'           "This error may have occurred because you listed the",
               #'           "names of datasets that are to be used as keys for joining the",
@@ -646,25 +646,25 @@ checkQuerySpec <- function(
             Errors_ <- c(
               "All the datasets appear to come from one table",
               "A 'Key' has been provided for another Table",
-              "'Key' is only needed if the datasets in the 'Expr' and 'By_' argument are from different tables"
+              "'Key' is only needed if the datasets in the 'Expr' and 'By' argument are from different tables"
             )
             break
           }
         }
         #If Table is a list, then check the Key argument for consistency
-        if (is.list(Table) & !is.null(By_)) {
-          #If Key is NULL, check that By_ datasets are specified in all tables
+        if (is.list(Table) & !is.null(By)) {
+          #If Key is NULL, check that By datasets are specified in all tables
           if (is.null(Key)) {
-            HasBy_ <- unlist(lapply(Table, function(x) {
-              all(By_ %in% x)
+            HasBy <- unlist(lapply(Table, function(x) {
+              all(By %in% x)
             }))
-            if (!all(HasBy_)) {
-              TableNotHasBy_ <- names(HasBy_)[!HasBy_]
+            if (!all(HasBy)) {
+              TableNotHasBy <- names(HasBy)[!HasBy]
               Errors_ <- c(
                 "When datasets come from more than one table, a 'Key' must be provided.",
                 "No 'Key' has been provided.",
-                "These tables do not include all 'By_' datasets:",
-                paste(TableNotHasBy_, collapse = ", ")
+                "These tables do not include all 'By' datasets:",
+                paste(TableNotHasBy, collapse = ", ")
               )
               break
             }
@@ -734,7 +734,9 @@ checkQuerySpec <- function(
       }
     }
   )
-  return( CompiledSpec=CompiledSpec, Errors = CompiledSpec$Errors_ )
+  Errors_ <- CompiledSpec$Errors_
+  CompiledSpec["Errors_"] <- NULL # Move Errors out of the spec
+  return( CompiledSpec=CompiledSpec, Errors = Errors_ )
 }
 
 #READ AND SUMMARIZE A DATASET
@@ -772,17 +774,19 @@ checkQuerySpec <- function(
 #'   expression involves the calculation from datasets in different tables and
 #'   if those are not merged using keys (see 'Key' below), only summations are
 #'   allowed in the expression ('sum', '+').
-#' @param Units_ a named character vector identifying the units to be used for
-#'   each operand in 'Expr' and each 'By_' dataset. The element names
+#' @param Units_ see \code{Units} (using the underscore works but is deprecated)
+#' @param Units a named character vector identifying the units to be used for
+#'   each operand in 'Expr' and each 'By' dataset. The element names
 #'   are the operands identified in the expression and any dataset names
-#'   identified in the 'By_' argument. The element values are the units that the
+#'   identified in the 'By' argument. The element values are the units that the
 #'   data are to be converted to when retrieved from the datastore. If no
 #'   conversion is required (i.e. retaining the units as they are in the
 #'   datastore), set the value equal to "". The specified units value for a
 #'   dataset must be consistent with the data type of the dataset. Note that the
 #'   'documentDatastoreTables' function can be used to document all the datasets
 #'   in a datastore including their unit.
-#' @param By_ an optional character vector identifying the names of the datasets
+#' @param By_ see \code{By} (using the underscore works but is deprecated)
+#' @param By an optional character vector identifying the names of the datasets
 #'   to use for grouping the expression calculation. The default value is NULL
 #'   (no grouping is done). If one dataset is identified, the function returns a
 #'   vector of values by group. If two datasets are identified, the function
@@ -793,24 +797,24 @@ checkQuerySpec <- function(
 #'   values into categories must be specified in the 'Breaks_ls' argument.
 #' @param Breaks_ls a named list of vectors identifying the values to use for
 #'   splitting numeric datasets into categories. This parameter is optional
-#'   unless one or more datasets specified for the 'By_' parameter contain
+#'   unless one or more datasets specified for the 'By' parameter contain
 #'   non-integer numeric values. The names of the list components must be the
-#'   same as names of the numeric datasets identified in the 'By_' vector. Each
+#'   same as names of the numeric datasets identified in the 'By' vector. Each
 #'   named component of the list is a vector of values to be used to split the
 #'   respective By dataset into groups. Minimum and maximum values do not need
 #'   to be specified as they are computed from the dataset.
 #' @param Table a string or named list identifying the datastore table(s) where
-#'   the datasets identified in the 'Expr' argument and 'By_' argument are
+#'   the datasets identified in the 'Expr' argument and 'By' argument are
 #'   located. If all datasets are located in the same table, then the value of
 #'   'Table' should be a string. If the datasets are located in more than one
 #'   table, then the value of 'Table' must be a named list where the names are
 #'   the names of the tables where the datasets are located and the respective
 #'   values are character vectors identifying the names of the datasets located
-#'   in each of the tables. Note that if the 'By_' argument is not NULL and no
+#'   in each of the tables. Note that if the 'By' argument is not NULL and no
 #'   keys for merging table datasets are identified (see 'Key' below) then the
-#'   datasets identified in the 'By_' argument must be included in the
+#'   datasets identified in the 'By' argument must be included in the
 #'   identification of datasets for every table. However, if keys for merging
-#'   table datasets are identified, then each dataset identified in the 'By_'
+#'   table datasets are identified, then each dataset identified in the 'By'
 #'   argument can't be listed for more than one table.
 #' @param Key a optional parameter that may be either a string or named list.
 #'   This parameter is used to identify keys to be used for merging datasets
@@ -829,36 +833,39 @@ checkQuerySpec <- function(
 #'   provided, their values will replace the ones in this list. So this function
 #'   can be used to compose and check a Query Specification based on an existing
 #'   and presumably working specification simply by replacing some of its elements.
+#'   See the \code{VEQuery} package.
 #' @param QueryPrep_ls a list created by calling the prepareForDatastoreQuery
 #'   function which identifies the datastore location(s), listing(s), and
 #'   functions for listing and read the datastore(s).
-#' @return If the By_ argument is NULL or has a length of 1, the value of the
+#' @return If the By argument is NULL or has a length of 1, the value of the
 #'   specified expression is calculated. Note that if the expression produces a
 #'   vector of more than one number the entire vector of numbers will be
 #'   returned. Users should check their expression to confirm that it will
 #'   produce a single number if that is what is desired. Assuming that the
-#'   expression produces a single value, if the 'By_' argument only identifies
+#'   expression produces a single value, if the 'By' argument only identifies
 #'   one dataset to use for grouping, the function will return a vector of
-#'   values. If the 'By_' argument identifies two grouping datasets, the
+#'   values. If the 'By' argument identifies two grouping datasets, the
 #'   function will return a matrix of values.
 #' @export
 summarizeDatasets <-
 function(
   Expr = NULL,
   Units_ = NULL,
+  Units = Units_, # rotate toward using "pure" name without underscore
   By_ = NULL,
+  By = By_,
   Breaks_ls = NULL,
   Table = NULL,
   Key = NULL,
   Group = NULL,
-  QuerySpec = list(),
+  QuerySpec = list(), # Just the "Summarize" sub-element from a VEQuery::VEQuerySpec
   QueryPrep_ls
 ) {
 
   # Check and prepare the Query Specification
   checkedSpec <- checkQuerySpec(
-    Expr=Expr,Units_=Units_,
-    By_=By_, Breaks_ls=Breaks_ls,
+    Expr=Expr,Units=Units,
+    By=By, Breaks_ls=Breaks_ls,
     Table=Table,Key=Key,Group=Group,
     QuerySpec
   )
@@ -873,7 +880,7 @@ function(
   }
   CompiledSpec <- checkedSpec$CompiledSpec;
 
-  # Obtain the Datsets needed to run the query
+  # Obtain the Datasets needed to run the query
   Datasets <- getQueryDatasets(CompiledSpec, QueryPrep_ls)
   if ( length(Datasets$Errors)>0 && any(nzchar(Datasets$Errors)) ) {
     writeLog(
@@ -909,7 +916,7 @@ getQueryDatasets <- function(CompiledSpec, QueryPrep_ls) with ( CompiledSpec, {
     #-----------------------------------------------------------
     #Get the datasets from the datastore
     Tables_ls <- list()
-    Tables_ls[[Table]] <- Units_
+    Tables_ls[[Table]] <- Units
     Data_ls <- readDatastoreTables(Tables_ls, Group, QueryPrep_ls)
     #Stop if any of the datasets are missing
     if (length(Data_ls$Missing[[Table]]) != 0) {
@@ -929,7 +936,7 @@ getQueryDatasets <- function(CompiledSpec, QueryPrep_ls) with ( CompiledSpec, {
     #Initialize table specifications
     Tables_ls <- list()
     for (nm in names(Table)) {
-      Tables_ls[[nm]] <- Units_[Table[[nm]]]
+      Tables_ls[[nm]] <- Units[Table[[nm]]]
     }
     #Add keys if any
     if (!is.null(Key)) {
@@ -997,15 +1004,15 @@ getQueryDatasets <- function(CompiledSpec, QueryPrep_ls) with ( CompiledSpec, {
     }
     #Prepare data if there is no key
     if (is.null(Key)) {
-      #If no By_ variables, combine all datasets into one list
-      if (is.null(By_)) {
+      #If no By variables, combine all datasets into one list
+      if (is.null(By)) {
         CombiData_ls <- do.call(c, lapply(Data_ls$Data, function(x) as.list(x)))
         names(CombiData_ls) <-
         gsub("^.*\\.", "", names(CombiData_ls)) # Remove the table part of the name
         Data_ls$Data <- list()
         Data_ls$Data[[1]] <- CombiData_ls
         rm(CombiData_ls)
-        #If is By_ variables, expand all tables to include all operands
+        #If is By variables, expand all tables to include all operands
         #assigning value of 0 to missing operands
       } else {
         Data_ls$Data <- lapply(Data_ls[[1]], function(x) {
@@ -1023,14 +1030,14 @@ getQueryDatasets <- function(CompiledSpec, QueryPrep_ls) with ( CompiledSpec, {
 })
 
 #-----------------------------------------------------------
-#Helper function to calculate measures if By_ is specified
+#Helper function to calculate measures if By is specified
 #-----------------------------------------------------------
 calcWithBy <- function(CompiledQuery, CalcData_ls) with ( CompiledQuery,
   {
-    #If there is a By_ argument do calculations by group and return as array
+    #If there is a By argument do calculations by group and return as array
     By_ls <- list()
     #Check and process the By data into categories
-    for (nm in By_) {
+    for (nm in By) {
       ByData_ <- CalcData_ls[[nm]]
       # ByData_ <- CalcData_ls[[1]][[nm]]
       if (!is.numeric(ByData_)) {
@@ -1068,8 +1075,8 @@ calcWithBy <- function(CompiledQuery, CalcData_ls) with ( CompiledQuery,
     Results_ar <- array(NA,
       dim = unlist(lapply(ByNames_ls, length)),
       dimnames = ByNames_ls)
-    #Calculate values if length of By_ is 1
-    if (length(By_) == 1) {
+    #Calculate values if length of By is 1
+    if (length(By) == 1) {
       for (n1 in ByNames_ls[[1]]) {
         Select_ <- By_ls[[1]] == n1
         if (sum(Select_) != 0) {
@@ -1080,8 +1087,8 @@ calcWithBy <- function(CompiledQuery, CalcData_ls) with ( CompiledQuery,
         }
       }
     }
-    #Calculate values if length of By_ is 2
-    if (length(By_) == 2) {
+    #Calculate values if length of By is 2
+    if (length(By) == 2) {
       for (n1 in ByNames_ls[[1]]) {
         for (n2 in ByNames_ls[[2]]) {
           Select_ <- By_ls[[1]] == n1 & By_ls[[2]] == n2
@@ -1116,7 +1123,7 @@ wtmean <- function(x, w) sum(x * w) / sum(w)
 #' @param CompiledSpec a list as returned from checkQuerySpec
 #' @param Data_ls a data specification as returned from getQueryDatasets
 #' @return a list with two elements, Result and Errors. Result is the numeric result as either a
-#' vector, a matrix or an array depending on the By_ value. Errors is a character vector. If it is
+#' vector, a matrix or an array depending on the By value. Errors is a character vector. If it is
 #' length zero or contains any non-empty strings, than an error condition has been specified.
 #' @export
 performQuery <- function( CompiledSpec, Data_ls )
@@ -1125,24 +1132,24 @@ with( CompiledSpec,
     #----------------------------------------------
     #Calculate the Expression and Return the Result
     #----------------------------------------------
-    if (is.null(By_)) {
-      #If there isn't a By_ argument
+    if (is.null(By)) {
+      #If there isn't a By argument
       tryCatch(
         Result <- eval(parse(text = Expr), envir = Data_ls$Data[[1]]),
         warning=function(w) { return(list(Result=NA,Errors=conditionMessage(w))) },
         error=function(e) { return(list(Result=NA,Errors=conditionMessage(e))) }
       )
     }
-    else if ( !is.null(By_) ) {
-      # There is a By_ argument, with one or two merged datasets
+    else if ( !is.null(By) ) {
+      # There is a By argument, with one or two merged datasets
       if ( length(Data_ls$Data) == 1 ) {
-        #If there is a By_ but only one merged dataset
+        #If there is a By but only one merged dataset
         calcResults <- calcWithBy(Data_ls$Data[[1]])
         if ( length(calcResults$Errors)>0 && any(nzchar(calcResults$Errors)) ) {
           return( list(Result=NA,Errors=calcResults$Errors) )
         }
       } else if (length(Data_ls$Data) > 1) {
-        #If there is a By_ but several tables, calculate results for each table
+        #If there is a By but several tables, calculate results for each table
         calcResults_ls <- lapply(
           Data_ls$Data,
           function(x) {
@@ -1165,8 +1172,8 @@ with( CompiledSpec,
           Results_ls <- lapply( calcResults_ls, function(r) r$Result )
         } 
 
-        #Check that they conform if 1 By_ variable
-        if (length(By_) == 1) {
+        #Check that they conform if 1 By variable
+        if (length(By) == 1) {
           Names_ls <- lapply(Results_ls, function(x) names(x))
           AllNames_ <- sort(unique(unlist(Names_ls)))
           Results_ls <- lapply(Results_ls, function(x) {
@@ -1176,8 +1183,8 @@ with( CompiledSpec,
           })
         }
 
-        #Check that they conform if 2 By_ variables
-        if (length(By_) == 2) {
+        #Check that they conform if 2 By variables
+        if (length(By) == 2) {
           # TODO: Unimplemented...
           NULL # Not doing this check...
         }
@@ -1202,7 +1209,7 @@ with( CompiledSpec,
 # #Summing a dataset
 # summarizeDatasets(
 #   Expr = "sum(Dvmt)",
-#   Units_ = c(
+#   Units = c(
 #     Dvmt = ""
 #   ),
 #   Table = "Household",
@@ -1213,7 +1220,7 @@ with( CompiledSpec,
 # #Converting units while summing a dataset
 # summarizeDatasets(
 #   Expr = "sum(Dvmt)",
-#   Units_ = c(
+#   Units = c(
 #     Dvmt = "KM/DAY"
 #   ),
 #   Table = "Household",
@@ -1225,7 +1232,7 @@ with( CompiledSpec,
 # #Note: "" for units uses units stored in datastore
 # summarizeDatasets(
 #   Expr = "count(HhSize)",
-#   Units_ = c(
+#   Units = c(
 #     HhSize = ""
 #   ),
 #   Table = "Household",
@@ -1236,7 +1243,7 @@ with( CompiledSpec,
 # #Mean of dataset
 # summarizeDatasets(
 #   Expr = "mean(AveGPM)",
-#   Units_ = c(
+#   Units = c(
 #     AveGPM = "GGE/MI"
 #   ),
 #   Table = "Household",
@@ -1247,7 +1254,7 @@ with( CompiledSpec,
 # #Weighted mean of dataset
 # summarizeDatasets(
 #   Expr = "wtmean(AveGPM, Dvmt)",
-#   Units_ = c(
+#   Units = c(
 #     AveGPM = "GGE/MI",
 #     Dvmt = "MI/DAY"
 #   ),
@@ -1259,7 +1266,7 @@ with( CompiledSpec,
 # #Calculate average number of household vehicles per capita
 # summarizeDatasets(
 #     Expr = "sum(Vehicles) / sum(HhSize)",
-#     Units_ = c(
+#     Units = c(
 #       Vehicles = "VEH",
 #       HhSize = "PRSN"
 #     ),
@@ -1270,11 +1277,11 @@ with( CompiledSpec,
 # #Calculate average number of vehicles per household by household size
 # summarizeDatasets(
 #   Expr = "sum(Vehicles) / sum(HhSize)",
-#   Units_ = c(
+#   Units = c(
 #     Vehicles = "VEH",
 #     HhSize = "PRSN"
 #   ),
-#   By_ = "HhSize",
+#   By = "HhSize",
 #   Table = "Household",
 #   Group = "2010",
 #   QueryPrep_ls = QPrep_ls)
@@ -1282,11 +1289,11 @@ with( CompiledSpec,
 # #Specify breaks for establish household size groups
 # summarizeDatasets(
 #   Expr = "sum(NumAuto) / sum(HhSize)",
-#   Units_ = c(
+#   Units = c(
 #     NumAuto = "VEH",
 #     HhSize = "PRSN"
 #   ),
-#   By_ = c("HhSize"),
+#   By = c("HhSize"),
 #   Breaks_ls = list(
 #     HhSize = c(0,1,2,3,4)
 #   ),
@@ -1297,13 +1304,13 @@ with( CompiledSpec,
 # #Split by household size and income groups
 # summarizeDatasets(
 #   Expr = "sum(NumAuto) / sum(Drivers)",
-#   Units_ = c(
+#   Units = c(
 #     NumAuto = "VEH",
 #     Drivers = "PRSN",
 #     Income = "USD",
 #     HhSize = "PRSN"
 #   ),
-#   By_ = c(
+#   By = c(
 #     "HhSize",
 #     "Income"),
 #   Breaks_ls = list(
@@ -1319,12 +1326,12 @@ with( CompiledSpec,
 #in Bzone table. Table datasets are merged using Bzone as key.
 # summarizeDatasets(
 #   Expr = "sum(PaysForParking) / count(PaysForParking)",
-#   Units_ = c(
+#   Units = c(
 #     PaysForParking = "",
 #     Marea = "",
 #     AreaType = ""
 #   ),
-#   By_ = c("Marea", "AreaType"),
+#   By = c("Marea", "AreaType"),
 #   Table = list(
 #     Worker = c("PaysForParking"),
 #     Bzone = c("AreaType", "Marea")
@@ -1340,12 +1347,12 @@ with( CompiledSpec,
 #a table that is merged with PaysForParking using the HhId key.
 # summarizeDatasets(
 #   Expr = "sum(PaysForParking) / count(PaysForParking)",
-#   Units_ = c(
+#   Units = c(
 #     PaysForParking = "",
 #     AreaType = "",
 #     Income = ""
 #   ),
-#   By_ = c("AreaType", "Income"),
+#   By = c("AreaType", "Income"),
 #   Breaks_ls = list(
 #     Income = c(20000, 40000, 60000, 80000)
 #   ),
@@ -1370,7 +1377,7 @@ with( CompiledSpec,
 #summed.
 # summarizeDatasets(
 #   Expr = "sum(VanCO2e) + sum(ComSvcNonUrbanCO2e) + sum(ComSvcUrbanCO2e) + sum(DailyCO2e)",
-#   Units_ = c(
+#   Units = c(
 #     VanCO2e = "MT",
 #     ComSvcNonUrbanCO2e = "MT",
 #     ComSvcUrbanCO2e = "MT",
@@ -1381,7 +1388,7 @@ with( CompiledSpec,
 #     Marea = c("Marea", "VanCO2e", "ComSvcNonUrbanCO2e", "ComSvcUrbanCO2e"),
 #     Household = c("Marea", "DailyCO2e")
 #   ),
-#   By_ = "Marea",
+#   By = "Marea",
 #   Group = "2010",
 #   QueryPrep_ls = QPrep_ls
 # )
