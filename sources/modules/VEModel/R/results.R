@@ -413,6 +413,13 @@ ve.results.extract <- function(
   invisible(results)
 }
 
+ve.results.queryprep <- function() {
+  visioneval::prepareForDatastoreQuery(
+    DstoreLocs_ = file.path(self$path,private$ModelState$DatastoreName),
+    DstoreType  = private$ModelState$DatastoreType
+  )
+}
+
 ve.results.print <- function() {
   # Update for output
   cat("VEResults object for these results:\n")
@@ -438,8 +445,9 @@ VEResults <- R6::R6Class(
     list=ve.results.list,
     search=ve.results.list,
     inputs=ve.results.inputs,
+    queryprep=ve.results.queryprep, # For query or other external access
     print=ve.results.print,
-    units=ve.results.units           # Set units on field list (modifies private$modelIndex)
+    units=ve.results.units           # TODO: Set units on field list (modifies private$modelIndex)
   ),
   active = list(
     groups=ve.results.groups,

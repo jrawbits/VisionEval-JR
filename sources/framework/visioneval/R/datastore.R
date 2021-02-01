@@ -161,10 +161,30 @@ listDatastore <- function() {
 #' functions for the declared datastore type.
 #'
 #' @param DstoreType A string identifying the datastore type.
+#' @param Package A string identifying a package name that contains the functions
+#'   implementing DstoreType; default for other than 'RD' type is to seek a package
+#'   called 'VEDatastore<DStoreType>' (archetypally, "VEDatastoreH5").
 #' @return None. The function assigns datastore interactions functions to the
 #' first position of the search path.
 #' @export
-assignDatastoreFunctions <- function(DstoreType) {
+assignDatastoreFunctions <- function(DstoreType,Package=NULL) {
+  # TODO: Move the H5 implementation into a separate package
+  # Allow other types by finding available packages with a name like "VEDatastoreXXXXX"
+  # where the is the listed DstoreType. If the package has another name
+
+  # If type is not "RD", seek package "VEDatastore<DstoreType>" and see if it has
+  # necessary functions. Require its namespace, check that it exports all the functions,
+  # and then place the function from that namespace into modelEnvironment()
+
+  # TODO: move HDF5 dependencies to VEDatastoreH5 package. Create a config just to build
+  # that package and its dependencies (create a ve-lib, ve-pkg, etc. that just has that
+  # package and its dependencies. Need to beef up the config so we can link to visioneval
+  # without building it.
+
+  if ( !is.null(Package) ) {
+    cat("Not implemented: Datastore functions from another package")
+  }
+  
   AllowedDstoreTypes_ <- c("RD", "H5")
   DstoreNames_ <-
     c("initDatastore", "initTable", "initDataset", "readFromTable",
@@ -174,6 +194,7 @@ assignDatastoreFunctions <- function(DstoreType) {
     names(DstoreFuncs_) <- DstoreNames_
     lapply(DstoreNames_,function(n) assign(n,DstoreFuncs_[[n]],envir=modelEnvironment()))
   } else {
+    # TODO: list available VEDatastore packages
     Msg <-
       paste0("Unknown 'DatastoreType' in 'run_parameters.json' - ",
              DstoreType,"\nRecognized Types:",
