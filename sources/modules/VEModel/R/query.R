@@ -1,5 +1,5 @@
 # Query.R
-#' @include defaults.R
+#' @include environment.R
 #' @include results.R
 #' @import visioneval
 
@@ -13,6 +13,7 @@ self=private=NULL
 # VEQuery$new(QueryDir) - create a new disambiugated filename for query in QueryDir
 # VEQuery$new(
 
+# Default query directory will be relative to the working directory
 ve.query.init <- function(
   QueryName=NULL,
   FileName=NULL,

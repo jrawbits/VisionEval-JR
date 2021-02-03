@@ -32,8 +32,8 @@
 #' @return A named list having three components. The 'Dir' component is a
 #' string vector identifying the relative path(s) to the datastore(s). The
 #' 'Listing' component is a list where each component is the ModelState for the corresponding
-#' element in 'Dir'. The 'Functions' component contains dispatch
-#' functions for the datastore type for listing the datastore contents and for reading datasets.
+#' element in 'Dir'. The 'DstoreType' component contains the DstoreType for use in
+#' selecting a suitable readFromTable function.
 #' @export
 prepareForDatastoreQuery <- function(DstoreLocs_, DstoreType) {
   #Initialize list to hold query preparation information
@@ -48,22 +48,16 @@ prepareForDatastoreQuery <- function(DstoreLocs_, DstoreType) {
              paste(AllowedDstoreTypes_, collapse = ", "), ".")
     stop(Msg,call.=FALSE)
   }
+  Prep_ls$DstoreType <- DstoreType;
   #Check that DstoreLocs_ are correct and assign
   DstoreLocsExist_ <- sapply(DstoreLocs_, function(x) file.exists(x))
   if (any(!DstoreLocsExist_)) {
     Msg <-
-      paste0("One or more of the specified DstoreLocs_ can not be found. ",
-             "Maybe they are misspecified. Check the following: ",
-             DstoreLocs_[!DstoreLocsExist_])
+      paste0("One or more of the specified DstoreLocs_ can not be found. Check the following: ",
+             paste(DstoreLocs_[!DstoreLocsExist_],collapse=", "))
     stop(Msg,call.=FALSE)
   } else {
     Prep_ls$Dir <- DstoreLocs_
-  }
-  # Assign datastore reading functions
-  Prep_ls$Functions <- list()
-  DstoreFuncs_ <- c("readFromTable", "listDatastore")
-  for(DstoreFunc in DstoreFuncs_) {
-    Prep_ls$Functions[[DstoreFunc]] <- get(paste0(DstoreFunc, DstoreType))
   }
   #Get listing for each datastore
   Prep_ls$Listing <- lapply(DstoreLocs_, function(x) {
@@ -289,11 +283,8 @@ documentDatastoreTables <- function(SaveArchiveName, QueryPrep_ls) {
 #' missing in each table.
 #' @export
 readDatastoreTables <- function(Tables_ls, Group, QueryPrep_ls) {
-  #Extract the datastore reading functions
-  # TODO: we should use assignDatastoreFunctions with the DatastoreType
-  readFromTable <- QueryPrep_ls$Functions$readFromTable
-  listDatastore <- QueryPrep_ls$Functions$listDatastore;
-  
+  #Select datastore read function
+  readFromTable <- assignDatastoreFunctions(QueryPrep_ls$DstoreType,FunctionName="readFromTable")
   #Extract the datastore listings
   MS_ls <- QueryPrep_ls$Listing;
   #Datastore locations
@@ -301,19 +292,25 @@ readDatastoreTables <- function(Tables_ls, Group, QueryPrep_ls) {
   #Get data from table
   Tb <- names(Tables_ls)
   Out_ls <- list()
+
+  owd <- getwd()
+  on.exit(setwd(owd))
+  query.env <- new.env()
+
   for (tb in Tb) {
     Out_ls[[tb]] <- list()
     Ds <- names(Tables_ls[[tb]])
     for (Loc in DstoreLocs_) {
-      assign("ModelState_ls", QueryPrep_ls$Listing[[Loc]], envir=modelEnvironment())
+      ModelState_ls <- QueryPrep_ls$Listing[[Loc]]
       HasTable <- checkTableExistence(tb, Group, ModelState_ls$Datastore)
       if (HasTable) {
         for (ds in Ds) {
           HasDataset <- checkDataset(ds, tb, Group, ModelState_ls$Datastore)
           if (HasDataset) {
             if (is.null(Out_ls[[tb]][[ds]])) {
+              setwd(dirname(Loc)) # Work in Datastore parent directory
               Dset_ <-
-                readFromTable(ds, tb, Group, DstoreLoc = Loc, ReadAttr = TRUE)
+                readFromTable(ds, tb, Group, ReadAttr = TRUE, ModelState_ls=ModelState_ls)
               if (Tables_ls[[tb]][ds] != "") {
                 DsetType <- attributes(Dset_)$TYPE
                 DsetUnits <- attributes(Dset_)$UNITS
