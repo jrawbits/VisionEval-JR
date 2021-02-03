@@ -2,15 +2,8 @@
 
 # VEModel Package Code
 
-#' @include defaults.R
+#' @include environment.R
 NULL
-
-#####################
-# RUNTIME ENVIRONMENT
-#####################
-# The ve.env environment is accessed via VEModel::runtimeEnvironment() It holds the RunParam_ls
-# settings from the runtime directory and possibly from a site location if specified in a system
-# environment variable. See VEModel::readConfiguration.
 
 # R6 Class documentation example:
 # https://github.com/r-lib/R6/issues/3#issuecomment-173855054
@@ -18,22 +11,23 @@ NULL
 # https://www.tidyverse.org/blog/2019/11/roxygen2-7-0-0/#r6-documentation
 # https://roxygen2.r-lib.org/articles/rd.html#r6
 
-#####################
-# DOCUMENTATION BLOCK
-#####################
+##############################################
+# VisionEval Model Manager Class and Functions
+##############################################
 #' VisionEval model manager class and functions
 #'
 #' The VisionEval model manager (VEModel) provides a simple way to run VisionEval models, and to
 #' access the model results. The framework itself contains full support for running a model, so
-#' if you have a model, you can still change into its directory and do
-#' \code{source('run_model.R')}.
+#' if you have a model, you can still just change into its directory and do
+#' \code{source('run_model.R')}. VEModel (and its helpers, VEResult and VEQuery) provide a
+#' convenient interface for running a model and exploring its structure and results.
 #'
 #' Creating a model is still a manual process, so you're usually better off duplicating one of the
 #' standard models The VEModel manager makes that very easy! See \code{vignette('VEModel')} for full
 #' instructions. A simple introduction is found on the VisionEval wiki, in the Getting-Started
-#' document.
+#' document (and that document is also included in runtime installations of VisionEval).
 #'
-#' Here are the details the VEModel manager.
+#' Here are the details of the VEModel manager.
 #'
 #' @section Usage:
 #' \preformatted{model <- VEModel$new(modelName,log="error")
@@ -156,7 +150,7 @@ isAbsolutePath <- function(modelPath) {
 
 ## Helper
 #  Model roots: ve.runtime/models, getwd()/models, ve.runtime, getwd()
-getModelRoots <- function(Param_ls,get.root=0) {
+getModelRoots <- function(get.root=0) {
   roots <- c( getwd() )
   if ( exists("ve.runtime") ) {
     ve.runtime <- get("ve.runtime")
@@ -167,7 +161,7 @@ getModelRoots <- function(Param_ls,get.root=0) {
   #    getwd()/ModelRoot (if exists)
   #    ve.runtime
   #    getwd()
-  modelRoot <- file.path(roots,visioneval::getRunParameter("ModelRoot",Param_ls=Param_ls))
+  modelRoot <- file.path(roots,visioneval::getRunParameter("ModelRoot"))
   if ( length(modelRoot)>0 ) {
     if ( isAbsolutePath(modelRoot[1]) ) {
       modelRoot <- modelRoot[1]
@@ -260,10 +254,10 @@ findModel <- function( modelPath, Param_ls ) {
   # VisionEval.R startup will set ModelScript from site configuration file
   #   located in runtime root (first of .visioneval, VisionEval.ini, VisionEval.cnf)
   #   with same default as here ("run_model.R")
-  searchScript <- visioneval::getRunParameter("ModelScript",Param_ls=Param_ls)
+  searchScript <- visioneval::getRunParameter("ModelScript")
   searchExact <- is.na(searchScript)
   if ( searchExact ) {
-    searchScript <- visioneval::getRunParameter("ModelScriptFile",Param_ls=Param_ls)
+    searchScript <- visioneval::getRunParameter("ModelScriptFile")
   }
 
   # check if modelPath contains a runModelName
@@ -445,36 +439,6 @@ ve.model.copy <- function(newName=NULL,newPath=NULL) {
   return( openModel(newModelPath) )
 }
 
-# Create a separate function for this purpose to keep consistency between
-# loading ModelState files and running Models
-ve.model.setupRunEnvironment <- function(
-  Owner,
-  PreviousState=list(),
-  Param_ls=list(),
-  RunModel=FALSE,
-  ModelDir=getwd(),
-  ResultsDir=".",       # Should be relative to ModelDir
-  InputPath=".",        # Should be relative to ModelDir
-  ModelScriptFile=NULL,
-  LogLevel="warn"
-) {
-  # Set up ve.model environment
-  ve.model <- visioneval::modelEnvironment(Clear=Owner)
-  ve.model$RunModel <- RunModel
-  ve.model$ModelStateStages <- PreviousState; # previously loaded model states
-  addParams_ls <- list(
-    ResultsDir      = ResultsDir,
-    ModelDir        = ModelDir,
-    InputPath       = InputPath,
-    ModelScriptFile = ModelScriptFile,
-    LogLevel        = LogLevel
-  )
-  addParams_ls <- visioneval::addParameterSource(addParams_ls,paste0("Set up RunParam_ls for ",Owner))
-  ve.model$RunParam_ls <- visioneval::mergeParameters(Param_ls=Param_ls,addParams_ls) # addParams_ls will override
-
-  invisible(ve.model$RunParam_ls)
-}
-
 ve.model.loadModelState <- function(log="error") {
   # Load all ModelStates for each model stage, using initializeModel with RunModel=FALSE
   # If ModelState exists from a prior run, load that rather than rebuild
@@ -564,26 +528,13 @@ ve.model.loadModelState <- function(log="error") {
   invisible(self$ModelState)
 }
 
-getRuntimeConfig <- function(ParamDir=NULL) {
-  # Function loads configuration from ParamDir/VisionEval.cnf
-  # ParamDir defaults to ve.runtime if defined, else getwd()
-  # override is a list whose elements may be replaced by this configuration
-  # keep is a list whose elements will take precedence over this configuration
-  if ( ! is.character(ParamDir) ) {
-    ParamDir <- get0("ve.runtime",ifnotfound=getwd())
-  }
-  return(
-    visioneval::loadConfiguration(ParamDir=ParamDir)
-  )
-}
-
 # Initialize a VEModel from modelPath
 ve.model.init <- function(modelPath=NULL,log="error") {
-  # Load system and user model configuration
+  # Load system model configuration
   # Opportunity to override names of ModelState, run_model.R, Datastore, etc.
-  # Also to ejstablish standard model directory structure (inputs, results)
+  # Also to establish standard model directory structure (inputs, results)
   visioneval::initLog(Save=FALSE,Threshold=log)
-  self$RunParam_ls <- getRuntimeConfig()
+  self$RunParam_ls <- getRuntimeParameters() # load defined defaults from System
 
   # Identify the run_model.R root location(s)
   modelPaths <- findModel(modelPath,self$RunParam_ls)
@@ -1037,6 +988,7 @@ ve.model.query <- function(QueryName=NULL,FileName=NULL,new=FALSE) {
   QueryDir <- file.path(self$modelPath,QueryDir)
   if ( ! is.null(QueryName) && is.null(FileName) ) {
     FileName <- paste0(QueryName,".VEqry")
+  }
   if ( new ) {
     return(VEQuery$new(QueryName=QueryName,FileName=FileName,QueryDir=QueryDir,Param_ls=self$RunParam_ls))
   } else if ( all(is.null(c(QueryName,FileName,))) ) {
@@ -1129,7 +1081,7 @@ openModel <- function(modelPath="",log="error") {
     } else {
       ve.runtime <- getwd()
     }
-    return(dir(file.path(ve.runtime,visioneval::getRunParameter("ModelRoot",Param_ls=Param_ls))))
+    return(dir(file.path(ve.runtime,visioneval::getRunParameter("ModelRoot"))))
   } else {
     return( VEModel$new(modelPath = modelPath,log=log) )
   }

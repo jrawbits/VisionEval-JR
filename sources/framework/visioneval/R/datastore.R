@@ -101,8 +101,8 @@ initDataset <- function(Spec_ls, Group) ve.model$initDataset(Spec_ls, Group)
 #' dataset is located.
 #' @param Group a string representation of the name of the datastore group the
 #' data is to be read from.
-#' @param DstoreLoc a string representation of the file path of the datastore.
-#' NULL if the datastore is the current directory.
+#' @param ModelState_ls an alternative ModelState_ls (for ad hoc retrieval of
+#'    a Dataset - getwd() must contain the Datastore)
 #' @param Index A numeric vector identifying the positions the data is to be
 #' written to. NULL if the entire dataset is to be read.
 #' @param ReadAttr A logical identifying whether to return the attributes of
@@ -110,8 +110,8 @@ initDataset <- function(Spec_ls, Group) ve.model$initDataset(Spec_ls, Group)
 #' @return A vector of the same type stored in the datastore and specified in
 #' the TYPE attribute.
 #' @export
-readFromTable <- function(Name, Table, Group, DstoreLoc = NULL, Index = NULL, ReadAttr = TRUE) {
-  ve.model$readFromTable(Name, Table, Group, DstoreLoc, Index, ReadAttr)
+readFromTable <- function(Name, Table, Group, Index = NULL, ReadAttr = TRUE, ModelState_ls = NULL) {
+  ve.model$readFromTable(Name, Table, Group, Index, ReadAttr, ModelState_ls)
 }
 
 #' Write to a datastore table.
@@ -145,6 +145,10 @@ listDatastore <- function() {
   ve.model$listDatastore()
 }
 
+DatastoreFunctionNames <-
+    c("initDatastore", "initTable", "initDataset", "readFromTable",
+      "writeToTable", "listDatastore")
+
 #ASSIGN DATASTORE INTERACTION FUNCTIONS
 #======================================
 #' Assign datastore interaction functions
@@ -167,7 +171,7 @@ listDatastore <- function() {
 #' @return None. The function assigns datastore interactions functions to the
 #' first position of the search path.
 #' @export
-assignDatastoreFunctions <- function(DstoreType,Package=NULL) {
+assignDatastoreFunctions <- function(DstoreType,FunctionName=NULL,Package=NULL) {
   # TODO: Move the H5 implementation into a separate package
   # Allow other types by finding available packages with a name like "VEDatastoreXXXXX"
   # where the is the listed DstoreType. If the package has another name
@@ -180,26 +184,30 @@ assignDatastoreFunctions <- function(DstoreType,Package=NULL) {
   # that package and its dependencies (create a ve-lib, ve-pkg, etc. that just has that
   # package and its dependencies. Need to beef up the config so we can link to visioneval
   # without building it.
-
   if ( !is.null(Package) ) {
     cat("Not implemented: Datastore functions from another package")
   }
   
   AllowedDstoreTypes_ <- c("RD", "H5")
-  DstoreNames_ <-
-    c("initDatastore", "initTable", "initDataset", "readFromTable",
-      "writeToTable", "listDatastore")
-  if (DstoreType %in% AllowedDstoreTypes_) {
-    DstoreFuncs_ <- lapply(paste0(DstoreNames_,DstoreType),function(x) get(x) ) # make a list of function objects
-    names(DstoreFuncs_) <- DstoreNames_
-    lapply(DstoreNames_,function(n) assign(n,DstoreFuncs_[[n]],envir=modelEnvironment()))
-  } else {
+  if ( ! DstoreType %in% AllowedDstoreTypes_) {
     # TODO: list available VEDatastore packages
-    Msg <-
-      paste0("Unknown 'DatastoreType' in 'run_parameters.json' - ",
-             DstoreType,"\nRecognized Types:",
-             paste(AllowedDstoreTypes_, collapse = ", "))
-    stop(writeLog(Msg,Level="error"))
+    Msg <- paste0("Unknown 'DatastoreType': ", DstoreType)
+    writeLog(c(Msg,"\nRecognized Types:",paste(AllowedDstoreTypes_, collapse = ", ")),Level="error")
+    stop(Msg)
+  } else {
+    DstoreFuncs_ <- lapply(paste0(DatastoreFunctionNames,DstoreType),function(x) get(x) ) # make a list of function objects
+    names(DstoreFuncs_) <- DatastoreFunctionNames
+  }
+  if ( ! is.null(FunctionName) ) {
+    if ( ! FunctionName %in% DstoreNames_ ) {
+      Msg <- paste0("Unknown Datastore Function: ", FunctionName)
+      writeLog(c(Msg,"\nRecognized Functions:",paste(DstoreNames_, collapse = ", ")),Level="error")
+      stop(Msg)
+    } else {
+      return(DstoreFuncs_[[FunctionName]])
+    }
+  } else {
+    lapply(DstoreNames_,function(n) assign(n,DstoreFuncs_[[n]],envir=modelEnvironment()))
   }
 }
 
@@ -485,8 +493,8 @@ initDatasetRD <- function(Spec_ls, Group) {
 #' dataset is located.
 #' @param Group a string representation of the name of the datastore group the
 #' data is to be read from.
-#' @param DstoreLoc a string representation of the file path of the datastore.
-#' NULL if the datastore is the current directory.
+#' @param ModelState_ls an alternative ModelState_ls (for ad hoc retrieval of
+#'    a Dataset - getwd() must contain the Datastore)
 #' @param Index A numeric vector identifying the positions the data is to be
 #' written to. NULL if the entire dataset is to be read.
 #' @param ReadAttr A logical identifying whether to return the attributes of
@@ -494,21 +502,16 @@ initDatasetRD <- function(Spec_ls, Group) {
 #' @return A vector of the same type stored in the datastore and specified in
 #' the TYPE attribute.
 #' @export
-readFromTableRD <- function(Name, Table, Group, DstoreLoc = NULL, Index = NULL, ReadAttr = TRUE) {
-  #Get the directory where the datastore is located from DstoreLoc
-  if (is.null(DstoreLoc)) {
-    DstoreDir <- ""
-  } else {
-    DstoreDir <- dirname(DstoreLoc)
-  }
+readFromTableRD <- function(Name, Table, Group, Index = NULL, ReadAttr = TRUE, ModelState_ls = NULL) {
+  #Expects to find the Datastore in the working directory
   #Load the model state file
-  if (DstoreDir == "") {
+  if ( is.null(ModelState_ls) ) {
     G <- getModelState()
   } else {
-    G <- readModelState(FileName = file.path(DstoreDir, getModelStateFileName()))
+    G <- ModelState_ls
   }
   #If DstoreLoc is NULL get the name of the datastore from the model state
-  if (is.null(DstoreLoc)) DstoreLoc <- G$DatastoreName
+  DstoreLoc <- G$DatastoreName;
   #Check that dataset exists to read from and if so get path to dataset
   DatasetExists <- checkDataset(Name, Table, Group, G$Datastore)
   if (DatasetExists) {
@@ -527,6 +530,7 @@ readFromTableRD <- function(Name, Table, Group, DstoreLoc = NULL, Index = NULL, 
   # NAValue <- as.vector(attributes(Dataset)$NAVALUE)
   # Dataset[Dataset == NAValue] <- NA
   #If there is an Index, check, and use to subset the dataset
+  # TODO: examine why we don't just check the length/number of rows in the dataset?
   if (!is.null(Index)) {
     TableAttr_ <-
       unlist(G$Datastore$attributes[G$Datastore$groupname == file.path(Group, Table)])
@@ -534,7 +538,7 @@ readFromTableRD <- function(Name, Table, Group, DstoreLoc = NULL, Index = NULL, 
     if (any(Index > AllowedLength)) {
       Message <-
         paste0(
-          "One or more specified indicies for reading data from ",
+          "One or more specified indices for reading data from ",
           Table, " exceed ", AllowedLength
         )
       writeLog(Message,Level="error")
@@ -895,8 +899,8 @@ initDatasetH5 <- function(Spec_ls, Group) {
 #'   dataset is located.
 #' @param Group a string representation of the name of the datastore group the
 #' data is to be read from.
-#' @param DstoreLoc a string representation of the file path of the datastore.
-#' NULL if the datastore is for the current model.
+#' @param ModelState_ls an alternative ModelState_ls (for ad hoc retrieval of
+#'    a Dataset - getwd() must contain the Datastore)
 #' @param Index A numeric vector identifying the positions the data is to be
 #'   written to. NULL if the entire dataset is to be read.
 #' @param ReadAttr A logical identifying whether to return the attributes of
@@ -905,21 +909,16 @@ initDatasetH5 <- function(Spec_ls, Group) {
 #'   the TYPE attribute.
 #' @export
 #' @import rhdf5
-readFromTableH5 <- function(Name, Table, Group, DstoreLoc = NULL, Index = NULL, ReadAttr = TRUE) {
-  #Get the directory where the datastore is located from DstoreLoc
-  if (is.null(DstoreLoc)) {
-    DstoreDir <- NULL
-  } else {
-    DstoreDir <- dirname(DstoreLoc)
-  }
+readFromTableH5 <- function(Name, Table, Group, Index = NULL, ReadAttr = TRUE, ModelState_ls = NULL) {
+  #Expects to find the Datastore in the working directory
   #Load the model state file
-  if ( is.null(DstoreDir) ) {
+  if ( is.null(ModelState_ls) ) {
     G <- getModelState()
   } else {
-    G <- readModelState(FileName = file.path(DstoreDir, getModelStateFileName()),envir=new.env())
+    G <- ModelState_ls
   }
   #If DstoreLoc is NULL get the name of the datastore from the model state
-  if (is.null(DstoreLoc)) DstoreLoc <- G$DatastoreName
+  DstoreLoc <- G$DatastoreName
   #Check that dataset exists to read from
   DatasetExists <- checkDataset(Name, Table, Group, G$Datastore)
   if (DatasetExists) {
