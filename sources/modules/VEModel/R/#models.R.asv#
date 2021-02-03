@@ -8,9 +8,9 @@ NULL
 #####################
 # RUNTIME ENVIRONMENT
 #####################
-# The ve.env environment is accessed via VEModel::runtimeEnvironment() It holds the RunParam_ls
+# The ve.env environment is accessed via VEModel::runtimeEnvironment. It holds the RunParam_ls
 # settings from the runtime directory and possibly from a site location if specified in a system
-# environment variable. See VEModel::readConfiguration.
+# environment variable; See VEModel::readConfiguration.
 
 # R6 Class documentation example:
 # https://github.com/r-lib/R6/issues/3#issuecomment-173855054

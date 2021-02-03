@@ -1,3 +1,24 @@
+# Author: Jeremy Raw
+
+# VEModel Package Code
+
+#' @include defaults.R
+NULL
+
+#####################
+# RUNTIME ENVIRONMENT
+#####################
+# The ve.env environment is accessed via VEModel::runtimeEnvironment. It holds the RunParam_ls
+# settings from the runtime directory and possibly from a site location if specified in a system
+# environment variable; See VEModel::readConfiguration.
+
+ve.env <- new.env()
+
+runtimeEnvironment <- function() {
+  #
+}
+  
+
 # Set up package defaults for VE getRunParameter
 
 default.parameters.table = list(
