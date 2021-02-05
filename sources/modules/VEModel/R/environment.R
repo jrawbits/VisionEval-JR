@@ -11,6 +11,7 @@
 # system environment variable VE_RUNTIME; See VEModel::readConfiguration.
 
 ve.env <- new.env()
+ve.env$RunParam_ls <- list()
 
 #ACCESS R ENVIRONMENT FOR MODEL RUN
 #==================================
@@ -69,9 +70,9 @@ VEPackageRunParameters <- function(Param_ls=list()) {
 #' runtime paramters list (so call it after changing the configuration file to bring the in-memory
 #' version up to date). See \code{visioneval::loadConfiguration} for more details.
 #'
-#' @param Param_Dir is the directoyr in whicn to seek visioneval.cnf
-#' @param Param_file is a specific file to see (rather than looking for one of the default file
-#' names). Note that an error will be raised if that file is specified but does not exist.
+#' @param ParamDir is the directoyr in whicn to seek visioneval.cnf
+#' @param ParamFile is a specific file to seek (rather than looking for one of the default file
+#'   names). Note that an error will be raised if that file is specified but does not exist.
 #' @return The updated runtime parameters list (which is also modified in place)
 #' @export
 loadRuntimeConfig <- function(ParamDir=NULL,ParamFile=NULL) {
@@ -81,7 +82,8 @@ loadRuntimeConfig <- function(ParamDir=NULL,ParamFile=NULL) {
   # keep is a list whose elements will take precedence over this configuration
   ve.env <- runtimeEnvironment()
   if ( is.null(ve.env$ve.runtime) ) setRuntimeDirectory() # VE_RUNTIME or getwd()
-  if ( is.null(ParamDir) ) ParamDir <- venv$ve.runtime
+  if ( is.null(ParamDir) ) ParamDir <- ve.env$ve.runtime
+  if ( ! exists("RunParam_ls",envir=ve.env,inherits=FALSE) ) ve.env$RunParam_ls <- list()
   ve.env$RunParam_ls <- visioneval::loadConfiguration(ParamDir=ParamDir,ParamFile=ParamFile,override=ve.env$RunParam_ls)
   return( ve.env$RunParam_ls )
 }
@@ -100,7 +102,7 @@ loadRuntimeConfig <- function(ParamDir=NULL,ParamFile=NULL) {
 #' @return A list of defined run parameters (or an empty list if none, or if no paramNames are
 #'   found)
 #' @export
-getRuntimeParameters <- function(paramNames=NULL, Default=FALSE) {
+getRuntimeParameters <- function(paramNames=NULL) {
   RunParams_ls <- if ( is.null(ve.env$RunParam_ls) ) ve.env$RunParam_ls else loadRuntimeConfig()
   if ( is.character(paramNames) ) RunParams_ls <- RunParams_ls[names(RunParams_ls) %in% paramNames]
   return(RunParams_ls)
@@ -114,11 +116,17 @@ setRuntimeDirectory <- function(Directory=NULL) {
       Sys.getenv("VE_RUNTIME",unset=getwd())
     } else ve.env$ve.runtime
   } else {
-    ve.env$ve.runtime <- Directory
+    Directory <- normalizePath(Directory,winslash="/",mustWork=FALSE)
+    if ( ! dir.exists(Directory) ) {
+      Directory <- getwd()
+    }
   }
   # returns the working directory from before this call
-  ve.env$start.dir <- if ( getwd() != Directory ) setwd(Directory) else getwd()
-  return(ve.env$start.dir)
+  ve.env$start.dir <- getwd()
+  if ( getwd() != Directory ) {
+    setwd(Directory)
+  }
+  return( ve.env$ve.runtime <- getwd() )
 }
 
 # INTERNAL FUNCTION TO SET BASIC RUN PARAMETERS
@@ -151,8 +159,7 @@ ve.model.setupRunEnvironment <- function(
     LogLevel        = LogLevel
   )
   addParams_ls <- visioneval::addParameterSource(addParams_ls,paste0("Set up RunParam_ls for ",Owner))
-  ve.model$RunParam_ls <- visioneval::mergeParameters(Param_ls=Param_ls,addParams_ls) # addParams_ls will override
+  ve.model$RunParam_ls <- visioneval::mergeParameters(Param_ls,addParams_ls) # addParams_ls will override
 
   invisible(ve.model$RunParam_ls)
 }
-
