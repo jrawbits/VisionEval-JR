@@ -165,11 +165,13 @@ DatastoreFunctionNames <-
 #' functions for the declared datastore type.
 #'
 #' @param DstoreType A string identifying the datastore type.
+#' @param FunctionName A character vector identifyin a single function to find for the indicated
+#'   DstoreType
 #' @param Package A string identifying a package name that contains the functions
 #'   implementing DstoreType; default for other than 'RD' type is to seek a package
 #'   called 'VEDatastore<DStoreType>' (archetypally, "VEDatastoreH5").
-#' @return None. The function assigns datastore interactions functions to the
-#' first position of the search path.
+#' @return If FunctionName is provided and found, the function. Otherwise, invisibly
+#'   return the list of all functions
 #' @export
 assignDatastoreFunctions <- function(DstoreType,FunctionName=NULL,Package=NULL) {
   # TODO: Move the H5 implementation into a separate package
@@ -199,15 +201,15 @@ assignDatastoreFunctions <- function(DstoreType,FunctionName=NULL,Package=NULL) 
     names(DstoreFuncs_) <- DatastoreFunctionNames
   }
   if ( ! is.null(FunctionName) ) {
-    if ( ! FunctionName %in% DstoreNames_ ) {
+    if ( ! FunctionName %in% DatastoreFunctionNames ) {
       Msg <- paste0("Unknown Datastore Function: ", FunctionName)
-      writeLog(c(Msg,"\nRecognized Functions:",paste(DstoreNames_, collapse = ", ")),Level="error")
+      writeLog(c(Msg,"\nRecognized Functions:",paste(DatastoreFunctionNames, collapse = ", ")),Level="error")
       stop(Msg)
     } else {
       return(DstoreFuncs_[[FunctionName]])
     }
   } else {
-    lapply(DstoreNames_,function(n) assign(n,DstoreFuncs_[[n]],envir=modelEnvironment()))
+    invisible( lapply(DatastoreFunctionNames,function(n) assign(n,DstoreFuncs_[[n]],envir=modelEnvironment())) )
   }
 }
 
@@ -536,10 +538,14 @@ readFromTableRD <- function(Name, Table, Group, Index = NULL, ReadAttr = TRUE, M
       unlist(G$Datastore$attributes[G$Datastore$groupname == file.path(Group, Table)])
     AllowedLength <- TableAttr_["LENGTH"]
     if (any(Index > AllowedLength)) {
+      browser()
       Message <-
-        paste0(
-          "One or more specified indices for reading data from ",
-          Table, " exceed ", AllowedLength
+        c(
+          paste0(
+            "One or more specified indices for reading data from ",
+            paste(Group,Table,sep="/"), " exceed ", AllowedLength
+          ),
+          paste("Indices:",Index[Index>AllowedLength],collapse=", ")
         )
       writeLog(Message,Level="error")
       stop(Message)
@@ -1192,27 +1198,31 @@ getFromDatastore <- function(ModuleSpec_ls, RunYear, Geo = NULL, GeoIndex_ls = N
       # JRaw TODO: get this to support "Loaded" Datastores that have
       # not been copied.
       DstoreGroup <- "Global"
-      if (!is.null(G$DatastoreReferences$Global)) {
-        Files_ <- c(G$DatastoreName, G$DatastoreReferences$Global)
-      } else {
-        Files_ <- G$DatastoreName
-      }
+## Unsupported:
+#       if (!is.null(G$DatastoreReferences$Global)) {
+#         Files_ <- c(G$DatastoreName, G$DatastoreReferences$Global)
+#       } else {
+        Files_ <- G$DatastoreName;
+#       }
     }
     if (Group == "BaseYear") {
-      DstoreGroup <- G$BaseYear
+      DstoreGroup <- G$BaseYear;
       if (G$BaseYear %in% G$Years) {
         Files_ <- G$DatastoreName
       } else {
-        Files_ <- G$DatastoreReferences[[G$BaseYear]]
+## Unsupported:
+#         Files_ <- G$DatastoreReferences[[G$BaseYear]]
+      stop( writeLog("BaseYear not in Datastore Years",Level="error") )
       }
     }
     if (Group == "Year") {
-      DstoreGroup <- RunYear
-      if (!is.null(G$DatastoreReferences[[RunYear]])) {
-        Files_ <- c(G$DatastoreName, G$DatastoreReferences[[RunYear]])
-      } else {
-        Files_ <- G$DatastoreName
-      }
+      DstoreGroup <- RunYear;
+## Unsupported
+#       if (!is.null(G$DatastoreReferences[[RunYear]])) {
+#         Files_ <- c(G$DatastoreName, G$DatastoreReferences[[RunYear]])
+#       } else {
+        Files_ <- G$DatastoreName;
+#       }
     }
     #Add table component to list if does not exist
     if (is.null(L[[Group]][[Table]])) {
@@ -1230,16 +1240,20 @@ getFromDatastore <- function(ModuleSpec_ls, RunYear, Geo = NULL, GeoIndex_ls = N
     } else {
       Index <- NULL
     }
-    #Fetch the data and add to the input list
-    getModelListing <- function(DstoreRef) {
-      ModelStateFile <- paste(dirname(DstoreRef), getModelStateFileName(), sep = "/")
-      return( readModelState(FileName = ModelStateFile, envir=new.env()) )
-    }
-    for (File in Files_) {
-      DstoreListing_ls <- getModelListing(DstoreRef = File)$Datastore
+## Unsupported:
+#     #Fetch the data and add to the input list
+#     getModelListing <- function(DstoreRef) {
+#       ModelStateFile <- paste(dirname(DstoreRef), getModelStateFileName(), sep = "/")
+#       return( readModelState(FileName = ModelStateFile, envir=new.env()) )
+#     }
+#     if ( length(Files_)>1 || Files_ != "Datastore" ) {
+#       stop( writeLog("Unsupported in getFromDatastore (1245): list of Datastores to read",level="error") )
+#     }
+## Unsupported:   for (File in Files_) {
+      DstoreListing_ls <- G$Datastore
       DatasetExists <- checkDataset(Name, Table, DstoreGroup, DstoreListing_ls)
       if (DatasetExists) {
-        Data_ <- readFromTable(Name, Table, DstoreGroup, File, Index)
+        Data_ <- readFromTable(Name, Table, DstoreGroup, Index)
         #Convert currency
         if (Type == "currency") {
           FromYear <- G$BaseYear
@@ -1271,10 +1285,8 @@ getFromDatastore <- function(ModuleSpec_ls, RunYear, Geo = NULL, GeoIndex_ls = N
         Data_ <- convertMagnitude(Data_, 1, Spec_ls$MULTIPLIER)
         #Add data to list
         L[[Group]][[Table]][[Name]] <- Data_
-        #When data successfully retrieved, break out of loop searching Files_
-        break()
       }
-    }
+## Unsupported:    }
     rm(Spec_ls, Group, Table, Name, Type, DstoreGroup, Files_)
   }
   #Return the list

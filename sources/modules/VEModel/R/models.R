@@ -275,7 +275,7 @@ findModel <- function( modelPath, Param_ls ) {
 
   # if modelPath is not an absolute path, search for it amongst the "roots"
   if ( ! isAbsolutePath(modelPath) ) {
-    roots<-getModelRoots(Param_ls)
+    roots<-getModelRoots()
     possiblePaths <- file.path(roots,modelPath)
     existing <- dir.exists(possiblePaths)
     if ( ! any(existing) ) {
@@ -340,15 +340,14 @@ findStandardModel <- function( model ) {
   return(model) # absolute path to standard model matching name
 }
 
-## install a standard model either as a template (skeleton==TRUE) or
-## a sample (skeleton==FALSE)
+## install a standard model with data identified by "skeleton"
 #  We're still expecting to distribute with standard models pre-installed
 #  Called automatically from findModel, where modelPath must be a bare model name
 #  Can install from other locations by calling this function with a more elaborate modelPath
 
-SampleModelDataFormat <- c( templ="Template",samp="Sample" )
+SampleModelDataFormat <- c( sample="samp",template="tpl",test="mini" )
 
-installStandardModel <- function( modelName, modelPath, confirm, skeleton, Param_ls=NULL, log="error" ) {
+installStandardModel <- function( modelName, modelPath, confirm, skeleton=c("sample","template","test"), Param_ls=NULL, log="error" ) {
   # Locate and install standard modelName into modelPath
   #   If modelPath is NULL or empty string, create conflict-resolved modelName in first available standard root
   #   If modelPath is an existing directory, put modelName into it (conflict-resolved name)
@@ -365,7 +364,7 @@ installStandardModel <- function( modelName, modelPath, confirm, skeleton, Param
 
   # Set up destination modelPath
   if ( ! is.list(Param_ls) ) Param_ls <- list()
-  root <- getModelRoots(Param_ls,1)
+  root <- getModelRoots(1)
   if ( missing(modelPath) || is.null(modelPath) ) modelPath <- modelName
   if ( ! isAbsolutePath(modelPath) ) {
     installPath <- normalizePath(file.path(root,modelPath),winslash="/",mustWork=FALSE)
@@ -376,7 +375,13 @@ installStandardModel <- function( modelName, modelPath, confirm, skeleton, Param
 
   # Confirm installation if requested
   install <- TRUE
-  skeleton <- if ( skeleton ) "templ" else "samp"
+  skeleton <- if ( ! is.character(skeleton) ) {
+    "sample"
+  } else if ( ! skeleton %in% names(SampleModelDataFormat) ) {
+    "sample"
+  } else {
+    skeleton[1]
+  }
   if ( confirm && interactive() ) {
     msg <- paste0("Install standard model '",modelName,"' (",SampleModelDataFormat[skeleton],") in ",installPath,"?\n")
     install <- confirmDialog(msg)
@@ -1109,14 +1114,16 @@ openModel <- function(modelPath="",log="error") {
 #'   ve.runtime/models. If directory does not exist, create it and copy the modelName into it.
 #'   If directory does exist, create a unique variant of modelName adjacent to it. If it is NULL
 #'   create a unique variant of modelName in ve.runtime/models.
-#' @param skeleton if TRUE (default), install just skeleton files for the model; otherwise
-#'   install the sample model.
+#' @param skeleton A character string identifying the sample data to install. Options are "sample",
+#'   which is a small real-world model, "template" which installs data files containing only their
+#'   header row, or "test" which installs a miniature model with just enough data and years to
+#'   run the model script (used for testing framework functions).
 #' @param confirm if TRUE (default) and running interactively, prompt user to confirm, otherwise
 #'   just do it.
 #' @param log a string describing the minimum level to display
 #' @return A VEModel object of the model that was just installed
 #' @export
-installModel <- function(modelName=NULL, modelPath=NULL, skeleton=FALSE, confirm=!skeleton, log="error") {
+installModel <- function(modelName=NULL, modelPath=NULL, skeleton=c("sample","template","test"), confirm=!skeleton, log="error") {
   model <- installStandardModel(modelName, modelPath, confirm, skeleton, log=log)
   if ( is.list(model) ) {
     return( VEModel$new( modelPath=model$modelPath, log=log ) )

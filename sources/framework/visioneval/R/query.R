@@ -1,5 +1,5 @@
 #===========
-#datastore.R
+#query.R
 #===========
 
 #Functions for querying a datastore. See framework/docs/QueryDocs.R
