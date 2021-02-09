@@ -1,4 +1,4 @@
-# Results.R
+ Results.R
 #' @include environment.R
 self=private=NULL
 
@@ -14,14 +14,15 @@ ve.results.init <- function(OutputPath,Param_ls=NULL) {
   self$Name <- basename(OutputPath)
   private$RunParam_ls <- Param_ls
   private$index()
+  self$selection <- VESelection$new(self,1:nrow(self$modelInputs))
   return(self$valid())
 }
 
 ve.results.valid <- function() {
   valid <- ! is.null(private$RunParam_ls) &&
            dir.exists(self$path) &&
-           !is.null(private$modelIndex) && length(private$modelIndex)>0 &&
-           !is.null(private$modelInputs) && length(private$modelInputs)>0
+           !is.null(self$modelIndex) && length(self$modelIndex)>0 &&
+           !is.null(self$modelInputs) && length(self$modelInputs)>0
   modelStateFile <- file.path(self$path,visioneval::getRunParameter("ModelStateFileName",Param_ls=private$RunParam_ls))
   valid <- valid && all(file.exists(modelStateFile))
   return(valid)
@@ -53,20 +54,18 @@ ve.results.index <- function() {
   # Load model state from self$path
   ve.model <- new.env()
   FileName=file.path(self$path,visioneval::getModelStateFileName(Param_ls=private$RunParam_ls))
-  # TODO: Make this work with archived ModelState (if it has a timestamp in its name)
-  ms <- private$ModelState <- try(visioneval::readModelState(FileName=FileName))
-  if ( ! is.list(private$ModelState) ) {
-    private$ModelState <- NULL
+  ms <- self$modelState <- try(visioneval::readModelState(FileName=FileName))
+  if ( ! is.list(self$modelState) ) {
+    self$modelState <- NULL
     visioneval::writeLog(Level="error",paste("Cannot load ModelState from:",FileName))
     return(list())
   }
-  if ( is.null(private$RunParam_ls) && is.list(private$ModelState ) ) {
-    private$RunParam_ls <-private$ModelState$RunParam_ls
+  if ( is.null(private$RunParam_ls) && is.list(self$modelState ) ) {
+    private$RunParam_ls <-self$modelState$RunParam_ls
   }
   owd <- setwd(self$path)
   on.exit(setwd(owd))
-    
-  # TODO: sort out the "Load" DatastoreName parameter and the "Run" DatastoreName
+
   if ( ! file.exists( ms$DatastoreName ) ) {
     message("Datastore for this model is not available. Has it run successfully?")
     return(list())
@@ -94,6 +93,9 @@ ve.results.index <- function() {
   Module <- sapply(ds$attributes, attributeGet, "MODULE",simplify=TRUE) # should yield a character vector
   Units <- sapply(ds$attributes, attributeGet, "UNITS",simplify=TRUE) # should yield a character vector
 
+  # TODO: do we want to keep the inputs in the same table as the other fields?
+  # In the specifications, inputs create columns in the datastore.
+  
   # Build parallel data.frame for Inputs
   # message("Input data frame...")
   File <- sapply(ds$attributes, attributeGet, "FILE",simplify=TRUE) # should yield a character vector
@@ -155,140 +157,9 @@ ve.results.index <- function() {
   GroupTableName <- GroupTableName[ccases,]
   Index <- rbind(Index,GroupTableName)
 
-  private$modelIndex <- Index
-  private$modelInputs <- Inputs
-  invisible(list(Index=private$modelIndex,Inputs=private$modelInputs))
-}
-
-ve.results.select <- function( what, details=FALSE ) {
-  # interactive utility to select groups, tables or fields
-  # 'what' can be "groups","tables" or "fields" (either as strings or names without quotes)
-  # 'details' = FALSE (default) will present just the item name
-  # 'details' = TRUE will present all items details
-  # Interactive dialog will pre-select whatever is already selected (everything if
-  #   nothing has been selected yet (either by assignment or earlier
-  #   invocation of ve.results.select)
-  sub.what <- substitute(what)
-  if ( class(sub.what) == "name" ) {
-    what <- deparse(sub.what)
-  }
-  if ( class(what) != "character" ) {
-    message("What to select must be 'groups','tables' or 'names'")
-    invisible(character(0))
-  }
-  if ( ! interactive() ) {
-    message("VEModel$select(",paste(what,collapse=","),") called from non-interactive session.")
-    message("In a script, just assign desired selection to VEModel$groups (or tables or fields)")
-    invisible(character(0))
-  }
-  what <- what[1] # if there's a vector, use the first element
-  select.from <- which(c("groups","tables","fields") %in% what)
-  select.from <- prepSelect(self,what,details)
-  # select.from is a list with two elements:
-  #  "names" which is a character vector of names corresponding to "choices" (just the name)
-  #  "choices" which are the text lines that appear in the display
-  #            (pasted text with name, details)
-  #  "selected" which are the subset of the strings in "choices" that are already selected
-  if ( is.null(select.from) ) {
-    message("Unknown entity to select from:",paste(what,collapse=","))
-    invisible(character(0))
-  }
-  selected <- utils::select.list(choices=select.from$choices,preselect=select.from$selected,multiple=TRUE,
-    title=paste("Select",paste(toupper(substring(what,1,1)),substring(what,2),sep=""),sep=" "))
-  self[[what]] <- select.from$names[ select.from$choices %in% selected ] # character(0) if none selected => selects all
-  invisible(self[[what]]) # print result to see what actually got selected.
-}
-
-ve.results.groups <- function(groups) {
-  if ( ! self$valid() ) stop("Model has not been run yet.")
-
-  idxGroups <- unique(private$modelIndex[,c("Group"),drop=FALSE])
-  row.names(idxGroups) <- NULL
-  if ( ! missing(groups) ) {
-    years <- ( tolower(groups) %in% c("years","year") ) # magic shortcut
-    if ( any(years) ) {
-      # Expand literal "Years" into all the year-like groups (name is exactly 4 digits)
-      groups <- c( groups[!years], grep("^[[:digit:]]{4}$",idxGroups$Group,value=TRUE) )
-    }
-    if ( is.character(groups) && length(groups)>0 ) {
-      private$groupsSelected <- groups[ groups %in% idxGroups$Group ]
-    } else {
-      private$groupsSelected <- character(0)
-    }
-  }
-  if ( length(private$groupsSelected)==0 ) {
-    idxGroups$Selected <- "Yes"
-  } else {
-    idxGroups$Selected <- ifelse(idxGroups$Group %in% private$groupsSelected,"Yes","No")
-  }
-  return(idxGroups)
-}
-
-ve.group.selected <- function(test.group,groups) {
-  return( test.group %in% groups$Group[groups$Selected=="Yes"] )
-}
-
-ve.results.tables <- function(tables) {
-  if ( ! self$valid() ) stop("Model has not been run yet.")
-
-  idxTables <- unique(private$modelIndex[,c("Group","Table")])
-  row.names(idxTables) <- NULL
-  if ( ! missing(tables) ) {
-    if ( is.character(tables) && length(tables)>0 ) {
-      private$tablesSelected <- tables[ tables %in% idxTables$Table ]
-    } else {
-      private$tablesSelected <- character(0)
-    }
-  }
-  group.selected <- ve.group.selected(idxTables$Group,self$groups)
-  if ( length(private$tablesSelected)==0 ) {
-    idxTables$Selected <- ifelse( group.selected, "Yes", "No (!Group)" )
-  } else {
-    idxTables$Selected <- ifelse(
-      idxTables$Table %in% private$tablesSelected,
-      ifelse( group.selected,
-        "Yes","No (!Group)"
-      ),
-      "No")
-  }
-  return(idxTables)
-}
-
-ve.table.selected <- function(test.table,tables) {
-  return ( test.table %in% tables$Table[tables$Selected=="Yes"] )
-}
-
-ve.results.fields <- function(fields) {
-  # extract fields from the index where groups and tables are selected
-  if ( ! self$valid() ) stop("Model has not been run yet.")
-
-  idxFields <- private$modelIndex[,c("Group","Table","Name")]
-  row.names(idxFields) <- NULL
-  if ( ! missing(fields) ) {
-    if ( is.character(fields) && length(fields)>0 ) {
-      private$fieldsSelected <- fields[ fields %in% idxFields$Name ]
-    } else {
-      private$fieldsSelected <- character(0)
-    }
-  }
-  table.selected <- ve.table.selected(idxFields$Table,self$tables)
-  group.selected <- ve.group.selected(idxFields$Group,self$groups)
-  tg.selected <- table.selected & group.selected
-  if ( length(private$fieldsSelected)==0 ) {
-    idxFields$Selected <- ifelse( tg.selected, "Yes", "No (!Table)" )
-  } else {
-    idxFields$Selected <- ifelse(
-      idxFields$Name %in% private$fieldsSelected,
-      ifelse( tg.selected,
-        "Yes","No (!Table)"
-      ),
-      "No")
-  }
-  return(idxFields)
-}
-
-ve.field.selected <- function(test.field,fields) {
-  return ( test.field %in% fields$Name[fields$Selected=="Yes"] )
+  self$modelIndex <- Index
+  self$modelInputs <- Inputs
+  invisible(list(Index=self$modelIndex,Inputs=self$modelInputs))
 }
 
 ve.results.list <- function(pattern="", details=FALSE, selected=TRUE, ...) {
@@ -296,74 +167,81 @@ ve.results.list <- function(pattern="", details=FALSE, selected=TRUE, ...) {
   # selected = TRUE shows just the selected fields
   # selected = FALSE shows all fields (not just unselected)
   # pattern matches (case-insensitive regexp) some portion of field name
-  # details = TRUE returns a data.frame private$modelIndex (units, description)
-  # detail = FALSE returns just the "Name" vector from private$modelIndex
+  # details = TRUE returns a data.frame self$modelIndex (units, description)
+  # detail = FALSE returns just the "Name" vector from self$modelIndex
   
   if ( ! self$valid() ) stop("Model has not been run yet.")
 
   filter <- if ( missing(selected) || selected ) {
-    self$fields$Selected=="Yes"
+    self$selection$index
   } else {
-    rep(TRUE,nrow(private$modelIndex))
+    rep(TRUE,nrow(self$modelIndex))
   }
   if ( ! missing(pattern) && is.character(pattern) && nzchar(pattern) ) {
-    filter <- filter & grepl(pattern,private$modelIndex$Name,ignore.case=TRUE )
+    filter <- filter & grepl(pattern,self$modelIndex$Name,ignore.case=TRUE )
   }
+
+  # TODO: return Group/Table/Name format, not bare name
   if ( missing(details) || ! details ) {
     ret.fields <- c("Name")
   } else {
-    ret.fields <- names(private$modelIndex)
+    ret.fields <- names(self$modelIndex)
   }
-  ret.value <- private$modelIndex[ filter, ret.fields, drop=TRUE ]
+  ret.value <- self$modelIndex[ filter, ret.fields, drop=TRUE ]
   if ( class(ret.value)!='character' ) ret.value <- ret.value[order(ret.value$Group, ret.value$Name),]
   return(unique(ret.value))
 }
 
 ve.results.inputs <- function( fields=FALSE, module="", filename="" ) {
+  # fields=TRUE, show all names of inputs
+  # fields=FALSE, just dhow the module, file, scenario and path
   if ( ! self$valid() ) stop("Model has not been run yet.")
 
   if ( ! missing(fields) && fields ) {
     ret.fields <- c("File","Name","Description","Units","Module","Scenario","Path")
   } else {
-    ret.fields <- c("Module","File","Sceneario","Path")
+    ret.fields <- c("Module","File","Scenario","Path")
   }
 
-  filter <- rep(TRUE,nrow(private$modelInputs))
+  filter <- rep(TRUE,nrow(self$modelInputs))
   if ( !missing(module) && nzchar(module) ) {
-    filter <- filter & grepl(module,private$modelInputs$Module)
+    filter <- filter & grepl(module,self$modelInputs$Module)
   }
   if ( !missing(filename) && nzchar(filename) ) {
-    filter <- filter & grepl(filename,private$modelInputs$File)
+    filter <- filter & grepl(filename,self$modelInputs$File)
   }
 
-  ret.value <- unique(private$modelInputs[ filter, ret.fields ])
+  ret.value <- unique(self$modelInputs[ filter, ret.fields ])
   return( ret.value[order(ret.value$Scenario,ret.value$File),] )
 }
 
 ve.results.units <- function() {
+  # Not implemented yet
   NULL
 }
 
-# Build data.frames based on selected groups, tables and dataset names
 ve.results.extract <- function(
   saveTo=visioneval::getRunParameter("OutputDir",Param_ls=private$RunParam_ls),
   overwrite=FALSE,
-  quiet=FALSE
+  quiet=FALSE,
+  select=NULL
 ) {
-  if ( ! self$valid() ) stop("Model State contains no results.")
+  if ( ! self$results$valid() ) stop("Model State contains no results.")
+  if ( is.null(select) ) select <- self$selection
+  if ( is.na(select$selection) || length(select$selection)<1 ) {
+    stop("Nothing selected to extract.")
+  }
 
   saving <- is.character(saveTo) && nzchar(saveTo)[1]
 
-  ms <- private$ModelState
+  ms <- self$modelState
   
   visioneval::assignDatastoreFunctions(ms$DatastoreType)
-  fields <- ( self$fields )
-
-  extract <- fields[ ( fields$Selected=="Yes" ) ,c("Name","Table","Group")]
+  extract <- self$modelIndex[ select$selection, c("Name","Table","Group") ]
 
   tables <- split( extract$Name, list(extract$Table,extract$Group) )
   tables <- tables[which(sapply(tables,length)!=0)]
-  DataSpecs <- lapply( names(tables), function(T.G.S) {
+  DataSpecs <- lapply( names(tables), function(T.G.S) { # T.G.S : Table Group Split
         TGS <- unlist(strsplit(T.G.S,"\\."))
         mp <- self$path
         dstoreloc <- file.path(mp,ms$DatastoreName)
@@ -379,7 +257,7 @@ ve.results.extract <- function(
         )
       }
     )
-  model.env = visioneval::modelEnvironment()
+  model.env = visioneval::modelEnvironment() # holds assigned datastore functions
   results <- lapply(DataSpecs, function(d) {
         if (!quiet && saving ) message("Extracting data for Table ",d$Data$Table[1]," in Group ",d$Data$Group[1])
         # Do this in a for-loop rather than faster "apply" to avoid dimension and class/type problems.
@@ -413,18 +291,32 @@ ve.results.extract <- function(
   invisible(results)
 }
 
+# Update this selection, or just return what is already selected
+ve.results.select <- function(select=NULL) {
+  if ( ! is.null(select) ) {
+    self$selection <- VESelection$new(self,select=select)
+  }
+  return(self$selection)
+}
+
 ve.results.queryprep <- function() {
   visioneval::prepareForDatastoreQuery(
-    DstoreLocs_ = file.path(self$path,private$ModelState$DatastoreName),
-    DstoreType  = private$ModelState$DatastoreType
+    DstoreLocs_ = file.path(self$path,self$modelState$DatastoreName),
+    DstoreType  = self$modelState$DatastoreType
   )
 }
 
-ve.results.print <- function() {
+ve.results.print <- function(details=FALSE) {
   # Update for output
   cat("VEResults object for these results:\n")
   print(basename(self$path))
   cat("Output is valid:",self$valid(),"\n")
+  if ( ! details ) {
+    cat("Selected",length(self$selection$selection),"out of",nrow(self$modelIndex),"fields.")
+    print(self$selection)
+  } else {
+    print(self$selection,details=TRUE)
+  }
 }
 
 # Here is the VEResults R6 class
@@ -435,38 +327,227 @@ VEResults <- R6::R6Class(
   public = list(
     # public data
     Name = NULL,
+    path=NULL,
+    modelInputs=NULL,
+    modelIndex=NULL,
+    selection=NULL,
 
     # methods
     initialize=ve.results.init,
-    path=NULL,
     valid=ve.results.valid,          # has the model been run, etc.
     select=ve.results.select,
-    extract=ve.results.extract,
+    extract=ve.results.extract,      # alias the extract/export function
+    export=ve.results.export,
     list=ve.results.list,
-    search=ve.results.list,
-    inputs=ve.results.inputs,
-    queryprep=ve.results.queryprep, # For query or other external access
+    queryprep=ve.results.queryprep,  # For query or other external access
     print=ve.results.print,
-    units=ve.results.units           # TODO: Set units on field list (modifies private$modelIndex)
-  ),
-  active = list(
-    groups=ve.results.groups,
-    tables=ve.results.tables,
-    fields=ve.results.fields
+    units=ve.results.units           # TODO: Set units on field list (modifies self$modelIndex)
   ),
   private = list(
     queryObject=NULL,               # object to manage queries for this output
     outputPath=NULL,                # root for extract
-    modelInputs=NULL,
-    modelIndex=NULL,
     ModelState=NULL,
     RunParam_ls=NULL,
-    groupsSelected=character(0),
-    tablesSelected=character(0),
-    fieldsSelected=character(0),
     index=ve.results.index
   )
 )
+
+ve.select.initialize <- function( results, rows=integer(0), select=NULL ) {
+  # self$selection is just a list of integers pointing to rows
+  #  in self$results$modelIndex
+  self$results <- results,
+  if ( !is.null(select) ) {    # select dominates rows parameter
+    rows <- self$parse(select)
+  }
+  if ( is.na(rows) || is.null(rows) ||
+       length(rows)==0 ||
+       ! min(rows)>0 ||
+       max(rows)>nrow(self$results$modelIndex) )
+     ) {
+    self$selection <- 1:nrow(self$results$modelIndex)
+  } else {
+    self$selection <- rows
+  }
+}
+
+ve.select.print <- function(details=FALSE) {
+  # print the selected fields
+  if ( ! details ) {
+    print( self$fields() )
+  } else {
+    print( self$results$modelIndex[ self$selection, ] )
+  }
+}
+
+ve.select.groups <- function(groups) {
+  if ( ! self$results$valid() ) stop("Model has not been run yet.")
+  if ( is.na(self$selection) ) {
+    message("No groups selected")
+    return(character(0))
+  }
+  idxGroups <- unique(self$modelIndex[self$selection,c("Group"),drop=FALSE])
+  return(idxGroups) # Group
+}
+
+ve.select.tables <- function(tables) {
+  if ( ! self$results$valid() ) stop("Model has not been run yet.")
+  if ( is.na(self$selection) ) {
+    message("No tables selected")
+    return(character(0))
+  }
+  idxTables <- unique(self$modelIndex[self$selection,c("Group","Table")])
+  return(paste(idxTables$Group,idxTables$Table,sep="/")) # Group/Table
+}
+
+ve.select.fields <- function(fields) {
+  # extract fields from the index where groups and tables are selected
+  if ( ! self$valid() ) stop("Model has not been run yet.")
+  if ( is.na(self$selection) ) {
+    message("No fields selected")
+    return(character(0))
+  }
+  idxFields <- self$modelIndex[self$selection,c("Group","Table","Name")]
+  return(paste(idxFields$Group,idxFields$Table,idxFields$Name,sep="/") # Group/Table/Name
+}
+
+ve.select.parse <- function(select) {
+  # Though select can be a vector of field names, they need to be the full Group/Table/Name field names,
+  #  so you should get them from ve.select.find, rather than manually construct them.
+  # if select is NA, return NA
+  if ( is.na(select) ) return as.integer(NA)
+  # select can be another VESelection
+  #   if it is the same model, just copy its selection
+  #   if not the same model, get other selection's VEResults object and parse that
+  if ( "VESelection" %in% class(select) ) {
+    if ( select$results$path != self$results$path ) {
+      select <- select$fields()
+      # fall through to parse the character strings
+    } else {
+      return( select$selection )
+    }
+  }
+  # select can be another VEResults object
+  #   if the other VEResults is not from the same model, use its $fields set of names
+  #   then parse as a character vector
+  #   if it is the same model, just copy its selection
+  if ( "VEResults" %in% class(select) ) {
+    if ( select$path != self$results$path ) {
+      select <- select$selection$fields()
+    } else {
+      return( select$selection$selection )
+    }
+  }
+  # select can be a character vector
+  #   split the vector into group/table/name, providing defaults
+  # locate the rows with matching group/table/name in results$modelIndex
+  #   That vector of row indices becomes the selection to act on
+  if ( is.character(select) {
+    select.names <- c("Group","Table","Name","Selected")
+    splitNames <- strsplit(select,"/")
+    splitNames <- lapply(splitNames , function(x) {
+      s <- c( rep(NA, maxLength-length(x)), x, TRUE )
+      names(s) <- select.names
+    })
+    splitNames <- data.frame()
+    selected <- do.call(rbind,splitNames)
+    complete <- stats::complete.cases(selected)
+    if ( nrow(selected) != length(which(complete)) ) {
+      message("Warning: some field names provided were missing")
+      message("Those fields will be ignored:")
+      print(selected[ !complete, ])
+    }
+    select <- merge(self$results$modelIndex,splitNames,by=c("Group","Table","Name"),all.x=TRUE)
+    select <- which( !is.na(select$Selected) ) # vector of integer indices (select$Selected is NA for fields not selected
+  }
+  
+  # if select is a numeric vector, validate its range and return it
+  if ( is.numeric(select) ) {
+    if ( ! ( min(select)>0 && max(select)<=nrow(self$results$modelIndex) ) ) {
+      message("Field selection out of range")
+      return( as.integer(NA) )
+    } else {
+      return( select )
+    }
+  }
+  message("Invalid field selection specification")
+  message(deparse(select))
+  return( as.integer(NA) )
+}
+
+ve.select.select <- function(select) {
+  self$selection <- self$parse(select)
+  return(self)
+}
+
+ve.select.find <- function(pattern="",group=NULL,table=NULL) {
+  # if pattern (regexp) given, find names matching pattern (only within the "fields" part)
+  # if group or table not specified, look in any group or table
+  # return vector of indices for matching rows
+  self$selection <- with( self$result$modelIndex, {
+    fld <- grepl(pattern,Field)
+    if ( !is.null(group) ) fld <- fld & Group==group
+    if ( !is.null(table) ) fld <- fld & Table==table
+    which(fld)
+  })
+  if ( length(self$selection) == 0 ) self$selection <- as.integer(NA)
+  return(self)
+}
+
+ve.select.add <- function(select) {
+  select <- self$parse(select)
+  self$selection <- union(self$selection,select)
+}
+
+ve.select.remove <- function(select) {
+  select <- self$parse(select)
+  self$selection <- setdiff(self$selection,select)
+}
+
+ve.select.all <- function() {
+  self$selection <- 1:nrow(self$results$modelIndex)
+}
+
+ve.select.none <- function() {
+  self$selection <- integer(NA)
+}
+
+# Build data.frames based on selected groups, tables and dataset names
+ve.select.extract <- function(
+  saveTo=visioneval::getRunParameter("OutputDir",Param_ls=private$RunParam_ls),
+  overwrite=FALSE,
+  quiet=FALSE
+) {
+  return( self$results$extract(saveTo,overwrite,quiet), select=self )
+}
+
+# The VESelection R6 class
+# This interoperates with VEResult to keep track of what to print
+VESelection <- R6::R6Class(
+  "VESelection",
+  public = list(
+    # public data
+    selection = integer(0),
+    results = NULL,
+
+    # methods
+    initialize=ve.select.init,
+    print=ve.select.print,
+    extract=ve.select.extract,
+    export=ve.select.extract,
+    find=ve.select.find,
+    parse=ve.select.parse,
+    select=ve.select.select,      # Also implements as "<-" operator
+    add=ve.select.add,            # Also implements as "+" operator
+    remove=ve.select.remove,      # Also implements as "-" operator
+    all=ve.select.all,
+    none=ve.select.none,
+
+    # Field lists (read-only)
+    groups=ve.select.groups,
+    tables=ve.select.tables,
+    fields=ve.select.fields,
+  )
+
 
 #' Open VisionEval results from a directory
 #'
