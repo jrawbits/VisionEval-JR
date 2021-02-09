@@ -54,13 +54,14 @@ build.env <- Sys.getenv(
   c( "VE_DEBUG_LEVEL", "VE_EXPRESS", "VE_MBUILD", "VE_MTEST", "VE_MCLEAR", "VE_MDOCS" ),
   unset="" # Don't care about difference between "unset" and "blank string"
 )
-build.env <- tolower(build.env) # don't nitpick upper/lower case
+ve.only.build <- build.env["VE_MBUILD"] # need to preserve case on this; empty string says build all
+
+build.env <- tolower(build.env) # don't nitpick upper/lower case for remaining options
 build.defaults <- c(
   VE_DEBUG_LEVEL = 0,  # 0: no debug, 1: lightweight, 2: full details
   VE_EXPRESS = "no",   # If "NO" skip all tests and checks
-  VE_MBUILD = "",      # Do all of them unless some named in comma-separated list
   VE_MTEST = "chk",    # Options are "chk","pkg","run","all" or "none", which can be combined by ","
-  VE_MCLEAR = "yes",   # Remove source folder before rebuild
+  VE_MCLEAR = "no",    # Remove source folder before rebuild
   VE_MDOCS = "docs"    # Options are "init" and (all) "docs" for roxygen
 )
 set.defaults <- names(build.env)[ ! nzchar(build.env) ] # names of those with blank values
@@ -104,11 +105,11 @@ ve.runtests <- any(c(ve.test.chk,ve.test.pkg,ve.test.run))
 ve.packages <- pkgs.db[c(pkgs.framework,pkgs.module),]
 package.names <- ve.packages$Package 
 
-ve.only.build <- build.env["VE_MBUILD"]
 if ( nzchar(ve.only.build[1]) ) { # will always have at least one "exclusion" but it may be empty
   ve.only.build <- unlist(strsplit(ve.only.build,"[[:blank:]]*,[[:blank:]]*"))
-  package.names <- intersect(tolower(package.names),tolower(ve.only.build)) # only (re)build certain packages
-  cat("++++++++++ Only building:",paste0(ve.only.build,collapese=", "),"\n")
+  package.names <- intersect(package.names,ve.only.build) # only (re)build certain packages
+  cat("++++++++++ Only building:",paste0(ve.only.build,collapse=", "),"\n")
+  ve.packages <- ve.packages[ve.packages$Package %in% package.names,]
 } else {
   ve.only.build <- character(0)
 }
@@ -118,7 +119,7 @@ if ( length(package.names) == 0 ) {
   quit(status=0)
 }
 
-package.paths <- file.path(ve.packages[,"Root"], ve.packages[,"Path"], package.names)
+package.paths <- file.path( ve.packages[,"Root"], ve.packages[,"Path"], ve.packages[,"Package"] )
 # Want to assert that all of these eventually have the same length!
 # cat("Number of names:",length(package.names),"\n")
 # cat("Number of paths:",length(package.paths),"\n")
@@ -233,7 +234,7 @@ for ( module in seq_along(package.names) ) {
   # Step 2: Determine package status (built, installed)
   # Force to "unbuilt" if package is in VE_ONLY_BUILD
   build.dir <- file.path(ve.src,package.names[module])
-  if ( length(ve.only.build)>0 && nzchar(ve.only.build[1]) ) {
+  if ( ve.clear || ( length(ve.only.build)>0 && nzchar(ve.only.build[1]) ) ) {
     cat("+++++++++++++REMOVING PREVIOUS BUILD FILES\n")
     local({
       pkg.src <- modulePath(package.names[module],built.path.src)
@@ -307,7 +308,7 @@ for ( module in seq_along(package.names) ) {
     if ( debug>1 ) {
       # Dump list of package source files if debugging
       pkg.files <- file.path(package.paths[module],dir(package.paths[module],recursive=TRUE,all.files=TRUE))
-      if ( ! any(grepl("Rbuildignore",pkg.files)) ) stop("No .Rbuildignore for package ",package.names[module])
+      if ( ! any(grepl("Rbuildignore",pkg.files)) ) warning("No .Rbuildignore for package ",package.names[module])
       cat(paste("Copying",pkg.files,"to",build.dir,"\n",sep=" "),sep="")
     } else {
       cat("++++++++++ Copying module source",package.paths[module],"to build/test environment...\n")
@@ -328,7 +329,12 @@ for ( module in seq_along(package.names) ) {
     if ( length(dot.files)>0 ) {
       pkg.files <- c(pkg.files,dot.files)
     } else {
-      message("No .Rbuildignore found in",package.paths[module],"\n")
+      message("No .Rbuildignore found in ",package.paths[module])
+      print(dir(package.paths[module],recursive=TRUE,all.files=FALSE))
+      message("dot.files")
+      print(dot.files)
+      message("pkg.files")
+      print(pkg.files)
     }
     pkg.dirs <- c(dirname(pkg.files),"data")
     lapply( grep("^\\.$",invert=TRUE,value=TRUE,unique(file.path(build.dir,pkg.dirs))),
@@ -374,7 +380,7 @@ for ( module in seq_along(package.names) ) {
 
   # Step 4: Run devtools::document() separately to rebuild the /data directory
   if ( ! package.built ) {
-    cat("++++++++++ Pre-build / Document ",package.names[module],"\nin ",build.dir,"\n",sep="")
+    cat("++++++++++ Pre-build / Document ",package.names[module],"\n",build.dir,"\n",sep="")
     if ( ! ve.wantdocs ) {
       # Skip building the .Rd documentation
       withr::with_dir(build.dir,roxygen2::roxygenise(roclets=c("collate","namespace")))
