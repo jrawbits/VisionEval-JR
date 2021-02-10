@@ -517,7 +517,7 @@ ve.select.extract <- function(
   overwrite=FALSE,
   quiet=FALSE
 ) {
-  return( self$results$extract(saveTo,overwrite,quiet), select=self )
+  return( self$results$extract(saveTo,overwrite,quiet,select=self) )
 }
 
 # The VESelection R6 class
