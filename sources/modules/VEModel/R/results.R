@@ -14,7 +14,7 @@ ve.results.init <- function(OutputPath,Param_ls=NULL) {
   self$Name <- basename(OutputPath)
   private$RunParam_ls <- Param_ls
   private$index()
-  self$selection <- VESelection$new(self,1:nrow(self$modelInputs))
+  self$selection <- VESelection$new(self,1:nrow(self$modelIndex))
   return(self$valid())
 }
 
@@ -53,15 +53,19 @@ attributeGet <- function(variable, attr_name){
 ve.results.index <- function() {
   # Load model state from self$path
   ve.model <- new.env()
-  FileName=file.path(self$path,visioneval::getModelStateFileName(Param_ls=private$RunParam_ls))
-  ms <- self$modelState <- try(visioneval::readModelState(FileName=FileName))
-  if ( ! is.list(self$modelState) ) {
-    self$modelState <- NULL
+  FileName=normalizePath( file.path(
+    self$path,
+    visioneval::getRunParameter("ResultsDir",Param_ls=private$RunParam_ls),
+    visioneval::getModelStateFileName(Param_ls=private$RunParam_ls)
+  ), winslash="/", mustWork=FALSE)
+  ms <- self$ModelState <- try(visioneval::readModelState(FileName=FileName))
+  if ( ! is.list(self$ModelState) ) {
+    self$ModelState <- NULL
     visioneval::writeLog(Level="error",paste("Cannot load ModelState from:",FileName))
     return(list())
   }
-  if ( is.null(private$RunParam_ls) && is.list(self$modelState ) ) {
-    private$RunParam_ls <-self$modelState$RunParam_ls
+  if ( is.null(private$RunParam_ls) && is.list(self$ModelState ) ) {
+    private$RunParam_ls <-self$ModelState$RunParam_ls
   }
   owd <- setwd(self$path)
   on.exit(setwd(owd))
@@ -234,7 +238,7 @@ ve.results.extract <- function(
 
   saving <- is.character(saveTo) && nzchar(saveTo)[1]
 
-  ms <- self$modelState
+  ms <- self$ModelState
   
   visioneval::assignDatastoreFunctions(ms$DatastoreType)
   extract <- self$modelIndex[ select$selection, c("Name","Table","Group") ]
@@ -301,8 +305,8 @@ ve.results.select <- function(select=NULL) {
 
 ve.results.queryprep <- function() {
   visioneval::prepareForDatastoreQuery(
-    DstoreLocs_ = file.path(self$path,self$modelState$DatastoreName),
-    DstoreType  = self$modelState$DatastoreType
+    DstoreLocs_ = file.path(self$path,self$ModelState$DatastoreName),
+    DstoreType  = self$ModelState$DatastoreType
   )
 }
 
@@ -328,6 +332,7 @@ VEResults <- R6::R6Class(
     # public data
     Name = NULL,
     path=NULL,
+    ModelState=NULL,
     modelInputs=NULL,
     modelIndex=NULL,
     selection=NULL,
@@ -346,7 +351,6 @@ VEResults <- R6::R6Class(
   private = list(
     queryObject=NULL,               # object to manage queries for this output
     outputPath=NULL,                # root for extract
-    ModelState=NULL,
     RunParam_ls=NULL,
     index=ve.results.index
   )

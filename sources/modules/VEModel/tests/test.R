@@ -89,4 +89,12 @@ test_model <- function(log="warn") {
   return("Failed to run.")
 }
 
-print(ls())
+test_results <- function (log="warn") {
+  model <- openModel("JRSPM")
+  rs <- model$results()
+  # do things to the results, including exporting them
+  # also test unit reporting / conversions
+  # create a report of what was extracted (including target units)
+  # include units in exported file? Create a metadata file - that
+  # would be good (with name, description, units storted, units exported
+}
