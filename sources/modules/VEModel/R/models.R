@@ -355,30 +355,36 @@ installStandardModel <- function( modelName, modelPath, confirm, skeleton=c("sam
 
   # Confirm installation if requested
   install <- TRUE
-  skeleton <- if ( ! is.character(skeleton) ) {
-    "sample"
-  } else if ( ! skeleton %in% names(SampleModelDataFormat) ) {
-    "sample"
+  if ( ! is.character(skeleton) ) {
+    skeleton <- "sample"
   } else {
-    skeleton[1]
+    skeleton <- skeleton[1]
+    if ( ! skeleton %in% names(SampleModelDataFormat) ) {
+      skeleton <- "sample"
+    }
   }
+  modelData <- SampleModelDataFormat[skeleton]
   if ( confirm && interactive() ) {
-    msg <- paste0("Install standard model '",modelName,"' (",SampleModelDataFormat[skeleton],") in ",installPath,"?\n")
+    msg <- paste0("Install standard model '",modelName,"' (",modelData,") in ",installPath,"?\n")
     install <- confirmDialog(msg)
   }
 
   if ( ! install ) stop("Model ",modelName," not installed.",call.=FALSE)
 
   # Now do the installation
-  visioneval::writeLog(paste0("Installing ",modelName," from ",model," as ",SampleModelDataFormat[skeleton]),Level="info")
+  visioneval::writeLog(paste0("Installing ",modelName," from ",model," as ",modelData),Level="info")
   dir.create(installPath)
 
   # Locate the model and data source files
   model.path <- file.path(model,"model")
   model.files <- dir(model.path,full.names=TRUE)
 
-  data.path <- file.path(model,skeleton)
-  if ( ! dir.exists(data.path) ) stop("No ",SampleModelDataFormat[skeleton]," available for ",modelName)
+  data.path <- file.path(model,modelData)
+  if ( ! dir.exists(data.path) ) {
+    visioneval::writeLog(msg<-paste("No",skeleton,"data available for",modelName),Level="error")
+    visioneval::writeLog(c("Directory missing:",data.path),Level="info")
+    stop(msg)
+  }
   data.files <- dir(data.path,full.names=TRUE)
 
   file.copy(model.files,installPath,recursive=TRUE) # Copy standard model into modelPath
@@ -1104,7 +1110,7 @@ openModel <- function(modelPath="",log="error") {
 #' @param log a string describing the minimum level to display
 #' @return A VEModel object of the model that was just installed
 #' @export
-installModel <- function(modelName=NULL, modelPath=NULL, skeleton=c("sample","template","test"), confirm=!skeleton, log="error") {
+installModel <- function(modelName=NULL, modelPath=NULL, skeleton=c("sample","template","test"), confirm=TRUE, log="error") {
   model <- installStandardModel(modelName, modelPath, confirm, skeleton, log=log)
   if ( is.list(model) ) {
     return( VEModel$new( modelPath=model$modelPath, log=log ) )

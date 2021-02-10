@@ -71,14 +71,22 @@ cleanup <- function() {
   if ( length(runtimes)>0 && isTRUE(askYesNo("Remove runtimes?")) ) unlink(runtimes,recursive=TRUE)
 }
 
-test_model <- function() {
-  if ( dir.exists("models/JRSPM") ) {
-    message("Clearing runtime environment")
-    unlink("models/JRSPM",recursive=TRUE)
-  }
-  rs <- installModel("VERSPM","JRSPM")
-  rs$run()
-  return(rs)
+test_model <- function(log="warn") {
+  owd <- getwd()
+  tryCatch(
+    {
+      if ( dir.exists("models/JRSPM") ) {
+        message("Clearing runtime environment")
+        unlink("models/JRSPM",recursive=TRUE)
+      }
+      rs <- installModel("VERSPM","JRSPM",log=log)
+      rs$run(log=log)
+      return(rs)
+    },
+    error=function(e) { cat(conditionMessage(e),"\n"); takedown(); stop(e) },
+    finally=setwd(owd)
+  )
+  return("Failed to run.")
 }
 
 print(ls())
