@@ -1,4 +1,4 @@
- Results.R
+# Results.R
 #' @include environment.R
 self=private=NULL
 
@@ -337,7 +337,7 @@ VEResults <- R6::R6Class(
     valid=ve.results.valid,          # has the model been run, etc.
     select=ve.results.select,
     extract=ve.results.extract,      # alias the extract/export function
-    export=ve.results.export,
+    export=ve.results.extract,
     list=ve.results.list,
     queryprep=ve.results.queryprep,  # For query or other external access
     print=ve.results.print,
@@ -355,15 +355,14 @@ VEResults <- R6::R6Class(
 ve.select.initialize <- function( results, rows=integer(0), select=NULL ) {
   # self$selection is just a list of integers pointing to rows
   #  in self$results$modelIndex
-  self$results <- results,
+  self$results <- results
   if ( !is.null(select) ) {    # select dominates rows parameter
     rows <- self$parse(select)
   }
   if ( is.na(rows) || is.null(rows) ||
        length(rows)==0 ||
        ! min(rows)>0 ||
-       max(rows)>nrow(self$results$modelIndex) )
-     ) {
+       max(rows)>nrow(self$results$modelIndex) ) {
     self$selection <- 1:nrow(self$results$modelIndex)
   } else {
     self$selection <- rows
@@ -407,14 +406,14 @@ ve.select.fields <- function(fields) {
     return(character(0))
   }
   idxFields <- self$modelIndex[self$selection,c("Group","Table","Name")]
-  return(paste(idxFields$Group,idxFields$Table,idxFields$Name,sep="/") # Group/Table/Name
+  return(paste(idxFields$Group,idxFields$Table,idxFields$Name,sep="/")) # Group/Table/Name
 }
 
 ve.select.parse <- function(select) {
   # Though select can be a vector of field names, they need to be the full Group/Table/Name field names,
   #  so you should get them from ve.select.find, rather than manually construct them.
   # if select is NA, return NA
-  if ( is.na(select) ) return as.integer(NA)
+  if ( is.na(select) ) return(as.integer(NA))
   # select can be another VESelection
   #   if it is the same model, just copy its selection
   #   if not the same model, get other selection's VEResults object and parse that
@@ -441,9 +440,10 @@ ve.select.parse <- function(select) {
   #   split the vector into group/table/name, providing defaults
   # locate the rows with matching group/table/name in results$modelIndex
   #   That vector of row indices becomes the selection to act on
-  if ( is.character(select) {
+  if ( is.character(select) ) {
     select.names <- c("Group","Table","Name","Selected")
     splitNames <- strsplit(select,"/")
+    maxLength <- max(unlist(lapply(splitNames, length)))
     splitNames <- lapply(splitNames , function(x) {
       s <- c( rep(NA, maxLength-length(x)), x, TRUE )
       names(s) <- select.names
@@ -457,7 +457,7 @@ ve.select.parse <- function(select) {
       print(selected[ !complete, ])
     }
     select <- merge(self$results$modelIndex,splitNames,by=c("Group","Table","Name"),all.x=TRUE)
-    select <- which( !is.na(select$Selected) ) # vector of integer indices (select$Selected is NA for fields not selected
+    select <- which( !is.na(select$Selected) ) # vector of integer indices (select$Selected is NA for fields not selected)
   }
   
   # if select is a numeric vector, validate its range and return it
@@ -530,7 +530,7 @@ VESelection <- R6::R6Class(
     results = NULL,
 
     # methods
-    initialize=ve.select.init,
+    initialize=ve.select.initialize,
     print=ve.select.print,
     extract=ve.select.extract,
     export=ve.select.extract,
@@ -545,9 +545,9 @@ VESelection <- R6::R6Class(
     # Field lists (read-only)
     groups=ve.select.groups,
     tables=ve.select.tables,
-    fields=ve.select.fields,
+    fields=ve.select.fields
   )
-
+)
 
 #' Open VisionEval results from a directory
 #'
