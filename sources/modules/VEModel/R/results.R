@@ -54,8 +54,7 @@ ve.results.index <- function() {
   # Load model state from self$path
   ve.model <- new.env()
   FileName=normalizePath( file.path(
-    self$path,
-    visioneval::getRunParameter("ResultsDir",Param_ls=private$RunParam_ls),
+    self$path, # Should already include ResultsDir
     visioneval::getModelStateFileName(Param_ls=private$RunParam_ls)
   ), winslash="/", mustWork=FALSE)
   ms <- self$ModelState <- try(visioneval::readModelState(FileName=FileName))
@@ -313,10 +312,10 @@ ve.results.queryprep <- function() {
 ve.results.print <- function(details=FALSE) {
   # Update for output
   cat("VEResults object for these results:\n")
-  print(basename(self$path))
+  print(self$path)
   cat("Output is valid:",self$valid(),"\n")
   if ( ! details ) {
-    cat("Selected",length(self$selection$selection),"out of",nrow(self$modelIndex),"fields.")
+    cat("Selected",length(self$selection$selection),"out of",nrow(self$modelIndex),"fields.\n")
     print(self$selection)
   } else {
     print(self$selection,details=TRUE)
@@ -382,35 +381,35 @@ ve.select.print <- function(details=FALSE) {
   }
 }
 
-ve.select.groups <- function(groups) {
+ve.select.groups <- function() {
   if ( ! self$results$valid() ) stop("Model has not been run yet.")
-  if ( is.na(self$selection) ) {
+  if ( any(is.na(self$selection)) ) {
     message("No groups selected")
     return(character(0))
   }
-  idxGroups <- unique(self$modelIndex[self$selection,c("Group"),drop=FALSE])
-  return(idxGroups) # Group
+  idxGroups <- unique(self$results$modelIndex[self$selection,c("Group"),drop=FALSE])
+  return(sort(idxGroups)) # Group
 }
 
-ve.select.tables <- function(tables) {
+ve.select.tables <- function() {
   if ( ! self$results$valid() ) stop("Model has not been run yet.")
-  if ( is.na(self$selection) ) {
+  if ( any(is.na(self$selection)) ) {
     message("No tables selected")
     return(character(0))
   }
-  idxTables <- unique(self$modelIndex[self$selection,c("Group","Table")])
-  return(paste(idxTables$Group,idxTables$Table,sep="/")) # Group/Table
+  idxTables <- unique(self$results$modelIndex[self$selection,c("Group","Table")])
+  return(sort(paste(idxTables$Group,idxTables$Table,sep="/"))) # Group/Table
 }
 
-ve.select.fields <- function(fields) {
+ve.select.fields <- function() {
   # extract fields from the index where groups and tables are selected
-  if ( ! self$valid() ) stop("Model has not been run yet.")
-  if ( is.na(self$selection) ) {
+  if ( ! self$results$valid() ) stop("Model has not been run yet.")
+  if ( any(is.na(self$selection)) ) {
     message("No fields selected")
     return(character(0))
   }
-  idxFields <- self$modelIndex[self$selection,c("Group","Table","Name")]
-  return(paste(idxFields$Group,idxFields$Table,idxFields$Name,sep="/")) # Group/Table/Name
+  idxFields <- self$results$modelIndex[self$selection,c("Group","Table","Name")]
+  return(sort(paste(idxFields$Group,idxFields$Table,idxFields$Name,sep="/"))) # Group/Table/Name
 }
 
 ve.select.parse <- function(select) {
