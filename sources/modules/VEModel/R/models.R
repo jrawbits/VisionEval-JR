@@ -260,8 +260,8 @@ findModel <- function( modelPath, Param_ls ) {
     existing <- dir.exists(possiblePaths)
     if ( ! any(existing) ) {
       visioneval::writeLog(
-        paste0("Failed find to model ",modelPath," in these locations:\n",paste(roots,collapse="\n")),
-        level="error"
+        paste0("Failed to find model ",modelPath," in these locations:\n",paste(roots,collapse="\n")),
+        Level="error"
       )
       find_ls$modelPath <- modelPath
       return(find_ls)
@@ -433,9 +433,10 @@ ve.model.copy <- function(newName=NULL,newPath=NULL) {
 ve.model.loadModelState <- function(log="error") {
   # Load all ModelStates for each model stage, using initializeModel with RunModel=FALSE
   # If ModelState exists from a prior run, load that rather than rebuild
-  ResultsDir <- file.path(self$modelPath,visioneval::getRunParameter("ResultsDir",Param_ls=self$RunParam_ls))
-  if ( ! dir.exists(ResultsDir) ) {
-    dir.create(ResultsDir,showWarnings=FALSE)
+  ResultsDir <- visioneval::getRunParameter("ResultsDir",Param_ls=self$RunParam_ls)
+  workingResultsDir <- file.path(self$modelPath,ResultsDir)
+  if ( ! dir.exists(workingResultsDir) ) {
+    dir.create(workingResultsDir,showWarnings=FALSE)
   }
   ModelStateFileName <- visioneval::getRunParameter("ModelStateFileName",Param_ls=self$RunParam_ls)
   BaseInputPath <- visioneval::getRunParameter("InputPath",Param_ls=self$RunParam_ls)
@@ -444,7 +445,7 @@ ve.model.loadModelState <- function(log="error") {
     BaseInputPath <- file.path(self$modelPath,BaseInputPath)
   }
   self$ModelState <- list()
-  owd <- setwd(ResultsDir)
+  owd <- setwd(workingResultsDir)
   on.exit(setwd(owd))
   
   initMsg <- "Loading ModelState"
@@ -460,7 +461,7 @@ ve.model.loadModelState <- function(log="error") {
     if ( self$stageCount>1 ) {
       visioneval::writeLog(paste(initMsg,stage,":",stagePath),Level="debug")
     }
-    modelState <- normalizePath(file.path(ResultsDir,stagePath,ModelStateFileName),winslash="/",mustWork=FALSE)
+    modelState <- normalizePath(file.path(workingResultsDir,stagePath,ModelStateFileName),winslash="/",mustWork=FALSE)
     if ( visioneval::loadModelState(modelState, ( ms.env <- new.env() )) ) {
       # Attempt to load existing ModelState
       self$ModelState[[ basename(stagePath) ]] <- ms.env$ModelState_ls
@@ -605,12 +606,17 @@ ve.model.run <- function(stage=NULL,lastStage=NULL,log="warn") {
 
   # Set up model constants for running multiple stages
   ResultsDir <- visioneval::getRunParameter("ResultsDir",Param_ls=self$RunParam_ls)
+  workingResultsDir <- file.path(self$modelPath,ResultsDir)
+  if ( ! dir.exists(workingResultsDir) ) {
+    dir.create(workingResultsDir,showWarnings=FALSE)
+  }
+
   BaseInputPath <- visioneval::getRunParameter("InputPath",Param_ls=self$RunParam_ls)
   if ( ! isAbsolutePath(BaseInputPath) ) {
     BaseInputPath <- normalizePath(file.path(self$modelPath,BaseInputPath),winslash="/",mustWork=FALSE)
   }
 
-  owd <- setwd(file.path(self$modelPath,ResultsDir))
+  owd <- setwd(workingResultsDir)
   on.exit(setwd(owd))
 
   # Set up the model runtime environment
@@ -653,7 +659,7 @@ ve.model.run <- function(stage=NULL,lastStage=NULL,log="warn") {
             RunDir <- normalizePath(file.path(self$modelPath,Param_ls$ResultsDir),winslash="/",mustWork=FALSE)
             if ( ! dir.exists(RunDir) ) dir.create(RunDir,showWarnings=FALSE,recursive=TRUE)
             setwd(RunDir) # Set working directory each time through each loop
-            # Model needs to run in "ResultsDir" (where ModelState and Datastore are written)
+            # Model needs to run in "RunDir" (where ModelState and Datastore are written)
             sys.source(Param_ls$ModelScriptFile,envir=new.env())
 
             visioneval::writeLog(paste0("Model stage ",stagePath," complete"),Level="info")
