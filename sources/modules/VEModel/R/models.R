@@ -968,7 +968,7 @@ ve.model.results <- function(stage) {
     if (stage!=self$stageCount) {
       visioneval::writeLog("There are no results for stage ",stage," of this model yet.",Level="warn")
     } else {
-      visioneval::writeLog("There are no results for this model yet.",Leven="warn")
+      visioneval::writeLog("There are no results for this model yet.",Level="warn")
     }
   } else {
     private$lastResults <- list(

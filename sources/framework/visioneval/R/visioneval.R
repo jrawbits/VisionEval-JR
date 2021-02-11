@@ -108,7 +108,6 @@ function(
     get0( "RunParam_ls", envir=ve.model, ifnotfound=list() ),
     "RunParam_ls in modelEnvironment()"
   )
-  browser()
 
   ModelDir <- getRunParameter("ModelDir",Param_ls=Param_ls)
 

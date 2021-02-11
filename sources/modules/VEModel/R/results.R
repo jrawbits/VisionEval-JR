@@ -14,15 +14,14 @@ ve.results.init <- function(OutputPath,Param_ls=NULL) {
   self$Name <- basename(OutputPath)
   private$RunParam_ls <- Param_ls
   private$index()
-  self$selection <- VESelection$new(self,1:nrow(self$modelIndex))
+  self$selection <- VESelection$new(self)
   return(self$valid())
 }
 
 ve.results.valid <- function() {
   valid <- ! is.null(private$RunParam_ls) &&
            dir.exists(self$path) &&
-           !is.null(self$modelIndex) && length(self$modelIndex)>0 &&
-           !is.null(self$modelInputs) && length(self$modelInputs)>0
+           !is.null(self$modelIndex) && length(self$modelIndex)>0
   modelStateFile <- file.path(self$path,visioneval::getRunParameter("ModelStateFileName",Param_ls=private$RunParam_ls))
   valid <- valid && all(file.exists(modelStateFile))
   return(valid)
@@ -95,28 +94,13 @@ ve.results.index <- function() {
   Description <- sapply(ds$attributes, attributeGet, "DESCRIPTION",simplify=TRUE) # should yield a character vector
   Module <- sapply(ds$attributes, attributeGet, "MODULE",simplify=TRUE) # should yield a character vector
   Units <- sapply(ds$attributes, attributeGet, "UNITS",simplify=TRUE) # should yield a character vector
+  InputDir <- sapply(ds$attributes, attributeGet, "INPUTDIR",simplify=TRUE) # should yield a character vector
+  scenario <- visioneval::getRunParameter("Scenario",Default="Unknown Scenario",Param_ls=private$RunParam_ls)
 
   # TODO: do we want to keep the inputs in the same table as the other fields?
   # In the specifications, inputs create columns in the datastore.
   
-  # Build parallel data.frame for Inputs
-  # message("Input data frame...")
-  File <- sapply(ds$attributes, attributeGet, "FILE",simplify=TRUE) # should yield a character vector
-  inputs <- data.frame(
-    Module      = Module[InputIndex],
-    Name        = ds$name[InputIndex],
-    File        = File[InputIndex],
-    Description = Description[InputIndex],
-    Units       = Units[InputIndex],
-    Scenario    = visioneval::getRunParameter("Scenario",Default="Unknown Scenario",Param_ls=private$RunParam_ls),
-    Path        = self$path
-  )
-  Inputs <- rbind(Inputs,inputs)
-
-  Description <- Description[!InputIndex]
-  Module <- Module[!InputIndex]
-  Units <- Units[!InputIndex]
-  splitGroupTableName <- strsplit(ds[!InputIndex, "groupname"], "/")
+  splitGroupTableName <- strsplit(ds$groupname, "/")
   if ( length(Description) != length(splitGroupTableName) ) stop("Inconsistent table<->description correspondence")
 
   maxLength <- max(unlist(lapply(splitGroupTableName, length)))
@@ -125,6 +109,31 @@ ve.results.index <- function() {
     return(list())
   }
   splitGroupTableName <- lapply(splitGroupTableName , function(x) c(x, rep(NA, maxLength-length(x))))
+  # splitGroupTableName is a list of character vectors with Group, Table, Name components
+
+  inputGTN <- do.call(rbind.data.frame,splitGroupTableName)[InputIndex,]
+  names(inputGTN) <- c("Group","Table","Name")
+
+  # Build parallel data.frame for Inputs
+  # message("Input data frame...")
+  File <- sapply(ds$attributes, attributeGet, "FILE",simplify=TRUE) # should yield a character vector
+  inputs <- data.frame(
+    Group       = inputGTN$Group[InputIndex],
+    Table       = inputGTN$Table[InputIndex],
+    Name        = ds$name[InputIndex], # Should be identical to inputGTN$Name
+    Description = Description[InputIndex],
+    Units       = Units[InputIndex],
+    Module      = Module[InputIndex],
+    Scenario    = scenario,
+    File        = File[InputIndex],
+    InputDir    = InputDir[InputIndex]
+  )
+  Inputs <- rbind(Inputs,inputs)
+
+  Description <- Description[!InputIndex]
+  Module <- Module[!InputIndex]
+  Units <- Units[!InputIndex]
+  splitGroupTableName <- splitGroupTableName[!InputIndex]
 
   # Add modelPath and Scenario Description to Index row
   PathGroupTableName <- list()
@@ -134,8 +143,9 @@ ve.results.index <- function() {
       Description[i],
       Units[i],
       Module[i],
-      visioneval::getRunParameter("Scenario",Default="Unknown Scenario",Param_ls=private$RunParam_ls),
-      self$path
+      scenario,
+      "",         # File
+      ""          # InputDir
     )
   }
   if ( any((cls<-lapply(PathGroupTableName,class))!="character") ) {
@@ -151,7 +161,7 @@ ve.results.index <- function() {
   # https://www.stat.berkeley.edu/~s133/Docall.html
   GroupTableName <- data.frame()
   GroupTableName <- do.call(rbind.data.frame, PathGroupTableName)
-  colnames(GroupTableName) <- c("Group", "Table", "Name","Description", "Units","Module","Scenario","Path")
+  names(GroupTableName) <- c("Group", "Table", "Name","Description", "Units","Module","Scenario","File","InputDir")
 
   # GroupTableName is now a data.frame with five columns
   # complete.cases blows away the rows that have any NA values
@@ -160,9 +170,8 @@ ve.results.index <- function() {
   GroupTableName <- GroupTableName[ccases,]
   Index <- rbind(Index,GroupTableName)
 
-  self$modelIndex <- Index
-  self$modelInputs <- Inputs
-  invisible(list(Index=self$modelIndex,Inputs=self$modelInputs))
+  self$modelIndex <- rbind(Index,Inputs)
+  invisible(self$modelIndex)
 }
 
 ve.results.list <- function(pattern="", details=FALSE, selected=TRUE, ...) {
@@ -197,25 +206,25 @@ ve.results.list <- function(pattern="", details=FALSE, selected=TRUE, ...) {
 
 ve.results.inputs <- function( fields=FALSE, module="", filename="" ) {
   # fields=TRUE, show all names of inputs
-  # fields=FALSE, just dhow the module, file, scenario and path
+  # fields=FALSE, just show the module, file, input directory
   if ( ! self$valid() ) stop("Model has not been run yet.")
 
   if ( ! missing(fields) && fields ) {
-    ret.fields <- c("File","Name","Description","Units","Module","Scenario","Path")
+    ret.fields <- c("Module","Group","Table","Name","File","InputDir","Units","Description")
   } else {
-    ret.fields <- c("Module","File","Scenario","Path")
+    ret.fields <- c("Module","Name","File","InputDir")
   }
 
-  filter <- rep(TRUE,nrow(self$modelInputs))
+  filter <- nzchar(self$modelIndex$File)
   if ( !missing(module) && nzchar(module) ) {
-    filter <- filter & grepl(module,self$modelInputs$Module)
+    filter <- filter & grepl(module,self$modelIndex$Module)
   }
   if ( !missing(filename) && nzchar(filename) ) {
-    filter <- filter & grepl(filename,self$modelInputs$File)
+    filter <- filter & grepl(filename,self$modelIndex$File)
   }
 
-  ret.value <- unique(self$modelInputs[ filter, ret.fields ])
-  return( ret.value[order(ret.value$Scenario,ret.value$File),] )
+  ret.value <- unique(self$modelIndex[ filter, ret.fields ])
+  return( ret.value[order(ret.value$InputDir,ret.value$File),] )
 }
 
 ve.results.units <- function() {
@@ -229,7 +238,7 @@ ve.results.extract <- function(
   quiet=FALSE,
   select=NULL # replaces self$selection if provided
 ) {
-  if ( ! self$results$valid() ) stop("Model State contains no results.")
+  if ( ! self$valid() ) stop("Model State contains no results.")
   if ( is.null(select) ) select <- self$selection else self$selection <- select
   if ( is.na(select$selection) || length(select$selection)<1 ) {
     stop("Nothing selected to extract.")
@@ -295,7 +304,7 @@ ve.results.extract <- function(
 }
 
 # Update this selection, or just return what is already selected
-ve.results.select <- function(select=NULL) {
+ve.results.select <- function(select=integer(0)) {  # integer(0) says select all by default. Use NA or NULL to select none
   if ( ! is.null(select) ) {
     self$selection <- VESelection$new(self,select=select)
   }
@@ -332,7 +341,6 @@ VEResults <- R6::R6Class(
     Name = NULL,
     path=NULL,
     ModelState=NULL,
-    modelInputs=NULL,
     modelIndex=NULL,
     selection=NULL,
 
@@ -355,14 +363,16 @@ VEResults <- R6::R6Class(
   )
 )
 
-ve.select.initialize <- function( results, select=NULL ) {
+ve.select.initialize <- function( results, select=integer(0) ) {
+  # default select (integer(0)) selects everything
   # self$selection is just a list of integers pointing to rows
   #  in self$results$modelIndex
   self$results <- results
   rows <- self$parse(select)
-  if ( is.na(rows) || is.null(rows) ) {
+  if ( is.null(rows) || any(is.na(rows)) ) {
     self$selection <- as.integer(NA) # no rows selected
   } else if (
+    ! is.numeric(rows) ||
     length(rows)==0 ||
     ! min(rows)>0 ||
     max(rows)>nrow(self$results$modelIndex) ) {
@@ -443,36 +453,29 @@ ve.select.parse <- function(select) {
   # locate the rows with matching group/table/name in results$modelIndex
   #   That vector of row indices becomes the selection to act on
   if ( is.character(select) ) {
-    select.names <- c("Group","Table","Name","Selected")
-    splitNames <- strsplit(select,"/")
-    maxLength <- max(unlist(lapply(splitNames, length)))
-    splitNames <- lapply(splitNames , function(x) {
-      c( rep(NA, maxLength-length(x)), x, TRUE )
-    })
-    selected <- do.call(rbind.data.frame,splitNames)
-    names(selected) <- select.names
-    complete <- stats::complete.cases(selected)
-    if ( nrow(selected) != length(which(complete)) ) {
-      message("Warning: some field names provided were missing")
-      message("Those fields will be ignored:")
-      print(selected[ !complete, ])
+    build <- integer(0)
+    for ( s in select ) {
+      t <- unlist(strsplit(s,"/"))
+      name <- c( rep(NA,3-length(t)), t )
+      if ( is.na(name[3]) || ! nzchar(name[3]) ) next  else field=name[3]
+      if ( is.na(name[2]) || ! nzchar(name[2]) ) table <- NULL else table=name[2]
+      if ( is.na(name[1]) || ! nzchar(name[1]) ) group <- NULL else group=name[1]
+      build <- union( build, self$find(Name=field,Group=group,Table=table,as.object=FALSE) )
     }
-    select <- merge(self$results$modelIndex,selected,by=c("Group","Table","Name"),all.x=TRUE)
-    select <- which( !is.na(select$Selected) ) # vector of integer indices (select$Selected is NA for fields not selected)
-    print(select)
+    select <- build; # should be a vector of integers
   }
   
   # if select is a numeric vector, validate its range and return it
   if ( is.numeric(select) ) {
-    if ( any(is.na(select)) ) return( as.integer(NA) )
-    if ( ! ( min(select)>0 && max(select)<=nrow(self$results$modelIndex) ) ) {
-      message("Field selection out of range")
-      return( as.integer(NA) )
-    } else {
-      return( select )
+    if ( length(select)>0 ) {
+      if ( any(is.na(select)) ) return( as.integer(NA) )
+      if ( ! ( min(select)>0 && max(select)<=nrow(self$results$modelIndex) ) ) {
+        message("Field selection out of range")
+        return( as.integer(NA) )
+      }
     }
+    return( select )
   }
-    
   message("Invalid field selection specification")
   message(deparse(select))
   return( as.integer(NA) )
@@ -491,15 +494,22 @@ ve.select.select <- function(select) {
   return(self)
 }
 
-ve.select.find <- function(pattern="",Group=NULL,Table=NULL) {
+ve.select.find <- function(pattern=NULL,Group=NULL,Table=NULL,Name=NULL,as.object=TRUE) {
   # if pattern (regexp) given, find names matching pattern (only within the "fields" part)
   # if group or table not specified, look in any group or table
   # return vector of indices for matching rows
   searchGroup <- Group
   searchTable <- Table
+  searchName  <- Name
   newSelection <- self$selection
   newSelection <- with( self$results$modelIndex, {
-    fld <- grepl(pattern,Name,ignore.case=TRUE)
+    if ( !is.null(pattern ) ) {
+      fld <- grepl(pattern,Name,ignore.case=TRUE)     # RegEx search for name
+    } else if ( !is.null(searchName) ) {
+      fld <- Name == searchName;                      # Exact name match
+    } else {
+      fld <- rep(TRUE,nrow(self$results$modelIndex))  # Start with all selected
+    }
     if ( !is.null(searchGroup) ) {
       if ( searchGroup %in% c("Year","Years","AllYears") ) {  # shorthand for non-Global group
         group <- Group != "Global"
@@ -512,15 +522,16 @@ ve.select.find <- function(pattern="",Group=NULL,Table=NULL) {
     which(fld)
   })
   if ( length(newSelection) == 0 ) newSelection <- as.integer(NA)
-  return(VESelection$new(self$results, select=newSelection))
+  if ( as.object ) {
+    return(VESelection$new(self$results, select=newSelection))
+  } else {
+    return(newSelection)
+  }
 }
 
 ve.select.add <- function(select) {
   select <- self$parse(select)
-  print(self$selection)
-  print(select)
   select <- union(self$selection,select)
-  print(select)
   VESelection$new(self$results, select=select)
 }
 
