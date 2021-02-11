@@ -227,10 +227,10 @@ ve.results.extract <- function(
   saveTo=visioneval::getRunParameter("OutputDir",Param_ls=private$RunParam_ls),
   overwrite=FALSE,
   quiet=FALSE,
-  select=NULL
+  select=NULL # replaces self$selection if provided
 ) {
   if ( ! self$results$valid() ) stop("Model State contains no results.")
-  if ( is.null(select) ) select <- self$selection
+  if ( is.null(select) ) select <- self$selection else self$selection <- select
   if ( is.na(select$selection) || length(select$selection)<1 ) {
     stop("Nothing selected to extract.")
   }
@@ -355,17 +355,17 @@ VEResults <- R6::R6Class(
   )
 )
 
-ve.select.initialize <- function( results, rows=integer(0), select=NULL ) {
+ve.select.initialize <- function( results, select=NULL ) {
   # self$selection is just a list of integers pointing to rows
   #  in self$results$modelIndex
   self$results <- results
-  if ( !is.null(select) ) {    # select dominates rows parameter
-    rows <- self$parse(select)
-  }
-  if ( is.na(rows) || is.null(rows) ||
-       length(rows)==0 ||
-       ! min(rows)>0 ||
-       max(rows)>nrow(self$results$modelIndex) ) {
+  rows <- self$parse(select)
+  if ( is.na(rows) || is.null(rows) ) {
+    self$selection <- as.integer(NA) # no rows selected
+  } else if (
+    length(rows)==0 ||
+    ! min(rows)>0 ||
+    max(rows)>nrow(self$results$modelIndex) ) {
     self$selection <- 1:nrow(self$results$modelIndex)
   } else {
     self$selection <- rows
@@ -416,7 +416,6 @@ ve.select.parse <- function(select) {
   # Though select can be a vector of field names, they need to be the full Group/Table/Name field names,
   #  so you should get them from ve.select.find, rather than manually construct them.
   # if select is NA, return NA
-  if ( is.na(select) ) return(as.integer(NA))
   # select can be another VESelection
   #   if it is the same model, just copy its selection
   #   if not the same model, get other selection's VEResults object and parse that
@@ -448,23 +447,24 @@ ve.select.parse <- function(select) {
     splitNames <- strsplit(select,"/")
     maxLength <- max(unlist(lapply(splitNames, length)))
     splitNames <- lapply(splitNames , function(x) {
-      s <- c( rep(NA, maxLength-length(x)), x, TRUE )
-      names(s) <- select.names
+      c( rep(NA, maxLength-length(x)), x, TRUE )
     })
-    splitNames <- data.frame()
-    selected <- do.call(rbind,splitNames)
+    selected <- do.call(rbind.data.frame,splitNames)
+    names(selected) <- select.names
     complete <- stats::complete.cases(selected)
     if ( nrow(selected) != length(which(complete)) ) {
       message("Warning: some field names provided were missing")
       message("Those fields will be ignored:")
       print(selected[ !complete, ])
     }
-    select <- merge(self$results$modelIndex,splitNames,by=c("Group","Table","Name"),all.x=TRUE)
+    select <- merge(self$results$modelIndex,selected,by=c("Group","Table","Name"),all.x=TRUE)
     select <- which( !is.na(select$Selected) ) # vector of integer indices (select$Selected is NA for fields not selected)
+    print(select)
   }
   
   # if select is a numeric vector, validate its range and return it
   if ( is.numeric(select) ) {
+    if ( any(is.na(select)) ) return( as.integer(NA) )
     if ( ! ( min(select)>0 && max(select)<=nrow(self$results$modelIndex) ) ) {
       message("Field selection out of range")
       return( as.integer(NA) )
@@ -472,46 +472,94 @@ ve.select.parse <- function(select) {
       return( select )
     }
   }
+    
   message("Invalid field selection specification")
   message(deparse(select))
   return( as.integer(NA) )
 }
 
+#' Assign new selection to VESelection
+#'
+#' @param x a VESelection object that will be added to
+#' @param select an object to be made into a VESelection and then assigned to this one
+#' @return the VESelection that was modified
+#' @export
+"<-.VESelection" <- function(select) self$select(select)
+
 ve.select.select <- function(select) {
-  self$selection <- self$parse(select)
+  if ( ! missing(select) ) self$selection <- self$parse(select)
   return(self)
 }
 
-ve.select.find <- function(pattern="",group=NULL,table=NULL) {
+ve.select.find <- function(pattern="",Group=NULL,Table=NULL) {
   # if pattern (regexp) given, find names matching pattern (only within the "fields" part)
   # if group or table not specified, look in any group or table
   # return vector of indices for matching rows
-  self$selection <- with( self$result$modelIndex, {
-    fld <- grepl(pattern,Field)
-    if ( !is.null(group) ) fld <- fld & Group==group
-    if ( !is.null(table) ) fld <- fld & Table==table
+  searchGroup <- Group
+  searchTable <- Table
+  newSelection <- self$selection
+  newSelection <- with( self$results$modelIndex, {
+    fld <- grepl(pattern,Name,ignore.case=TRUE)
+    if ( !is.null(searchGroup) ) {
+      if ( searchGroup %in% c("Year","Years","AllYears") ) {  # shorthand for non-Global group
+        group <- Group != "Global"
+      } else {
+        group <- Group == searchGroup
+      }
+      fld <- fld & group
+    }
+    if ( !is.null(searchTable) ) fld <- fld & Table==searchTable
     which(fld)
   })
-  if ( length(self$selection) == 0 ) self$selection <- as.integer(NA)
-  return(self)
+  if ( length(newSelection) == 0 ) newSelection <- as.integer(NA)
+  return(VESelection$new(self$results, select=newSelection))
 }
 
 ve.select.add <- function(select) {
   select <- self$parse(select)
-  self$selection <- union(self$selection,select)
+  print(self$selection)
+  print(select)
+  select <- union(self$selection,select)
+  print(select)
+  VESelection$new(self$results, select=select)
 }
+
+#' Add items to VESelection
+#'
+#' @param x a VESelection object that will be added to
+#' @param y an object from which a new VESelection can be created; fields that it
+#'   references will be added to x
+#' @return parameter x, updated to also select items from y
+#' @export
+"+.VESelection" <- function(x,y) x$add(y)
 
 ve.select.remove <- function(select) {
   select <- self$parse(select)
-  self$selection <- setdiff(self$selection,select)
+  VESelection$new(self$results, select=setdiff(self$selection,select))
+}
+
+#' Remove items from VESelection
+#'
+#' @param x a VESelection object from which selections will be removed
+#' @param y an object from which a new VESelection can be created; fields that it
+#'   references will be removed from x if they are already selected
+#' @return parameter x, updated to also select items from y
+#' @export
+"-.VESelection" <- function(x,y) x$remove(y)
+
+ve.select.and <- function(select) {
+  select <- self$parse(select)
+  VESelection$new(self$results, select=intersect(self$selection,select))
 }
 
 ve.select.all <- function() {
-  self$selection <- 1:nrow(self$results$modelIndex)
+  select <- 1:nrow(self$results$modelIndex)
+  VESelection$new(self$results, select=select)
 }
 
 ve.select.none <- function() {
-  self$selection <- integer(NA)
+  select <- integer(NA)
+  VESelection$new(self$results, select=select)
 }
 
 # Build data.frames based on selected groups, tables and dataset names
@@ -520,8 +568,16 @@ ve.select.extract <- function(
   overwrite=FALSE,
   quiet=FALSE
 ) {
+  # Delegates to the result object, setting its selection in the process
   return( self$results$extract(saveTo,overwrite,quiet,select=self) )
 }
+
+#' Conversion method to turn a VESelecton into a vector of selection indices
+#'
+#' @param select a VESelection object (or something that can be coerced to one)
+#' @return an integer vector of selected fields
+#' @export
+as.integer.VESelection <- function(select) select$selection
 
 # The VESelection R6 class
 # This interoperates with VEResult to keep track of what to print
@@ -539,9 +595,11 @@ VESelection <- R6::R6Class(
     export=ve.select.extract,
     find=ve.select.find,
     parse=ve.select.parse,
-    select=ve.select.select,      # Also implements as "<-" operator
-    add=ve.select.add,            # Also implements as "+" operator
-    remove=ve.select.remove,      # Also implements as "-" operator
+    select=ve.select.select,      # assign: Also implements as "<-" operator
+    add=ve.select.add,            # "union": Also implements as "+" operator
+    remove=ve.select.remove,      # "setdiff": Also implements as "-" operator
+    and=ve.select.and,            # "intersection" operation
+    or=ve.select.add,             # Just does a "union" operation
     all=ve.select.all,
     none=ve.select.none,
 

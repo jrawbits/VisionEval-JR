@@ -1,0 +1,8 @@
+takedown()
+source("tests/test.R")
+setup()
+mod <- openModel("JRSPM")
+rs <- mod$results()
+s <- rs$select()
+t <- s$find("dvmt",Group="Year")$and(s$find("bus"))
+u <- t$add("Global/Marea/LambdaAdj")
