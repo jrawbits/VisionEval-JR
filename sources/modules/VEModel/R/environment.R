@@ -31,6 +31,7 @@ default.parameters.table = list(
   ModelRoot           = "models",
   ModelScript         = "run_model\\.R",
   ModelScriptFile     = "run_model.R",
+  DisplayUnitsFile    = "display_units.csv",
   QueryFileName       = "New-Query.VEqry",
   QueryDir            = "queries",
   QueryOutputTemplate = "Measures_%scenario%_%years%_%geography%.csv"

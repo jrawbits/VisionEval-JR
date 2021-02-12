@@ -5,14 +5,23 @@ self=private=NULL
 # Output just wraps a ModelState and Datastore for one stage
 # It maintains everything we need for a QueryPrep_ls structure for queries
 # Plus it can export slices of the Datastore into .csv or data.frame
-ve.results.init <- function(OutputPath,Param_ls=NULL) {
+ve.results.init <- function(OutputPath,ModelDir=NULL,Param_ls=NULL) {
   # OutputPath is the normalized path to a directory containing the model results
   #  typically from the last model stage. Expect to find a ModelState.Rda file
   #  and a Datastore in that folder.
+  # mo
   # Param_ls is the list of Run Parameters used by the model
-  self$path <- OutputPath
+  self$resultsPath <- OutputPath
+  self$modelDir <- if ( ! is.null(ModelDir) ) ModelDir else getwd()
   self$Name <- basename(OutputPath)
-  private$RunParam_ls <- Param_ls
+  private$RunParam_ls <- Param_ls;
+    # NULL Param_ls will use default from VEModel::ve.env
+    # In practice, if a VEResults object is created from an arbitrary path,
+    #   we'll use the system parameters (loading VisionEval.cnv from ve.runtime/local/config/VisonEval.cnf if
+    #   that path exists, otherwise looking in ve.runtime/VisionEval.cnf if that exists)
+    # If we're coming from a VEModel, we'll use its RunParam_ls, which will
+    #   read VisionEval.cnf from the path supplied to VEModel::new it it exists,
+    #   otherwise reading defs/VisionEval.cnf if that exists
   private$index()
   self$selection <- VESelection$new(self)
   return(self$valid())
@@ -20,9 +29,9 @@ ve.results.init <- function(OutputPath,Param_ls=NULL) {
 
 ve.results.valid <- function() {
   valid <- ! is.null(private$RunParam_ls) &&
-           dir.exists(self$path) &&
+           dir.exists(self$resultsPath) &&
            !is.null(self$modelIndex) && length(self$modelIndex)>0
-  modelStateFile <- file.path(self$path,visioneval::getRunParameter("ModelStateFileName",Param_ls=private$RunParam_ls))
+  modelStateFile <- file.path(self$resultsPath,visioneval::getRunParameter("ModelStateFileName",Param_ls=private$RunParam_ls))
   valid <- valid && all(file.exists(modelStateFile))
   return(valid)
 }
@@ -50,10 +59,10 @@ attributeGet <- function(variable, attr_name){
 }
 
 ve.results.index <- function() {
-  # Load model state from self$path
+  # Load model state from self$resultsPath
   ve.model <- new.env()
   FileName=normalizePath( file.path(
-    self$path, # Should already include ResultsDir
+    self$resultsPath, # Should already include ResultsDir
     visioneval::getModelStateFileName(Param_ls=private$RunParam_ls)
   ), winslash="/", mustWork=FALSE)
   ms <- self$ModelState <- try(visioneval::readModelState(FileName=FileName))
@@ -65,7 +74,7 @@ ve.results.index <- function() {
   if ( is.null(private$RunParam_ls) && is.list(self$ModelState ) ) {
     private$RunParam_ls <-self$ModelState$RunParam_ls
   }
-  owd <- setwd(self$path)
+  owd <- setwd(self$resultsPath)
   on.exit(setwd(owd))
 
   if ( ! file.exists( ms$DatastoreName ) ) {
@@ -105,7 +114,7 @@ ve.results.index <- function() {
 
   maxLength <- max(unlist(lapply(splitGroupTableName, length)))
   if ( maxLength != 3 ) {
-    visioneval::writeLog(Level="warn",paste0("Model state at ",self$path," is incomplete (",maxLength,")"))
+    visioneval::writeLog(Level="warn",paste0("Model state at ",self$resultsPath," is incomplete (",maxLength,")"))
     return(list())
   }
   splitGroupTableName <- lapply(splitGroupTableName , function(x) c(x, rep(NA, maxLength-length(x))))
@@ -204,6 +213,64 @@ ve.results.list <- function(pattern="", details=FALSE, selected=TRUE, ...) {
   return(unique(ret.value))
 }
 
+# Helper function to attach DisplayUnits to a list of Group/Table/Name rows in a data.frame
+addDisplayUnits(DisplayUnitsFilePath,GTN_df) {
+  # GTN_df is a data.frame with "Group","Table","Name" rows for each Name/field for which display
+  #  units are sought. Always re-open the DisplayUnits file, as it may have changed since the last
+  #  run.
+  if ( is.na(DisplayUnitsFilePath) ) {
+    return( cbind(GTN_df,DisplayUnits=NA) )
+  }
+  fn <- normalizePath(DisplayUnitsFilePath,winslash="/",mustWork=FALSE)
+  if ( ! file.exists(fn) ) {
+    visioneval::writeLog( Level="warn",
+      c("Specified DisplayUnits file does not exist (using default units):",fn)
+    )
+    return( cbind(GTN_df,DisplayUnits=NA) )
+  }
+  displayUnits <- try(read.csv(fn),silent=TRUE)   # May fail for various reasons
+  if ( ! "data.frame" %in% class(displayUnits) ) {
+    visioneval::writeLog( Level="warn",
+      c(
+        "Error reading DisplayUnits file:",
+        fn,
+        paste("Error:",conditionMessage(attr(displayUnits,"condition")))
+      )
+    )
+    return( cbind(GTN_df,DisplayUnits=NA) )
+  }
+  if ( ! all( c("Group","Table","Name""DisplayUnits") %in% names(displayUnits) ) {
+    visioneval::writeLog( Level="warn",
+      c("Specified DisplayUnits file does not have correct columns:",fn,
+        paste("Columns:",names(displayUnits),collapse=", ")
+      )
+    )
+    return( cbind(GTN_df,DisplayUnits=NA) )
+  }
+  displayUnits <- try( merge(GTN_df,displayUnits,by=c("Group","Table","Name"),all.x=TRUE), silent=TRUE )
+  if (
+    ! "data.frame" %in% class(displayUnits) ||
+    ! all( c("Group","Table","Name""DisplayUnits") %in% names(displayUnits) )
+  ) {
+    if ( "data.frame" %in% class(displayUnits) ) {
+      displayUnits <- paste("Bad Fields - ",names(displayUnits),collapse=", ")
+    } else {
+      displayUnits <- conditionMessage(attr(displayUnits,"condition"))
+    }
+    visioneval::writeLog( Level="warn",
+      c(
+        "Error reading DisplayUnits file:",
+        fn,
+        paste("Error:",displayUnits)
+      )
+    )
+    return( cbind(GTN_df,DisplayUnits=NA) )
+  }
+  # get here with displayUnits being GTN_df, augmented by matching DisplayUnits
+  return(displayUnits)
+}
+  
+
 ve.results.inputs <- function( fields=FALSE, module="", filename="" ) {
   # fields=TRUE, show all names of inputs
   # fields=FALSE, just show the module, file, input directory
@@ -235,7 +302,6 @@ ve.results.units <- function() {
 ve.results.extract <- function(
   saveTo=visioneval::getRunParameter("OutputDir",Param_ls=private$RunParam_ls),
   overwrite=FALSE,
-  quiet=FALSE,
   select=NULL # replaces self$selection if provided
 ) {
   if ( ! self$valid() ) stop("Model State contains no results.")
@@ -245,60 +311,92 @@ ve.results.extract <- function(
   }
 
   saving <- is.character(saveTo) && nzchar(saveTo)[1]
-
-  ms <- self$ModelState
-  
-  visioneval::assignDatastoreFunctions(ms$DatastoreType)
-  extract <- self$modelIndex[ select$selection, c("Name","Table","Group") ]
-
-  tables <- split( extract$Name, list(extract$Table,extract$Group) )
-  tables <- tables[which(sapply(tables,length)!=0)]
-  DataSpecs <- lapply( names(tables), function(T.G.S) { # T.G.S : Table Group Split
-        TGS <- unlist(strsplit(T.G.S,"\\."))
-        mp <- self$path
-        dstoreloc <- file.path(mp,ms$DatastoreName)
-        df <- data.frame(
-          Name  = tables[[T.G.S]],
-          Table = TGS[1],
-          Group = TGS[2],
-          Loc   = dstoreloc
-        )
-        list(
-          Data=df,
-          File=paste0(paste(gsub("\\.","_",T.G.S),format(ms$LastChanged,"%Y-%m-%d_%H%M%S"),sep="_"),".csv")
-        )
-      }
-    )
-  model.env = visioneval::modelEnvironment() # holds assigned datastore functions
-  results <- lapply(DataSpecs, function(d) {
-        if (!quiet && saving ) message("Extracting data for Table ",d$Data$Table[1]," in Group ",d$Data$Group[1])
-        # Do this in a for-loop rather than faster "apply" to avoid dimension and class/type problems.
-        ds.ext <- list()
-        for ( fld in 1:nrow(d$Data) ) {
-          dt <- d$Data[fld,]
-          ds.ext[[dt$Name]] <- model.env$readFromTable(Name=dt$Name,Table=dt$Table,Group=dt$Group,DstoreLoc=dt$Loc,ReadAttr=FALSE)
-        }
-        return( data.frame(ds.ext) )
-      }
-    )
-  files <- sapply(DataSpecs, function(x) x$File)
-  names(results) <- files
   if ( saving ) {
-    sapply(
-      names(results),
-      FUN=function(f) {
-        data <- results[[f]]
-        out.path <- file.path(self$path,saveTo)
-        if ( ! dir.exists(out.path) ) dir.create(out.path,recursive=TRUE)
-        fn <- file.path(out.path,f)
-        utils::write.csv(data,file=fn)
-        if ( ! exists("ve.runtime") ) ve.runtime <- getwd()
-        if (!quiet) message("Write output file: ",gsub(get("ve.runtime"),"",fn))
+    saveTo <- saveTo[1]
+    outputPath <- if ( isAbsolutePath(saveTo) ) saveTo else file.path(self$modelDir,saveTo)
+    if ( ! dir.exists(saveTo) ) dir.create(saveTo,showWarnings=FALSE)
+    if ( ! dir.exists(saveTo) ) {
+      stop(
+        visioneval::writeLog( Level="error",
+          c( "Output directory not available:",saveTo )
+        )
+      )
+    }
+  }
+
+  extract <- self$modelIndex[ select$selection, c("Name","Table","Group") ]
+  displayUnits <- visioneval::getRunParameter("DisplayUnitsFile",Param_ls=Param_ls)
+  extract <- addDisplayUnits(displayUnits,extract)
+
+  extractTables <- unique(extract[,c("Group","Table")])
+  extractGroups <- unique(extractTables$Group)
+
+  QueryPrep_ls <- self$queryprep()
+  outputList <- list()
+  results <- list()
+  for ( group in extractGroups ) {
+    # Build Tables_ls for readDatastoreTables
+    Tables_ls <- list()
+    tables <- extractTables$Table[ extractTables$Group == group ]
+    if ( length(tables)==0 ) next # should not happen given how we built extract
+    for ( table in tables ) {
+      fields <- [ extract$Group==group & extract$Table=table,c("Name","DisplayUnits") ]
+      dispUnits <- fields$DisplayUnits
+      names(dispUnits) <- fields$Name
+      Tables_ls[[table]] <- dispUnits
+    }
+
+    # Get a list of data.frames, one for each Table configured in Tables_ls
+    Data_ls <- readDatastoreTables(Tables_ls, group, QueryPrep_ls)
+
+    # Report errors from readDatastoreTables
+    HasMissing_ <- unlist(lapply(Data_ls$Missing, length)) != 0
+    if (any(HasMissing_)) {
+      WhichMissing_ <- which(HasMissing_)
+      Missing_ <- character(0)
+      for (i in WhichMissing_) {
+        Missing_ <- c(
+          Missing_,
+          paste0(
+            names(Data_ls$Missing)[i], " (",
+            paste(Data_ls$Missing[[i]], collapse = ", "), ")"
+          )
+        )
       }
-    )
-  } else {
-    names(results) <- sub("\\.[^.]*$","",names(results))
-    if (!quiet) message("Returning extracted data as invisible list of data.frames\n(quiet=TRUE to suppress this message)")
+      msg <- paste("Missing Tables (Datasets):",paste(Missing_, collapse = "\n"),sep="\n")
+      stop( writeLog( msg, Level="error" ) )
+    }
+
+    # Process the table data.frames into results
+    dataNames <- names(Data_ls$Data)
+    newTableNames <- paste(group,dataNames,sep=".")
+    if ( saving ) {
+      # Push each data.frame into a file, and accumulate a list of file names to return
+      # TODO: File name template is hard-coded; maybe we'll change that one day
+      #   (e.g. using an sprintf format or the glue package)
+
+      # Build file name template
+      lastChanged <- self$ModelState$LastChanged
+      timeWritten <- paste0("(",paste("Written",Sys.time(),sep="_),")")
+      if ( ! is.null(lastChanged) ) {
+        timeWritten <- paste(format(lastChanged,"%Y-%m-%d_%H%M"),timeWritten,sep="+")
+      }
+      Files <- paste0(paste(group,dataNames,format(lastChanged,"%Y-%m-%d_%H%M%S"),sep="_"),".csv")
+      names(Files) <- dataNames;
+
+      # Write the files
+      for ( table in dataNames ) {
+        write.csv(Data_ls$Data[[table]],file=Files[table],row.names=FALSE)
+      }
+
+      # Accumulate results list (names on list are "group.table")
+      names(Files) <- newTableNames
+      results[ names(Files) ] <- as.list(Files)
+    } else {
+      # Otherwise, if not saving, accumulate the list of data.frames (named as "group.table")
+      names(Data_ls$Data <- newTableNames
+      results[ names(Data_ls$Data) ] <- Data_ls$Data
+    }
   }
   invisible(results)
 }
@@ -313,7 +411,7 @@ ve.results.select <- function(select=integer(0)) {  # integer(0) says select all
 
 ve.results.queryprep <- function() {
   visioneval::prepareForDatastoreQuery(
-    DstoreLocs_ = file.path(self$path,self$ModelState$DatastoreName),
+    DstoreLocs_ = file.path(self$resultsPath,self$ModelState$DatastoreName),
     DstoreType  = self$ModelState$DatastoreType
   )
 }
@@ -321,7 +419,7 @@ ve.results.queryprep <- function() {
 ve.results.print <- function(details=FALSE) {
   # Update for output
   cat("VEResults object for these results:\n")
-  print(self$path)
+  print(self$resultsPath)
   cat("Output is valid:",self$valid(),"\n")
   if ( ! details ) {
     cat("Selected",length(self$selection$selection),"out of",nrow(self$modelIndex),"fields.\n")
@@ -339,7 +437,8 @@ VEResults <- R6::R6Class(
   public = list(
     # public data
     Name = NULL,
-    path=NULL,
+    resultsPath=NULL,
+    modelDir=NULL,
     ModelState=NULL,
     modelIndex=NULL,
     selection=NULL,
@@ -576,8 +675,7 @@ ve.select.none <- function() {
 # Build data.frames based on selected groups, tables and dataset names
 ve.select.extract <- function(
   saveTo=visioneval::getRunParameter("OutputDir",Param_ls=private$RunParam_ls),
-  overwrite=FALSE,
-  quiet=FALSE
+  overwrite=FALSE
 ) {
   # Delegates to the result object, setting its selection in the process
   return( self$results$extract(saveTo,overwrite,quiet,select=self) )

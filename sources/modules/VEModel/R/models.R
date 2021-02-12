@@ -962,7 +962,7 @@ ve.model.results <- function(stage) {
     mustWork=FALSE
   );
   
-  results <- VEResults$new(resultsPath,Param_ls)
+  results <- VEResults$new(resultsPath,self$modelPath,Param_ls)
   if ( ! results$valid() ) {
     private$lastResults <- list()
     if (stage!=self$stageCount) {
