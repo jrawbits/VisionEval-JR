@@ -22,7 +22,7 @@ ve.results.init <- function(OutputPath,ModelDir=NULL,Param_ls=NULL) {
     # If we're coming from a VEModel, we'll use its RunParam_ls, which will
     #   read VisionEval.cnf from the path supplied to VEModel::new it it exists,
     #   otherwise reading defs/VisionEval.cnf if that exists
-  private$index()
+  self$index()
   self$selection <- VESelection$new(self)
   return(self$valid())
 }
@@ -66,13 +66,13 @@ ve.results.index <- function() {
     visioneval::getModelStateFileName(Param_ls=private$RunParam_ls)
   ), winslash="/", mustWork=FALSE)
   ms <- self$ModelState <- try(visioneval::readModelState(FileName=FileName))
-  if ( ! is.list(self$ModelState) ) {
-    self$ModelState <- NULL
+  if ( ! is.list(ms) ) {
+    ms <- self$ModelState <- NULL
     visioneval::writeLog(Level="error",paste("Cannot load ModelState from:",FileName))
     return(list())
   }
-  if ( is.null(private$RunParam_ls) && is.list(self$ModelState ) ) {
-    private$RunParam_ls <-self$ModelState$RunParam_ls
+  if ( is.null(private$RunParam_ls) && is.list( ms ) ) {
+    private$RunParam_ls <-ms$RunParam_ls
   }
   owd <- setwd(self$resultsPath)
   on.exit(setwd(owd))
@@ -99,16 +99,15 @@ ve.results.index <- function() {
   }
   ds <- (ms$Datastore)
 
-  InputIndex <- sapply(ds$attributes, attributeExist, "FILE")
   Description <- sapply(ds$attributes, attributeGet, "DESCRIPTION",simplify=TRUE) # should yield a character vector
   Module <- sapply(ds$attributes, attributeGet, "MODULE",simplify=TRUE) # should yield a character vector
   Units <- sapply(ds$attributes, attributeGet, "UNITS",simplify=TRUE) # should yield a character vector
   InputDir <- sapply(ds$attributes, attributeGet, "INPUTDIR",simplify=TRUE) # should yield a character vector
+  InputDir[ is.na(InputDir) ] <- ""
+  File <- sapply(ds$attributes, attributeGet, "FILE",simplify=TRUE) # should yield a character vector
+  File[ is.na(File) ] <- ""
   scenario <- visioneval::getRunParameter("Scenario",Default="Unknown Scenario",Param_ls=private$RunParam_ls)
 
-  # TODO: do we want to keep the inputs in the same table as the other fields?
-  # In the specifications, inputs create columns in the datastore.
-  
   splitGroupTableName <- strsplit(ds$groupname, "/")
   if ( length(Description) != length(splitGroupTableName) ) stop("Inconsistent table<->description correspondence")
 
@@ -120,66 +119,29 @@ ve.results.index <- function() {
   splitGroupTableName <- lapply(splitGroupTableName , function(x) c(x, rep(NA, maxLength-length(x))))
   # splitGroupTableName is a list of character vectors with Group, Table, Name components
 
-  inputGTN <- do.call(rbind.data.frame,splitGroupTableName)[InputIndex,]
-  names(inputGTN) <- c("Group","Table","Name")
+  fieldGTN <- do.call(rbind.data.frame,splitGroupTableName)
+  names(fieldGTN) <- c("Group","Table","Name")
 
-  # Build parallel data.frame for Inputs
+  # Build parallel data.frame for Inputs (including File parameter)
   # message("Input data frame...")
-  File <- sapply(ds$attributes, attributeGet, "FILE",simplify=TRUE) # should yield a character vector
-  inputs <- data.frame(
-    Group       = inputGTN$Group[InputIndex],
-    Table       = inputGTN$Table[InputIndex],
-    Name        = ds$name[InputIndex], # Should be identical to inputGTN$Name
-    Description = Description[InputIndex],
-    Units       = Units[InputIndex],
-    Module      = Module[InputIndex],
+  Index <- data.frame(
+    Group       = fieldGTN$Group,
+    Table       = fieldGTN$Table,
+    Name        = fieldGTN$Name, # Should be identical to ds$name
+    Description = Description,
+    Units       = Units,
+    Module      = Module,
     Scenario    = scenario,
-    File        = File[InputIndex],
-    InputDir    = InputDir[InputIndex]
+    File        = File,          # "" if not an Input
+    InputDir    = InputDir       # "" if not an Input
   )
-  Inputs <- rbind(Inputs,inputs)
 
-  Description <- Description[!InputIndex]
-  Module <- Module[!InputIndex]
-  Units <- Units[!InputIndex]
-  splitGroupTableName <- splitGroupTableName[!InputIndex]
-
-  # Add modelPath and Scenario Description to Index row
-  PathGroupTableName <- list()
-  for ( i in 1:length(splitGroupTableName) ) {
-    PathGroupTableName[[i]] <- c(
-      splitGroupTableName[[i]],
-      Description[i],
-      Units[i],
-      Module[i],
-      scenario,
-      "",         # File
-      ""          # InputDir
-    )
-  }
-  if ( any((cls<-lapply(PathGroupTableName,class))!="character") ) {
-    bad.class <- which(cls!="character")
-    print( PathGroupTableName[[bad.class[1]]] )
-    print( length(bad.class) )
-    stop("Non-character vector in Datastore index row")
-  }
-
-  # Using 'do.call' turns each element of the splitGroupTableName list into one argument for rbind.data.frame
-  # By contrast, calling rbind.data.frame(splitGroupTableName) simply converts the list (a single argument) into a
-  # data.frame (so each element becomes one column) Explanation:
-  # https://www.stat.berkeley.edu/~s133/Docall.html
-  GroupTableName <- data.frame()
-  GroupTableName <- do.call(rbind.data.frame, PathGroupTableName)
-  names(GroupTableName) <- c("Group", "Table", "Name","Description", "Units","Module","Scenario","File","InputDir")
-
-  # GroupTableName is now a data.frame with five columns
+  # GroupTableName is now a data.frame with nine columns
   # complete.cases blows away the rows that have any NA values
   # (each row is a "case" in stat lingo, and the "complete" ones have a non-NA value for each column)
-  ccases <- stats::complete.cases(GroupTableName)
-  GroupTableName <- GroupTableName[ccases,]
-  Index <- rbind(Index,GroupTableName)
-
-  self$modelIndex <- rbind(Index,Inputs)
+  ccases <- stats::complete.cases(Index)
+  Index <- Index[ccases,]
+  self$modelIndex <- Index
   invisible(self$modelIndex)
 }
 
@@ -202,19 +164,16 @@ ve.results.list <- function(pattern="", details=FALSE, selected=TRUE, ...) {
     filter <- filter & grepl(pattern,self$modelIndex$Name,ignore.case=TRUE )
   }
 
-  # TODO: return Group/Table/Name format, not bare name
   if ( missing(details) || ! details ) {
-    ret.fields <- c("Name")
+    ret.value <- with( self$modelIndex[ filter, ], paste(Group,Table,Name,sep="/") ) # generates a character vector
   } else {
-    ret.fields <- names(self$modelIndex)
+    ret.value <- self$modelIndex[ filter, ] # Generates a data.frame with all columns
   }
-  ret.value <- self$modelIndex[ filter, ret.fields, drop=TRUE ]
-  if ( class(ret.value)!='character' ) ret.value <- ret.value[order(ret.value$Group, ret.value$Name),]
   return(unique(ret.value))
 }
 
 # Helper function to attach DisplayUnits to a list of Group/Table/Name rows in a data.frame
-addDisplayUnits(DisplayUnitsFilePath,GTN_df) {
+addDisplayUnits <- function(DisplayUnitsFilePath,GTN_df) {
   # GTN_df is a data.frame with "Group","Table","Name" rows for each Name/field for which display
   #  units are sought. Always re-open the DisplayUnits file, as it may have changed since the last
   #  run.
@@ -239,7 +198,7 @@ addDisplayUnits(DisplayUnitsFilePath,GTN_df) {
     )
     return( cbind(GTN_df,DisplayUnits=NA) )
   }
-  if ( ! all( c("Group","Table","Name""DisplayUnits") %in% names(displayUnits) ) {
+  if ( ! all( c("Group","Table","Name","DisplayUnits") %in% names(displayUnits) ) ) {
     visioneval::writeLog( Level="warn",
       c("Specified DisplayUnits file does not have correct columns:",fn,
         paste("Columns:",names(displayUnits),collapse=", ")
@@ -250,7 +209,7 @@ addDisplayUnits(DisplayUnitsFilePath,GTN_df) {
   displayUnits <- try( merge(GTN_df,displayUnits,by=c("Group","Table","Name"),all.x=TRUE), silent=TRUE )
   if (
     ! "data.frame" %in% class(displayUnits) ||
-    ! all( c("Group","Table","Name""DisplayUnits") %in% names(displayUnits) )
+    ! all( c("Group","Table","Name","DisplayUnits") %in% names(displayUnits) )
   ) {
     if ( "data.frame" %in% class(displayUnits) ) {
       displayUnits <- paste("Bad Fields - ",names(displayUnits),collapse=", ")
@@ -340,7 +299,7 @@ ve.results.extract <- function(
     tables <- extractTables$Table[ extractTables$Group == group ]
     if ( length(tables)==0 ) next # should not happen given how we built extract
     for ( table in tables ) {
-      fields <- [ extract$Group==group & extract$Table=table,c("Name","DisplayUnits") ]
+      fields <- extract[ extract$Group==group & extract$Table==table,c("Name","DisplayUnits") ]
       dispUnits <- fields$DisplayUnits
       names(dispUnits) <- fields$Name
       Tables_ls[[table]] <- dispUnits
@@ -377,7 +336,7 @@ ve.results.extract <- function(
 
       # Build file name template
       lastChanged <- self$ModelState$LastChanged
-      timeWritten <- paste0("(",paste("Written",Sys.time(),sep="_),")")
+      timeWritten <- paste0("(",paste("Written",Sys.time(),sep="_"),")")
       if ( ! is.null(lastChanged) ) {
         timeWritten <- paste(format(lastChanged,"%Y-%m-%d_%H%M"),timeWritten,sep="+")
       }
@@ -394,7 +353,7 @@ ve.results.extract <- function(
       results[ names(Files) ] <- as.list(Files)
     } else {
       # Otherwise, if not saving, accumulate the list of data.frames (named as "group.table")
-      names(Data_ls$Data <- newTableNames
+      names(Data_ls$Data) <- newTableNames
       results[ names(Data_ls$Data) ] <- Data_ls$Data
     }
   }
@@ -422,8 +381,12 @@ ve.results.print <- function(details=FALSE) {
   print(self$resultsPath)
   cat("Output is valid:",self$valid(),"\n")
   if ( ! details ) {
-    cat("Selected",length(self$selection$selection),"out of",nrow(self$modelIndex),"fields.\n")
-    print(self$selection)
+    sel <- length(self$selection$selection)
+    all <- nrow(self$modelIndex)
+    if ( sel < all ) {
+      cat("Selected",sel,"out of",all,"fields.\n")
+      print(self$selection) # Just the field names
+    } else cat("Selected all fields.\n")
   } else {
     print(self$selection,details=TRUE)
   }
@@ -445,20 +408,20 @@ VEResults <- R6::R6Class(
 
     # methods
     initialize=ve.results.init,
+    index=ve.results.index,          # Index Datastore from ModelState (part of init)
     valid=ve.results.valid,          # has the model been run, etc.
-    select=ve.results.select,
-    extract=ve.results.extract,      # alias the extract/export function
-    export=ve.results.extract,
-    list=ve.results.list,
+    select=ve.results.select,        # return the object's selection object
+    extract=ve.results.extract,      # generate files or data.frames from model results
+    export=ve.results.extract,       # alias for 'extract'
+    list=ve.results.list,            # show the modelIndex
     queryprep=ve.results.queryprep,  # For query or other external access
-    print=ve.results.print,
+    print=ve.results.print,          # summary of model results (index)
     units=ve.results.units           # TODO: Set units on field list (modifies self$modelIndex)
   ),
   private = list(
     queryObject=NULL,               # object to manage queries for this output
     outputPath=NULL,                # root for extract
-    RunParam_ls=NULL,
-    index=ve.results.index
+    RunParam_ls=NULL
   )
 )
 
@@ -481,11 +444,13 @@ ve.select.initialize <- function( results, select=integer(0) ) {
   }
 }
 
+ve.select.copy <- function(select) VESelection$new(self$results,self$selection)
+
 ve.select.print <- function(details=FALSE) {
   # print the selected fields
-  if ( ! details ) {
+  if ( ! details ) {            # just the field names (see below)
     print( self$fields() )
-  } else {
+  } else {                      # full data frame of selected model results
     print( self$results$modelIndex[ self$selection, ] )
   }
 }
@@ -521,6 +486,7 @@ ve.select.fields <- function() {
   return(sort(paste(idxFields$Group,idxFields$Table,idxFields$Name,sep="/"))) # Group/Table/Name
 }
 
+# Internal helper function to make a selection vector out of various other types of objects
 ve.select.parse <- function(select) {
   # Though select can be a vector of field names, they need to be the full Group/Table/Name field names,
   #  so you should get them from ve.select.find, rather than manually construct them.
@@ -582,21 +548,24 @@ ve.select.parse <- function(select) {
 
 #' Assign new selection to VESelection
 #'
-#' @param x a VESelection object that will be added to
 #' @param select an object to be made into a VESelection and then assigned to this one
 #' @return the VESelection that was modified
 #' @export
 "<-.VESelection" <- function(select) self$select(select)
 
+# Return a reference to this selection, changing its indices if an argument is provided
 ve.select.select <- function(select) {
   if ( ! missing(select) ) self$selection <- self$parse(select)
   return(self)
 }
 
+# Find does NOT alter the object it is called on.
+# It either produces a new VESelection from the matching elements of self$selection (as.object==TRUE)
+# OR it products a vector of matching element indices (as.object==FALSE)
 ve.select.find <- function(pattern=NULL,Group=NULL,Table=NULL,Name=NULL,as.object=TRUE) {
   # if pattern (regexp) given, find names matching pattern (only within the "fields" part)
   # if group or table not specified, look in any group or table
-  # return vector of indices for matching rows
+  # return vector of indices for matching rows or (as.object==TRUE) a new VESelection object
   searchGroup <- Group
   searchTable <- Table
   searchName  <- Name
@@ -628,48 +597,39 @@ ve.select.find <- function(pattern=NULL,Group=NULL,Table=NULL,Name=NULL,as.objec
   }
 }
 
+# Add another selection to self (add + assign)
+# Matching indices will be included
 ve.select.add <- function(select) {
   select <- self$parse(select)
-  select <- union(self$selection,select)
-  VESelection$new(self$results, select=select)
+  self$selection <- union(self$selection,select)
+  return(self)
 }
 
-#' Add items to VESelection
-#'
-#' @param x a VESelection object that will be added to
-#' @param y an object from which a new VESelection can be created; fields that it
-#'   references will be added to x
-#' @return parameter x, updated to also select items from y
-#' @export
-"+.VESelection" <- function(x,y) x$add(y)
-
+# Remove contents of another selection from self (remote + assign)
+# Matching indices in select will be removed
 ve.select.remove <- function(select) {
   select <- self$parse(select)
-  VESelection$new(self$results, select=setdiff(self$selection,select))
+  self$selection <- setdiff(self$selection,select)
+  return(self)
 }
 
-#' Remove items from VESelection
-#'
-#' @param x a VESelection object from which selections will be removed
-#' @param y an object from which a new VESelection can be created; fields that it
-#'   references will be removed from x if they are already selected
-#' @return parameter x, updated to also select items from y
-#' @export
-"-.VESelection" <- function(x,y) x$remove(y)
-
+# Keep only fields that are in both self and select (logical "and")
+# Indices in both will be kept, and those present in only one will be removed
 ve.select.and <- function(select) {
   select <- self$parse(select)
-  VESelection$new(self$results, select=intersect(self$selection,select))
+  self$selection <- intersect(self$selection,select)
+  return(self)
 }
 
+# 
 ve.select.all <- function() {
-  select <- 1:nrow(self$results$modelIndex)
-  VESelection$new(self$results, select=select)
+  self$selection <- 1:nrow(self$results$modelIndex)
+  return(self)
 }
 
 ve.select.none <- function() {
-  select <- integer(NA)
-  VESelection$new(self$results, select=select)
+  self$selection <- integer(NA)
+  return(self)
 }
 
 # Build data.frames based on selected groups, tables and dataset names
@@ -681,7 +641,7 @@ ve.select.extract <- function(
   return( self$results$extract(saveTo,overwrite,quiet,select=self) )
 }
 
-#' Conversion method to turn a VESelecton into a vector of selection indices
+#' Conversion method to turn a VESelection into a vector of selection indices
 #'
 #' @param select a VESelection object (or something that can be coerced to one)
 #' @return an integer vector of selected fields
@@ -699,18 +659,19 @@ VESelection <- R6::R6Class(
 
     # methods
     initialize=ve.select.initialize,
+    copy=ve.select.copy,          # Create a new selection object with the same results and indices
     print=ve.select.print,
     extract=ve.select.extract,
     export=ve.select.extract,
     find=ve.select.find,
     parse=ve.select.parse,
-    select=ve.select.select,      # assign: Also implements as "<-" operator
-    add=ve.select.add,            # "union": Also implements as "+" operator
-    remove=ve.select.remove,      # "setdiff": Also implements as "-" operator
-    and=ve.select.and,            # "intersection" operation
-    or=ve.select.add,             # Just does a "union" operation
-    all=ve.select.all,
-    none=ve.select.none,
+    select=ve.select.select,      # assign - set self to other selection value
+    add=ve.select.add,            # "union" - indices in either selection
+    remove=ve.select.remove,      # "setdiff" - indices not in other selection
+    and=ve.select.and,            # "intersection" - only indices in both selections
+    or=ve.select.add,             # alias for "add"
+    all=ve.select.all,            # select all indices
+    none=ve.select.none,          # select no indices (empty selection)
 
     # Field lists (read-only)
     groups=ve.select.groups,
