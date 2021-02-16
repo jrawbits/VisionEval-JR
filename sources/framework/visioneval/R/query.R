@@ -311,7 +311,7 @@ readDatastoreTables <- function(Tables_ls, Group, QueryPrep_ls) {
               setwd(dirname(Loc)) # Work in Datastore parent directory
               Dset_ <-
                 readFromTable(ds, tb, Group, ReadAttr = TRUE, ModelState_ls=ModelState_ls)
-              if (Tables_ls[[tb]][ds] != "") {
+              if ( !is.na(Tables_ls[[tb]][ds]) && Tables_ls[[tb]][ds] != "" ) { # NA or "" means use default units
                 DsetType <- attributes(Dset_)$TYPE
                 DsetUnits <- attributes(Dset_)$UNITS
                 ToUnits <- Tables_ls[[tb]][ds]
