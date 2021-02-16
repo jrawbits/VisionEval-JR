@@ -31,6 +31,7 @@ default.parameters.table = list(
   ModelRoot           = "models",
   ModelScript         = "run_model\\.R",
   ModelScriptFile     = "run_model.R",
+  ConfigDir           = "",  # Holds display_units.csv (relative to ve.runtime)
   DisplayUnitsFile    = "display_units.csv",
   QueryFileName       = "New-Query.VEqry",
   QueryDir            = "queries",

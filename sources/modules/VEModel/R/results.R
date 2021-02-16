@@ -139,8 +139,9 @@ ve.results.index <- function() {
   # GroupTableName is now a data.frame with nine columns
   # complete.cases blows away the rows that have any NA values
   # (each row is a "case" in stat lingo, and the "complete" ones have a non-NA value for each column)
-  ccases <- stats::complete.cases(Index)
+  ccases <- stats::complete.cases(Index[,c("Group","Table","Name")])
   Index <- Index[ccases,]
+  row.names(Index) <- 1:nrow(Index)
   self$modelIndex <- Index
   invisible(self$modelIndex)
 }
@@ -156,7 +157,7 @@ ve.results.list <- function(pattern="", details=FALSE, selected=TRUE, ...) {
   if ( ! self$valid() ) stop("Model has not been run yet.")
 
   filter <- if ( missing(selected) || selected ) {
-    self$selection$index
+    which( 1:nrow(self$modelIndex) %in% self$selection$selection )
   } else {
     rep(TRUE,nrow(self$modelIndex))
   }
@@ -173,19 +174,21 @@ ve.results.list <- function(pattern="", details=FALSE, selected=TRUE, ...) {
 }
 
 # Helper function to attach DisplayUnits to a list of Group/Table/Name rows in a data.frame
-addDisplayUnits <- function(DisplayUnitsFilePath,GTN_df) {
+addDisplayUnits <- function(GTN_df,Param_ls) {
   # GTN_df is a data.frame with "Group","Table","Name" rows for each Name/field for which display
   #  units are sought. Always re-open the DisplayUnits file, as it may have changed since the last
   #  run.
-  if ( is.na(DisplayUnitsFilePath) ) {
-    return( cbind(GTN_df,DisplayUnits=NA) )
-  }
-  fn <- normalizePath(DisplayUnitsFilePath,winslash="/",mustWork=FALSE)
-  if ( ! file.exists(fn) ) {
-    visioneval::writeLog( Level="warn",
+  ConfigDir <- visioneval::getRunParameter("ConfigDir",Param_ls=Param_ls) # relative to ve.runtime
+  ParamDir <- visioneval::getRunParameter("ParamDir",Param_ls=Param_ls)   # relative to self$modelDir
+  DisplayUnitsFilePath <- visioneval::getRunParameter("DisplayUnitsFile",Param_ls=Param_ls)
+  fn <- normalizePath(file.path(c(ConfigDir,ParamDir),DisplayUnitsFilePath,winslash="/",mustWork=FALSE)
+  if ( ! any(file.exists(fn)) ) {
+    visioneval::writeLog( Level="info",
       c("Specified DisplayUnits file does not exist (using default units):",fn)
     )
     return( cbind(GTN_df,DisplayUnits=NA) )
+  } else {
+    fn <- fn[1]
   }
   displayUnits <- try(read.csv(fn),silent=TRUE)   # May fail for various reasons
   if ( ! "data.frame" %in% class(displayUnits) ) {
@@ -209,7 +212,7 @@ addDisplayUnits <- function(DisplayUnitsFilePath,GTN_df) {
   displayUnits <- try( merge(GTN_df,displayUnits,by=c("Group","Table","Name"),all.x=TRUE), silent=TRUE )
   if (
     ! "data.frame" %in% class(displayUnits) ||
-    ! all( c("Group","Table","Name","DisplayUnits") %in% names(displayUnits) )
+    ! all( c("Group","Table","Name","DisplayUnits") %in% names(displayUnits) ) # it can have other fields, e.g. original Units
   ) {
     if ( "data.frame" %in% class(displayUnits) ) {
       displayUnits <- paste("Bad Fields - ",names(displayUnits),collapse=", ")
@@ -262,6 +265,7 @@ ve.results.extract <- function(
   saveTo=visioneval::getRunParameter("OutputDir",Param_ls=private$RunParam_ls),
   overwrite=FALSE,
   select=NULL # replaces self$selection if provided
+  convertUnits=TRUE # will convert if display units are present; FALSE not to attempt any conversion
 ) {
   if ( ! self$valid() ) stop("Model State contains no results.")
   if ( is.null(select) ) select <- self$selection else self$selection <- select
@@ -283,9 +287,13 @@ ve.results.extract <- function(
     }
   }
 
-  extract <- self$modelIndex[ select$selection, c("Name","Table","Group") ]
-  displayUnits <- visioneval::getRunParameter("DisplayUnitsFile",Param_ls=Param_ls)
-  extract <- addDisplayUnits(displayUnits,extract)
+  metadata <- self$modelIndex[ select$selection, ]
+  if ( convertUnits ) {
+    metadata <- addDisplayUnits(metadata,Param_ls=private$RunParam_ls)
+  } else {
+    metadata$DisplayUnits <- NA
+  }
+  extract <- metadata[ , c("Name","Table","Group","DisplayUnits") ]
 
   extractTables <- unique(extract[,c("Group","Table")])
   extractGroups <- unique(extractTables$Group)
@@ -296,17 +304,20 @@ ve.results.extract <- function(
   for ( group in extractGroups ) {
     # Build Tables_ls for readDatastoreTables
     Tables_ls <- list()
+    Metadata_ls <- list() # list of data.frames with field metadata
     tables <- extractTables$Table[ extractTables$Group == group ]
     if ( length(tables)==0 ) next # should not happen given how we built extract
     for ( table in tables ) {
-      fields <- extract[ extract$Group==group & extract$Table==table,c("Name","DisplayUnits") ]
+      meta <- extract[ extract$Group==group & extract$Table==table, ]
+      fields <- meta[ , c("Name","DisplayUnits") ]
       dispUnits <- fields$DisplayUnits
       names(dispUnits) <- fields$Name
       Tables_ls[[table]] <- dispUnits
+      Metadata_ls[[table]] <- meta
     }
 
     # Get a list of data.frames, one for each Table configured in Tables_ls
-    Data_ls <- readDatastoreTables(Tables_ls, group, QueryPrep_ls)
+    Data_ls <- visioneval::readDatastoreTables(Tables_ls, group, QueryPrep_ls)
 
     # Report errors from readDatastoreTables
     HasMissing_ <- unlist(lapply(Data_ls$Missing, length)) != 0
@@ -336,16 +347,17 @@ ve.results.extract <- function(
 
       # Build file name template
       lastChanged <- self$ModelState$LastChanged
-      timeWritten <- paste0("(",paste("Written",Sys.time(),sep="_"),")")
+      timeWritten <- paste0("(",paste("Written",format(Sys.time(),"%Y-%m-%d_%H%M"),sep="_"),")")
       if ( ! is.null(lastChanged) ) {
         timeWritten <- paste(format(lastChanged,"%Y-%m-%d_%H%M"),timeWritten,sep="+")
       }
-      Files <- paste0(paste(group,dataNames,format(lastChanged,"%Y-%m-%d_%H%M%S"),sep="_"),".csv")
+      Files <- paste0(paste(group,dataNames,timeWritten,sep="_"),".csv")
       names(Files) <- dataNames;
 
-      # Write the files
+      # Write the files and a metadata file
       for ( table in dataNames ) {
-        write.csv(Data_ls$Data[[table]],file=Files[table],row.names=FALSE)
+        write.csv(Data_ls$Data[[table]],file=file.path(saveTo,Files[table]),row.names=FALSE)
+        write.csv(Metadata_ls[[table]],file=sub("\\.csv$",".txt",Files[table]),row.names=FALSE)
       }
 
       # Accumulate results list (names on list are "group.table")
@@ -365,7 +377,7 @@ ve.results.select <- function(select=integer(0)) {  # integer(0) says select all
   if ( ! is.null(select) ) {
     self$selection <- VESelection$new(self,select=select)
   }
-  return(self$selection)
+  invisible(self$selection)
 }
 
 ve.results.queryprep <- function() {
@@ -495,7 +507,7 @@ ve.select.parse <- function(select) {
   #   if it is the same model, just copy its selection
   #   if not the same model, get other selection's VEResults object and parse that
   if ( "VESelection" %in% class(select) ) {
-    if ( select$results$path != self$results$path ) {
+    if ( select$results$resultsPath != self$results$resultsPath ) {
       select <- select$fields()
       # fall through to parse the character strings
     } else {
@@ -507,7 +519,7 @@ ve.select.parse <- function(select) {
   #   then parse as a character vector
   #   if it is the same model, just copy its selection
   if ( "VEResults" %in% class(select) ) {
-    if ( select$path != self$results$path ) {
+    if ( select$resultsPath != self$results$resultsPath ) {
       select <- select$selection$fields()
     } else {
       return( select$selection$selection )
@@ -556,7 +568,7 @@ ve.select.parse <- function(select) {
 # Return a reference to this selection, changing its indices if an argument is provided
 ve.select.select <- function(select) {
   if ( ! missing(select) ) self$selection <- self$parse(select)
-  return(self)
+  invisible(self)
 }
 
 # Find does NOT alter the object it is called on.
@@ -602,7 +614,7 @@ ve.select.find <- function(pattern=NULL,Group=NULL,Table=NULL,Name=NULL,as.objec
 ve.select.add <- function(select) {
   select <- self$parse(select)
   self$selection <- union(self$selection,select)
-  return(self)
+  invisible(self)
 }
 
 # Remove contents of another selection from self (remote + assign)
@@ -610,7 +622,7 @@ ve.select.add <- function(select) {
 ve.select.remove <- function(select) {
   select <- self$parse(select)
   self$selection <- setdiff(self$selection,select)
-  return(self)
+  invisible(self)
 }
 
 # Keep only fields that are in both self and select (logical "and")
@@ -618,18 +630,18 @@ ve.select.remove <- function(select) {
 ve.select.and <- function(select) {
   select <- self$parse(select)
   self$selection <- intersect(self$selection,select)
-  return(self)
+  invisible(self)
 }
 
 # 
 ve.select.all <- function() {
   self$selection <- 1:nrow(self$results$modelIndex)
-  return(self)
+  invisible(self)
 }
 
 ve.select.none <- function() {
   self$selection <- integer(NA)
-  return(self)
+  invisible(self)
 }
 
 # Build data.frames based on selected groups, tables and dataset names
@@ -638,7 +650,7 @@ ve.select.extract <- function(
   overwrite=FALSE
 ) {
   # Delegates to the result object, setting its selection in the process
-  return( self$results$extract(saveTo,overwrite,quiet,select=self) )
+  invisible( self$results$extract(saveTo,overwrite,select=self) )
 }
 
 #' Conversion method to turn a VESelection into a vector of selection indices
