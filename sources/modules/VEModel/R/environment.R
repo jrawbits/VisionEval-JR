@@ -112,6 +112,11 @@ getRuntimeParameters <- function(paramNames=NULL) {
 
 # Set the VE runtime directory; for now, only used internally on package startup
 # Could export to allow moving to a different runtime location
+#' Set the runtime direcdtory
+#'
+#' @param Directory a specific directory (relative to getwd()) to use as the runtime
+#' @return The directory that has been selected as the runtime
+#' @export
 setRuntimeDirectory <- function(Directory=NULL) {
   if ( is.null(Directory) ) {
     Directory <- if ( ! exists("ve.runtime",envir=ve.env,inherits=FALSE) ) {
@@ -132,8 +137,9 @@ setRuntimeDirectory <- function(Directory=NULL) {
 }
 
 # Get the runtime directory (ve.runtime)
+#' Get the runtime directory
 #' Return the runtime directory established when VEModel package is loaded or by a later call to
-#'   \code{setRuntimeEnvironment}. If the runtime directory has not yet been set, set it to the
+#'   \code{setRuntimeDirectory}. If the runtime directory has not yet been set, set it to the
 #'   working directory.
 #' @return The ve.runtime directory from the package environment, ve.env
 #' @export

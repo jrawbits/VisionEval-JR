@@ -577,13 +577,33 @@ loadConfiguration <- function( # if all arguments are defaulted, return an empty
   return(Param_ls)
 }
 
-#FIND RUNTIME INPUT FILE FROM PATH
-#=================================
+# FIND FILE ON PATH
+#==================
+#' Find the first instance of a file name on a given path
+#'
+#' \code{findFileOnPath} is used to locate model and scenario inputs from the inputPath. The first
+#' existing file is returned or NA if none exists. If StopOnError is TRUE (the default), an error
+#' message is logged and processing stops.
+#' @param File The name of the file to seek
+#' @param Dir The name of a run parameter specifying a directory relative to Root
+#' @param Root The root from which to build file paths (getwd() by default)
+#' @return the path(s) of files found on all combinations of Root(s), Dir(s) and File(s)
+#' @export
+findFileOnPath <- function(File,Dir,Root=getwd(),onlyExists=TRUE) {
+  dir.file <- character(0)
+  for ( r in Root) for ( d in Dir ) for ( f in File ) dir.file <- c(dir.file, file.path(r,d,f))
+  dir.file <- unique(normalizePath(dir.file,winslash="/",mustWork=FALSE))
+  if ( onlyExists ) dir.file <- dir.file[ file.exists(dir.file) ]
+  return(dir.file) # possibly empty character vector
+}
+
+# FIND RUNTIME INPUT FILE FROM PATH
+#==================================
 #' Find the first instance of the requested runtime file on InputPath
 #'
-#' \code{findRuntimeInputFile} is used to model and scenario inputs from the inputPath.
-#' The first existing file is returned or NA if none exists. If StopOnError is TRUE (the
-#' default), an error message is logged and processing stops.
+#' \code{findRuntimeInputFile} is used to locate model and scenario inputs from the inputPath. The
+#' first existing file is returned or NA if none exists. If StopOnError is TRUE (the default), an
+#' error message is logged and processing stops.
 #'
 #' @param File The name of the file to seek (NOT a run parameter)
 #' @param Dir The name of a run parameter specifying a directory relative to getwd()
@@ -596,21 +616,22 @@ findRuntimeInputFile <- function(File,Dir="InputDir",Param_ls=NULL,StopOnError=T
   inputPath <- getRunParameter("InputPath",Param_ls=Param_ls)
   writeLog(paste("Input path raw:",inputPath,collapse=":"),Level="trace")
   searchDir <- getRunParameter(Dir,Param_ls=Param_ls)
-  searchInDir <- file.path(inputPath,searchDir) # might yield more than one
-  searchInDir <- unique(
-    normalizePath(searchInDir,winslash="/",mustWork=FALSE)
-  )
-  candidates <- character(0)
-  if ( any(!is.na(searchInDir)) && !is.na(File) )  {
-    searchInDir <- searchInDir[!is.na(searchInDir)]
-    candidates <- file.path(searchInDir,File)
-    candidates <- candidates[ file.exists(candidates) ]
-  }
+  candidates <- findFileOnPath( File=File, Dir=searchDir, Root=inputPath )
+#   searchInDir <- file.path(inputPath,searchDir) # might yield more than one
+#   searchInDir <- unique(
+#     normalizePath(searchInDir,winslash="/",mustWork=FALSE)
+#   )
+#   candidates <- character(0)
+#   if ( any(!is.na(searchInDir)) && !is.na(File) )  {
+#     searchInDir <- searchInDir[!is.na(searchInDir)]
+#     candidates <- file.path(searchInDir,File)
+#     candidates <- candidates[ file.exists(candidates) ]
+#   }
   if ( StopOnError && ( length(candidates)==0 || is.na(candidates) ) ) {
     writeLog(paste("Input path:",paste(searchInDir,collapse=":")),Level="trace")
     stop( writeLog(paste("Could not locate",File,"in",searchDir),Level="error") )
   }
-  return(candidates[1]) # if StopOnError==FALSE, return NA if it does not exist
+  return(candidates[1]) # if StopOnError==FALSE, return NA if no matching File was found
 }
 
 #INITIALIZE LOG

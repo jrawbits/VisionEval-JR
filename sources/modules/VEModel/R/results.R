@@ -181,7 +181,7 @@ addDisplayUnits <- function(GTN_df,Param_ls) {
   ConfigDir <- visioneval::getRunParameter("ConfigDir",Param_ls=Param_ls) # relative to ve.runtime
   ParamDir <- visioneval::getRunParameter("ParamDir",Param_ls=Param_ls)   # relative to self$modelDir
   DisplayUnitsFilePath <- visioneval::getRunParameter("DisplayUnitsFile",Param_ls=Param_ls)
-  fn <- normalizePath(file.path(c(ConfigDir,ParamDir),DisplayUnitsFilePath,winslash="/",mustWork=FALSE)
+  fn <- normalizePath(file.path(c(ConfigDir,ParamDir),DisplayUnitsFilePath,winslash="/",mustWork=FALSE))
   if ( ! any(file.exists(fn)) ) {
     visioneval::writeLog( Level="info",
       c("Specified DisplayUnits file does not exist (using default units):",fn)
@@ -190,7 +190,7 @@ addDisplayUnits <- function(GTN_df,Param_ls) {
   } else {
     fn <- fn[1]
   }
-  displayUnits <- try(read.csv(fn),silent=TRUE)   # May fail for various reasons
+  displayUnits <- try(utils::read.csv(fn),silent=TRUE)   # May fail for various reasons
   if ( ! "data.frame" %in% class(displayUnits) ) {
     visioneval::writeLog( Level="warn",
       c(
@@ -256,16 +256,17 @@ ve.results.inputs <- function( fields=FALSE, module="", filename="" ) {
   return( ret.value[order(ret.value$InputDir,ret.value$File),] )
 }
 
-ve.results.units <- function() {
-  # Not implemented yet
+ve.results.units <- function(selected=TRUE) {
+  # selected == FALSE shows units for ALL fields, not just selected
+  # Will apply display units
   NULL
 }
 
 ve.results.extract <- function(
   saveTo=visioneval::getRunParameter("OutputDir",Param_ls=private$RunParam_ls),
   overwrite=FALSE,
-  select=NULL # replaces self$selection if provided
-  convertUnits=TRUE # will convert if display units are present; FALSE not to attempt any conversion
+  select=NULL,            # replaces self$selection if provided
+  convertUnits=TRUE       # will convert if display units are present; FALSE not to attempt any conversion
 ) {
   if ( ! self$valid() ) stop("Model State contains no results.")
   if ( is.null(select) ) select <- self$selection else self$selection <- select
@@ -356,8 +357,8 @@ ve.results.extract <- function(
 
       # Write the files and a metadata file
       for ( table in dataNames ) {
-        write.csv(Data_ls$Data[[table]],file=file.path(saveTo,Files[table]),row.names=FALSE)
-        write.csv(Metadata_ls[[table]],file=sub("\\.csv$",".txt",Files[table]),row.names=FALSE)
+        utils::write.csv(Data_ls$Data[[table]],file=file.path(saveTo,Files[table]),row.names=FALSE)
+        utils::write.csv(Metadata_ls[[table]],file=sub("\\.csv$",".txt",Files[table]),row.names=FALSE)
       }
 
       # Accumulate results list (names on list are "group.table")
@@ -558,12 +559,16 @@ ve.select.parse <- function(select) {
   return( as.integer(NA) )
 }
 
-#' Assign new selection to VESelection
-#'
-#' @param select an object to be made into a VESelection and then assigned to this one
-#' @return the VESelection that was modified
-#' @export
-"<-.VESelection" <- function(select) self$select(select)
+# There's some quirk to completing documentation of this operator as written...
+#   We probably don't need it...
+# #' Assign new selection to VESelection
+# #'
+# #' @usage x <- value
+# #' @param x a VESelection object whose selected fields will be updated by value
+# #' @param value an object to be made into a VESelection and then assigned to this one
+# #' @return the VESelection that was modified
+# #' @export
+# `<-.VESelection` <- function(value) self$select(value)
 
 # Return a reference to this selection, changing its indices if an argument is provided
 ve.select.select <- function(select) {
@@ -655,10 +660,11 @@ ve.select.extract <- function(
 
 #' Conversion method to turn a VESelection into a vector of selection indices
 #'
-#' @param select a VESelection object (or something that can be coerced to one)
+#' @param x a VESelection object (or something that can be coerced to one)
+#' @param ... Additional arguments to support generic signature
 #' @return an integer vector of selected fields
 #' @export
-as.integer.VESelection <- function(select) select$selection
+as.integer.VESelection <- function(x,...) x$selection
 
 # The VESelection R6 class
 # This interoperates with VEResult to keep track of what to print
