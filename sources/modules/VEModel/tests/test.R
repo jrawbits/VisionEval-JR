@@ -90,25 +90,28 @@ test_model <- function(log="warn") {
 }
 
 test_results <- function (log="warn") {
-  model <- openModel("JRSPM")
-  rs <- model$results()
   jr <- openModel("JRSPM")
   sl <- jr$results()$select()
-  takedown()
 
   # Test display units, select speeds, create unit conversion
   un <- rs$list(details=TRUE)[,c("Group","Table","Name","Units")]
   spd <- un[ grepl("MI/",un$Units)&grepl("sp",un$Name,ignore.case=TRUE), ]
   spd$DisplayUnits <- "MI/HR"
-  write.csv(spd,
-    file.path(
+  cat("Writing display_units.csv into ")
+  display_units_file <- file.path(
       jr$modelPath,
       visioneval::getRunParameter("ParamDir",Param_ls=jr$RunParam_ls),
-      visioneval::getRunParameter("DisplayUnitsFileName",Param_ls=jr$RunParam_ls)
+      visioneval::getRunParameter("DisplayUnitsFile",Param_ls=jr$RunParam_ls)
     )
-  )
+  cat(display_units_file,"\n")
+  write.csv(spd,file=display_units_file)
+
   sl$select( with(spd,paste(Group,Table,Name,sep="/")) )
-  sl$add( sl$find("^(Marea|Azone|Bzone)$") )
-  sl$export()                   # Using DISPLAY units
-  sl$export(convertUnits=FALSE) # Using DATASTORE units
+  sl$add( sl$find("^(Marea|Azone|Bzone)$",Group="Years",Table="Marea") )
+  cat("Exporting fields:\n")
+  print(sl$fields())
+  cat("Exporting speed fields using DISPLAY units\n")
+  sl$export(prefix="DisplayUnits")                 # Using DISPLAY units
+  cat("Exporting speed fields using DATASTORE units\n")
+  sl$export(prefix="Datastore",convertUnits=FALSE) # Using DATASTORE units
 }
