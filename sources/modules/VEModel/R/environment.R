@@ -183,3 +183,19 @@ ve.model.setupRunEnvironment <- function(
 
   invisible(ve.model$RunParam_ls)
 }
+
+# FUNCTION TO MAKE A UNIQUE FILE NAME
+#====================================
+#  Get unique file name based on newName in folder newPath
+#  NewPath is the directory it should go in, newName is the name to disambiguate
+getUniqueName <- function(newPath,newName) {
+  newModelPath <- file.path(newPath,newName)
+  tryName <- newName; try <- 1
+  while ( dir.exists(newModelPath) ) {
+    tryName <- paste0(newName,"(",try,")")
+    newModelPath <- file.path(newPath,tryName)
+    try <- try+1
+  }
+  return (newModelPath)
+}
+
