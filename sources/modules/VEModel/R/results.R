@@ -179,21 +179,34 @@ addDisplayUnits <- function(GTN_df,Param_ls) {
   #  units are sought. Always re-open the DisplayUnits file, as it may have changed since the last
   #  run.
   ConfigDir <- visioneval::getRunParameter("ConfigDir",Param_ls=Param_ls) # relative to ve.runtime
-  ParamDir <- visioneval::getRunParameter("ParamDir",Param_ls=Param_ls)   # relative to self$modelDir
+  ParamDir <- visioneval::getRunParameter("ParamDir",Param_ls=Param_ls)   # relative to InputPath
+  InputPath <- visioneval::getRunParameter("InputPath",Param_ls=Param_ls)
+
   DisplayUnitsFile <- visioneval::getRunParameter("DisplayUnitsFile",Param_ls=Param_ls)
-  displayUnits <- visioneval::findFileOnPath(
-    Root=getRuntimeDirectory(),
-    Dir=c(ConfigDir,ParamDir),
-    File=DisplayUnitsFile,onlyExists=FALSE
+  DisplayUnitsFile <- c(
+    visioneval::findFileOnPath(
+      Root=getRuntimeDirectory(),
+      Dir=ConfigDir,
+      File=DisplayUnitsFile,onlyExists=FALSE
+    ),
+    visioneval::findFileOnPath(
+      Root=InputPath,
+      Dir=ParamDir,
+      File=DisplayUnitsFile,onlyExists=FALSE
+    )
   )
-  if ( ! any(file.exists(DisplayUnitsFile)) ) {
+
+  existing <- file.exists(DisplayUnitsFile)
+  if ( ! any(existing) ) {
     visioneval::writeLog( Level="info",
-      c("Specified DisplayUnits file does not exist (using default units):",DisplayUnitsFile)
+      c("Specified DisplayUnits file does not exist (using default units):",paste(DisplayUnitsFile,collapse="; "))
     )
     return( cbind(GTN_df,DisplayUnits=NA,DisplayUnitsFile="None") )
   } else {
-    DisplayUnitsFile <- DisplayUnitsFile[1]
+    DisplayUnitsFile <- DisplayUnitsFile[existing][1]
   }
+  cat("DisplayUnitsFile:\n")
+  print(DisplayUnitsFile)
   displayUnits <- try(utils::read.csv(DisplayUnitsFile),silent=TRUE)   # May fail for various reasons
   if ( ! "data.frame" %in% class(displayUnits) ) {
     visioneval::writeLog( Level="warn",
@@ -279,6 +292,7 @@ ve.results.units <- function(selected=TRUE) {
 
 ve.results.extract <- function(
   saveTo=visioneval::getRunParameter("OutputDir",Param_ls=private$RunParam_ls),
+  prefix = "",            # Label to further distinguish output files
   overwrite=FALSE,
   select=NULL,            # replaces self$selection if provided
   convertUnits=TRUE       # will convert if display units are present; FALSE not to attempt any conversion
@@ -370,16 +384,19 @@ ve.results.extract <- function(
       # group and timeWritten must have one element, dataNames may have many
       # Files will have length(dataNames)
       Files <- paste0(paste(group,dataNames,timeWritten,sep="_"),".csv")
-      existing <- file.exists(file.path(saveTo,Files))
-      for ( file in which(Files[ existing ]) ) {
-        Files[ file ] <- getUniqueName(saveTo,Files[file])
+      if ( ! overwrite ) {
+        existing <- file.exists(file.path(saveTo,Files))
+        for ( file in which(existing) ) {
+          Files[ file ] <- basename(getUniqueName(saveTo,Files[file]))
+        }
       }
       names(Files) <- dataNames;
 
       # Write the files (data = .csv) and a metadata file (meta = .metadata.csv)
       for ( table in dataNames ) {
-        utils::write.csv(Data_ls$Data[[table]],file=file.path(saveTo,Files[table]),row.names=FALSE)
-        utils::write.csv(Metadata_ls[[table]],file=sub("\\.csv$","metadata.csv",Files[table]),row.names=FALSE)
+        fn <- file.path(saveTo,paste0(prefix,Files[table]))
+        utils::write.csv(Data_ls$Data[[table]],file=fn,row.names=FALSE)
+        utils::write.csv(Metadata_ls[[table]],file=sub("\\.csv$",".metadata.csv",fn),row.names=FALSE)
       }
 
       # Accumulate results list (names on list are "group.table")
@@ -673,10 +690,12 @@ ve.select.none <- function() {
 # Build data.frames based on selected groups, tables and dataset names
 ve.select.extract <- function(
   saveTo=visioneval::getRunParameter("OutputDir",Param_ls=private$RunParam_ls),
-  overwrite=FALSE
+  prefix="",
+  overwrite=FALSE,
+  convertUnits=TRUE
 ) {
   # Delegates to the result object, setting its selection in the process
-  invisible( self$results$extract(saveTo,overwrite,select=self) )
+  invisible( self$results$extract(saveTo,prefix=prefix,overwrite,select=self,convertUnits=convertUnits) )
 }
 
 #' Conversion method to turn a VESelection into a vector of selection indices
