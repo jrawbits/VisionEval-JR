@@ -13,7 +13,7 @@ if ( ! requireNamespace("pkgload",quietly=TRUE) ) {
   stop("Missing required package: 'pkgload'")
 }
 if ( ! requireNamespace("visioneval",quietly=TRUE) ) {
-  stop("Missing required package: 'pkgload'")
+  stop("Missing required package: 'visioneval'")
 }
 
 setup <- function(ve.runtime=NULL) {
@@ -109,5 +109,6 @@ test_results <- function (log="warn") {
   )
   sl$select( with(spd,paste(Group,Table,Name,sep="/")) )
   sl$add( sl$find("^(Marea|Azone|Bzone)$") )
-  sl$export() # Should look up display units
+  sl$export()                   # Using DISPLAY units
+  sl$export(convertUnits=FALSE) # Using DATASTORE units
 }

@@ -180,35 +180,40 @@ addDisplayUnits <- function(GTN_df,Param_ls) {
   #  run.
   ConfigDir <- visioneval::getRunParameter("ConfigDir",Param_ls=Param_ls) # relative to ve.runtime
   ParamDir <- visioneval::getRunParameter("ParamDir",Param_ls=Param_ls)   # relative to self$modelDir
-  DisplayUnitsFilePath <- visioneval::getRunParameter("DisplayUnitsFile",Param_ls=Param_ls)
-  fn <- normalizePath(file.path(c(ConfigDir,ParamDir),DisplayUnitsFilePath,winslash="/",mustWork=FALSE))
-  if ( ! any(file.exists(fn)) ) {
+  DisplayUnitsFile <- visioneval::getRunParameter("DisplayUnitsFile",Param_ls=Param_ls)
+  displayUnits <- visioneval::findFileOnPath(
+    Root=getRuntimeDirectory(),
+    Dir=c(ConfigDir,ParamDir),
+    File=DisplayUnitsFile,onlyExists=FALSE
+  )
+  if ( ! any(file.exists(DisplayUnitsFile)) ) {
     visioneval::writeLog( Level="info",
-      c("Specified DisplayUnits file does not exist (using default units):",fn)
+      c("Specified DisplayUnits file does not exist (using default units):",DisplayUnitsFile)
     )
-    return( cbind(GTN_df,DisplayUnits=NA) )
+    return( cbind(GTN_df,DisplayUnits=NA,DisplayUnitsFile="None") )
   } else {
-    fn <- fn[1]
+    DisplayUnitsFile <- DisplayUnitsFile[1]
   }
-  displayUnits <- try(utils::read.csv(fn),silent=TRUE)   # May fail for various reasons
+  displayUnits <- try(utils::read.csv(DisplayUnitsFile),silent=TRUE)   # May fail for various reasons
   if ( ! "data.frame" %in% class(displayUnits) ) {
     visioneval::writeLog( Level="warn",
       c(
         "Error reading DisplayUnits file:",
-        fn,
+        DisplayUnitsFile,
         paste("Error:",conditionMessage(attr(displayUnits,"condition")))
       )
     )
-    return( cbind(GTN_df,DisplayUnits=NA) )
+    return( cbind(GTN_df,DisplayUnits=NA, DisplayUnitsFile="None") )
   }
   if ( ! all( c("Group","Table","Name","DisplayUnits") %in% names(displayUnits) ) ) {
     visioneval::writeLog( Level="warn",
-      c("Specified DisplayUnits file does not have correct columns:",fn,
+      c("Specified DisplayUnits file does not have correct columns:",DisplayUnitsFile,
         paste("Columns:",names(displayUnits),collapse=", ")
       )
     )
-    return( cbind(GTN_df,DisplayUnits=NA) )
+    return( cbind(GTN_df,DisplayUnits=NA, DisplayUnitsFile="None") )
   }
+  displayUnits$DisplayUnitsFile <- DisplayUnitsFile
   displayUnits <- try( merge(GTN_df,displayUnits,by=c("Group","Table","Name"),all.x=TRUE), silent=TRUE )
   if (
     ! "data.frame" %in% class(displayUnits) ||
@@ -222,20 +227,20 @@ addDisplayUnits <- function(GTN_df,Param_ls) {
     visioneval::writeLog( Level="warn",
       c(
         "Error reading DisplayUnits file:",
-        fn,
+        DisplayUnitsFile,
         paste("Error:",displayUnits)
       )
     )
-    return( cbind(GTN_df,DisplayUnits=NA) )
+    return( cbind(GTN_df,DisplayUnits=NA, DisplayUnitsFile="None") )
   }
   # get here with displayUnits being GTN_df, augmented by matching DisplayUnits
-  return(displayUnits)
+  return(displayUnits) # Minimally includes Group, Table, Name, DisplayUnits, DisplayUnitsFile
 }
   
 
 ve.results.inputs <- function( fields=FALSE, module="", filename="" ) {
-  # fields=TRUE, show all names of inputs
-  # fields=FALSE, just show the module, file, input directory
+  # fields=TRUE, show all Datasets that originated as file inputs (lists all columns within input files)
+  # fields=FALSE, just show the module, file, input directory (lists the input files)
   if ( ! self$valid() ) stop("Model has not been run yet.")
 
   if ( ! missing(fields) && fields ) {
@@ -258,8 +263,18 @@ ve.results.inputs <- function( fields=FALSE, module="", filename="" ) {
 
 ve.results.units <- function(selected=TRUE) {
   # selected == FALSE shows units for ALL fields, not just selected
-  # Will apply display units
-  NULL
+  # Transiently attaches DisplayUnits to field list (transient because user
+  #   may be editing the file in this session)
+  # Displays a data.frame for the selected (TRUE) or all (FALSE) fields with
+  #   Group, Table, Name, DisplayUnits, UnitsSource ("Datastore" or DisplayUnitsFilePath)
+  selected <- if ( selected ) self$selection$selection else 1:nrow(self$modelIndex)
+  Units_df <- self$modelIndex[ selected, c("Group","Table","Name","Units") ]
+  Units_df$Source <- "Datastore"
+  Units_df <- addDisplayUnits(Units_df,Param_ls=private$RunParam_ls)
+  displayUnits <- !is.na(Units_df$DisplayUnits)
+  Units_df$Units[ displayUnits ] <- Units_df$DisplayUnits[ displayUnits ]
+  Units_df$Source[ displayUnits ] <- Units_df$DisplayUnitsFile[ displayUnits ]
+  return( Units_df[,c("Group","Table","Name","Units","Source")] )
 }
 
 ve.results.extract <- function(
@@ -352,13 +367,19 @@ ve.results.extract <- function(
       if ( ! is.null(lastChanged) ) {
         timeWritten <- paste(format(lastChanged,"%Y-%m-%d_%H%M"),timeWritten,sep="+")
       }
+      # group and timeWritten must have one element, dataNames may have many
+      # Files will have length(dataNames)
       Files <- paste0(paste(group,dataNames,timeWritten,sep="_"),".csv")
+      existing <- file.exists(file.path(saveTo,Files))
+      for ( file in which(Files[ existing ]) ) {
+        Files[ file ] <- getUniqueName(saveTo,Files[file])
+      }
       names(Files) <- dataNames;
 
-      # Write the files and a metadata file
+      # Write the files (data = .csv) and a metadata file (meta = .metadata.csv)
       for ( table in dataNames ) {
         utils::write.csv(Data_ls$Data[[table]],file=file.path(saveTo,Files[table]),row.names=FALSE)
-        utils::write.csv(Metadata_ls[[table]],file=sub("\\.csv$",".txt",Files[table]),row.names=FALSE)
+        utils::write.csv(Metadata_ls[[table]],file=sub("\\.csv$","metadata.csv",Files[table]),row.names=FALSE)
       }
 
       # Accumulate results list (names on list are "group.table")
