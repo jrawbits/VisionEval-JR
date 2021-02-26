@@ -7,7 +7,11 @@ VE_RUNTESTS?=Default
 VE_EXPRESS?=YES # should be NO, or unset, for standard use
 VE_BRANCH?=$(shell git branch --show-current 2>/dev/null || echo visioneval)
 ifeq ($(OS),Windows_NT)
+<<<<<<< HEAD
   VE_R_VERSION?=4.1.2
+=======
+  VE_R_VERSION?=4.0.5
+>>>>>>> db3ed1bc (Updated to build with VE2001NHTS as merely 'Suggested')
   RTERM:="$(shell scripts/find-R.bat $(VE_R_VERSION))"
   WINDOWS=TRUE
 else
@@ -193,6 +197,16 @@ $(VE_LOGS)/repository.built: $(VE_RUNTIME_CONFIG) scripts/build-repository.R scr
 	@touch $(VE_LOGS)/repository.built
 
 # This rule and the following one rebuild the installed library of dependencies and VE packages
+# Will skip if velib.built is up to date with the repository build and with the script itself
+# Use build-clean to reset velib.built and lib-clean to force complete rebuild of library
+lib: lib-reset lib-build
+
+lib-build: $(VE_LOGS)/velib.built
+
+$(VE_LOGS)/velib.built: $(VE_LOGS)/repository.built scripts/build-velib.R
+	$(RSCRIPT) scripts/build-velib.R
+	@touch $(VE_LOGS)/velib.built
+
 # Will skip if velib.built is up to date with the repository build and with the script itself
 # Use build-clean to reset velib.built and lib-clean to force complete rebuild of library
 lib: lib-reset lib-build

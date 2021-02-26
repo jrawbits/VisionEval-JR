@@ -217,6 +217,7 @@ isAbsolutePath <- function(modelPath,collapse=TRUE) {
 # ===========================
 # Like the R built-in normalizePath, but better handling for missing path components
 # Empty string elements of the path will be treated as "."
+# NOTE: Do we need this? Standard normalize path seems to handle empty path elements...
 # Always does winslash="/"
 normalizePath <- function(
   paths,                # character vector of file paths
@@ -232,7 +233,7 @@ normalizePath <- function(
     }
   ) )
   RootDir <- RootDir[1]
-  if ( nzchar(RootDir ) {
+  if ( nzchar(RootDir) ) {
     relative <- !isAbsolutePath(elements,collapse=FALSE)
     elements[relative] <- paste(RootDir,elements[relative],sep="/")
   }
