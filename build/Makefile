@@ -207,16 +207,6 @@ $(VE_LOGS)/velib.built: $(VE_LOGS)/repository.built scripts/build-velib.R
 	$(RSCRIPT) scripts/build-velib.R
 	@touch $(VE_LOGS)/velib.built
 
-# Will skip if velib.built is up to date with the repository build and with the script itself
-# Use build-clean to reset velib.built and lib-clean to force complete rebuild of library
-lib: lib-reset lib-build
-
-lib-build: $(VE_LOGS)/velib.built
-
-$(VE_LOGS)/velib.built: $(VE_LOGS)/repository.built scripts/build-velib.R
-	$(RSCRIPT) scripts/build-velib.R
-	@touch $(VE_LOGS)/velib.built
-
 # This rule and the following one will check the VE modules and rebuild as needed
 # We'll almost always "build" the modules but only out-of-date stuff gets built
 # (File time stamps are checked in the R scripts)
@@ -245,7 +235,7 @@ docs: docs-reset docs-build
 docs-build: $(VE_LOGS)/docs.built
 
 $(VE_LOGS)/docs.built: $(VE_LOGS)/modules.built $(VE_LOGS)/runtime.built\
-	$(VE_LOGS)/velib.built scripts/build-docs.R scripts/build-inventory.R
+        $(VE_LOGS)/velib.built scripts/build-docs.R scripts/build-inventory.R
 	$(RSCRIPT) scripts/build-docs-framework.R
 	$(RSCRIPT) scripts/build-docs-visual.R
 	$(RSCRIPT) scripts/build-inventory.R
