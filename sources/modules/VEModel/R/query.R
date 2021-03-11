@@ -8,36 +8,38 @@ self=private=NULL
 # VEModel should, when opening query, provide QueryDir for the model
 # TODO: get this to flow better with RunParameter retrieval and in relation to
 #   the VEModel. Basic hierarchy:
-# VEQuery$new(Filename) - open in current directory
+# VEQuery$new(FileName) - open in current directory
 # VEQuery$new(QueryName) - open in current directory; add ".R" suffix if not present to make FileName
 # VEQuery$new(QueryDir) - create a new disambiugated filename for query in QueryDir
-# VEQuery$new(
+# Need to think more carefully about use cases.
+# VEQuery might be used to open a query spec file
 
 # Default query directory will be relative to the working directory
 ve.query.init <- function(
   QueryName=NULL,
   FileName=NULL,
   QuerySpec=NULL,
-  QueryDir=visioneval::getRunParameter("QueryDir")
+  QueryDir=NULL,
+  Param_ls=NULL
 ) {
   if ( is.list(QuerySpec) || "VEQuery" %in% class(QuerySpec) ) {
     # Possibly using default QueryDir/FileName
-    self$load(QuerySpec=QuerySpec)
+    self$load(QuerySpec=QuerySpec,Param_ls=Param_ls)
   } else if ( !is.null(QueryName) ) {
     if ( is.null(FileName) ) {
       FileName <- paste0(QueryName,".VEqry")
     }
-    self$load(FileName,QueryDir=QueryDir,QueryName=QueryName)
-  } # load sets QueryName   
+    self$load(FileName,QueryDir=QueryDir,QueryName=QueryName,Param_ls=Param_ls)
+  } # load sets QueryName
 
   self$QueryDir <- QueryDir;
 
-  if ( length(self$checkResults)>0 ) {
-    visioneval::writeLogMessage("Query specification contains errors")
-  } else {
-    visioneval::writeLogMessage("Loaded Query")
-  }
   self$check()
+  if ( length(self$checkResults)>0 ) {
+    visioneval::writeLogMessage(paste0("Query specification ",self$QueryName," contains Errors"))
+  } else {
+    visioneval::writeLogMessage(paste0("Loaded Query ",self$QueryName))
+  }
   invisible(self$valid())
 }
 
@@ -81,9 +83,7 @@ ve.query.load <- function(FileName=NULL,QueryName=NULL,QueryDir=NULL,QuerySpec=N
   }
   self$QueryName <- QueryName;
 
-  if ( ! file.exists(self$QueryFile) ) {
-    visioneval::writeLogMessage("New Query:",self$QueryName)
-  } else {
+  if ( file.exists(self$QueryFile) ) {
     # Load the query from sourceFile
     ve.model <- visioneval::modelEnvironment() # Don't need to clear ve.model
     sys.source(self$QueryFile,envir=ve.model)
@@ -122,13 +122,13 @@ ve.query.check <- function(verbose=FALSE) {
 
 ve.query.valid <- function() {
   # summarize outcome of last check (as a logical)
-  return( length(self$checkResults)==0 || ! all(!nzchar(self$checkResults)) )
+  return( length(self$checkResults)==0 || all(!nzchar(self$checkResults)) )
 }
 
 ve.query.add <- function(obj,location=0,before=FALSE,after=TRUE) {
   # Really, add or update - if the name(s) of SpecListOrObject is/are already
   #   in QuerySpec, the existing value(s) will be over-written, regardless of location
-  # Default is different from update, which forces all the leftovers to the end.
+  # If you use "update", specs not already present will be ignored with a warning.
 
   # Start by get "obj" in order - make it into another VEQuery, using standard error checking
   qry <- asQueryList(obj)
@@ -195,7 +195,7 @@ ve.query.add <- function(obj,location=0,before=FALSE,after=TRUE) {
 
 ve.query.update <- function(obj) {
   # If it's not already in the QuerySpec, ignore it with a warning
-  qry <- asQueryList(obj)
+  qry <- (obj)
   if ( ! qry$valid() ) {
     msg <- visioneval::writeLogMessage("Invalid VEQuerySpec:")
     visioneval::writeLogMessage(deparse(obj))
@@ -220,8 +220,8 @@ asQueryList <- function(obj) {
     name <- qry.spec$QuerySpec$Name
     loc <- if ( is.null(name) ) 1 else name
     qry <- list()
-    qry[loc] <- qry.spec
-    qry <- VEQuery$new(QuerySpec=qry.spec) # Just default the "environment"
+    qry[[loc]] <- qry.spec
+    qry <- VEQuery$new(QuerySpec=qry)
   } else { # it's another VEQuery (or slice thereof)
     qry <- obj
   }
@@ -289,14 +289,24 @@ ve.query.spec <- function(SpecNameOrPosition) {
   return( private$QuerySpec[[SpecNameOrPosition]] ) # with all the usual caveats about [[
 }
 
-ve.query.print <- function() {
-  # Update for output
-  cat("Model:",self$modelName,"\n")
-  cat("Path:\n")
-  print(self$modelPath)
-  cat("Datastore Type:",self$runParams$DatastoreType,"\n")
-  cat("Status:", self$status,"\n")
-  self$status
+ve.query.print <- function(details=FALSE) {
+  # Consider some other elements like the query name, its file (if any), when it was
+  # last run (available results); see ve.query.results
+  if ( ! self$valid() ) {
+    cat("Valid query with",length(private$QuerySpect),"elements\n")
+  } else if ( length(self$checkResults)>0 ) {
+    cat("Query specification has errors:\n")
+    for ( err in self$checkResults ) {
+      cat(err,"\n")
+    }
+  } else if ( length(private$QuerySpec)==0 ) {
+    cat("No query specifications.\n")
+  } else {
+    print(self$names())
+    if ( details ) {
+      cat("No details available yet...\n")
+    }
+  }
 }
 
 ve.query.getlist <- function(Geography=NULL) {
@@ -337,6 +347,8 @@ ve.query.results <- function() {
   # Maybe cache the data.frames that were computed in the most recent query run?
   # Keep timestamp data, parameters used for the query?
   # Think a bit about the data management needs.
+  # Otherwise, we need to relate this query to the output it
+  # generated and return (at least) the file, if not the data.frames
 }
 
 # @return A character vector with the names of the .csv files containing the computed measures.
@@ -477,6 +489,44 @@ ve.spec.init <- function(other=NULL) {
   }
 }
 
+deepPrint <- function(ell,join=" = ",suffix="\n",newline=TRUE) { # x may be a list
+  result <- if ( is.list(ell) || ( ! is.null(names(ell)) && length(ell)>1 ) ) {
+    index <- if ( !is.null(names(ell)) ) names(ell) else 1:length(ell)
+    if ( newline ) {
+      inner <- "\n"
+      prefix <- paste(rep("   ",2),collapse="",sep=".")
+    } else {
+      inner <- " "
+      prefix = ""
+    }
+    inner <- paste(
+      paste(
+        inner,prefix,
+        unlist(lapply( index,m=ell,
+          FUN=function(n,m) {
+            r <- m[[n]]
+            return(paste0(n,join,deepPrint(r,suffix="",join=":",newline=FALSE)))
+          })
+        ),
+        collapse="",
+        sep=""
+      ),
+      sep=""
+    )
+    paste0(inner,suffix)
+  } else ell
+  return(result)
+}
+
+ve.spec.print <- function() {
+  # TODO, more class-specific result
+  # If function, print its expression
+  # If summarize, print its elements (nicely)
+  dummy <- lapply(names(self$QuerySpec),spec=self$QuerySpec,
+    function(s,spec) { cat("   ",s,"= "); cat(deepPrint(spec[[s]]),"\n") }
+  )
+}
+
 ve.spec.overall.elements <- c(
   "Name", "Description", "Require", "RequireNot", "Function", "Summarize" 
 )
@@ -505,10 +555,11 @@ ve.spec.check <- function(Names=NULL, Clean=TRUE) {
   self$checkResults <- character(0)
   if ( length(self$QuerySpec)==0 ) {
     self$checkResults <- "Empty"
+    return(self)
   }
   nm.test.spec <- names(self$QuerySpec) # may be NULL
   if ( is.null(nm.test.spec) ) {
-    checkResults <- c(checkResults,"Specification list elements are unnamed")
+    self$checkResults <- c(self$checkResults,"Specification list elements are unnamed")
   } else {
     if ( "Name" %in% nm.test.spec ) {
       self$Name <- self$QuerySpec$Name
@@ -579,7 +630,7 @@ ve.spec.check <- function(Names=NULL, Clean=TRUE) {
 }
 
 ve.spec.valid <- function() {
-  return( length(self$checkResults)==0 || ! all(!nzchar(self$checkResults)) )
+  return ( length(self$checkResults)==0 || all(!nzchar(self$checkResults)) )
 }
 
 ve.spec.copy <- function() {
@@ -595,6 +646,9 @@ cleanSpecNames <- function(self)
   return(self)
 }
 
+# TODO: the following is still a mess.
+# Need a function to build a "Summarize" or "Function" sub-spec
+# Then go in and update specific elements
 ve.spec.update <- function(
   # Replaces this QuerySpec from another one
   # See ve.spec.check: can pass a QuerySpec through this with no
@@ -603,30 +657,32 @@ ve.spec.update <- function(
   QuerySpec=list(), # a list or another VEQuerySpec
   Name = NULL,
   Description = NULL,
+  Units = NULL,
   Require = NULL,
   RequireNot = NULL,
   Function = NULL,
-  Summarize = NULL,
+  Summarize = NULL
 
-  # The following are ignored if using Function rather than Summarize
-  Expr = NULL, # Relevant to Summarize or Function
-  Units = NULL, # Rest are Ignored if not Summarize
-  By = NULL,
-  Breaks_ls = NULL,
-  Table = NULL,
-  Key = NULL,
-  Group = NULL
+  # The following are replaced by providing a named list as the Summarize parameter
+  #   Expr = NULL, # Relevant to Summarize or Function
+  #   Units = NULL, # Rest are Ignored if not Summarize
+  #   By = NULL,
+  #   Breaks_ls = NULL,
+  #   Table = NULL,
+  #   Key = NULL,
+  #   Group = NULL
 ) {
   # Then process any overrides for those names
   override <- list(
     Name = Name,
     Description = Description,
+    Units = Units,
     Require = Require,
     RequireNot = RequireNot,
     Function = Function,
     Summarize = Summarize
   )
-  override <- override[ ! sapply(override,is.null()) ]
+  override <- override[ ! sapply(override,is.null) ]
   if ( length(override)>0 ) {
     QuerySpec[ names(override) ] <- override; # replace list elements with named arguments
   }
@@ -639,15 +695,15 @@ ve.spec.update <- function(
 
     # Capture override of summarize elements
     override <- list(
-      Expr = Expr,
-      Units = Units,
-      By = By,
-      Breaks_ls = Breaks_ls,
-      Table = Table,
-      Key = Key,
-      Group = Group
+      Expr      = Summarize$Expr,
+      Units     = Summarize$Units,
+      By        = Summarize$By,
+      Breaks_ls = Summarize$Breaks_ls,
+      Table     = Summarize$Table,
+      Key       = Summarize$Key,
+      Group     = Summarize$Group
     )
-    override <- override[ ! sapply(override,is.null()) ]
+    override <- override[ ! sapply(override,is.null) ]
     if ( length(override)>0 ) {
       summarize_ls <- QuerySpec$Summarize
       summarize_ls[ names(override) ] <- override; # replace list elements
@@ -764,6 +820,7 @@ VEQuerySpec <- R6::R6Class(
   public = list(
     # Methods
     initialize = ve.spec.init,      # Create a VEQuerySpec from a list or parmaeters
+    print = ve.spec.print,          # Display contents of this spec
     check = ve.spec.check,          # Validate the individual query
     setgeo = ve.spec.setgeo,        # Filter query to indicated geography
     update = ve.spec.update,        # Alter elements of the query spec (from a list or parameters)
@@ -772,7 +829,7 @@ VEQuerySpec <- R6::R6Class(
     copy = ve.spec.copy,            # clone this VEQuerySpec
 
     # Data elements
-    CheckResults = "Empty",         # message explaining why VEQuerySpec$valid() returned FALSE, or "" if OK
+    checkResults = "Empty",         # message explaining why VEQuerySpec$valid() returned FALSE, or "" if OK
     QuerySpec = list(),             # The actual specification
     Name = "Unnamed",               # Name of the spec, from its QuerySpec
     CompiledSpec = NULL             # The compiled specification (checked and with derived elements added) see ve.spec.check
