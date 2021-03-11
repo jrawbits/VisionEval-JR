@@ -558,7 +558,7 @@ checkQuerySpec <- function(
       "Required Query Specification elements are missing:",
       paste( reqd,collapse=", ")
     )
-    return( CompiledSpec=QuerySpec, Errors = Errors_ )
+    return( list(CompiledSpec=QuerySpec, Errors = Errors_) )
   }
 
   # Run the original function, but save all the created variables
@@ -734,7 +734,7 @@ checkQuerySpec <- function(
   )
   Errors_ <- CompiledSpec$Errors_
   CompiledSpec["Errors_"] <- NULL # Move Errors out of the spec
-  return( CompiledSpec=CompiledSpec, Errors = Errors_ )
+  return( list(CompiledSpec=CompiledSpec, Errors = Errors_) )
 }
 
 #READ AND SUMMARIZE A DATASET
