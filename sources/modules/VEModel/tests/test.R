@@ -61,12 +61,12 @@ takedown <- function() {
     message("To remove runtime directory:")
     message("unlink('",ve.runtime,"',recursive=TRUE)")
   }
+  loadhistory(".Rhistory") # get rid of rep("n",a.million.times) and other debugging leftovers
 }
 
 rewind <- function() {
   cat("Rewinding...")
   takedown()
-  loadhistory(".Rhistory") # get rid of rep("n",a.million.times) and other debugging leftovers
   setup()
 }
 
@@ -180,7 +180,7 @@ test_query <- function(log="warn") {
     Description = "Daily vehicle miles traveled by households residing in the urban area"
   )
   qry$add(spec)
-  qry$print()
+  qry$print(details=TRUE)
 
   testStep("Names of specifications in added query...")
   print(qry$names())    # List names of QuerySpecifications in order
@@ -211,12 +211,15 @@ test_query <- function(log="warn") {
     )
   )
   print(spec)
-  return("Done testing")
 
-  testStep("Add updated spec to Query...")
+  testStep("Add updated spec to Query and print...")
   qry$add(spec)
   print(qry)
 
+  testStep("Print again with details...")
+  print(qry,details=TRUE)
+
+  return("Done testing")
   testStep("Print query with details...")
   print(qry,details=TRUE)
 
