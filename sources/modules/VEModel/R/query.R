@@ -37,8 +37,6 @@ ve.query.init <- function(
   self$check()
   if ( length(self$checkResults)>0 ) {
     visioneval::writeLogMessage(paste0("Query specification ",self$QueryName," contains Errors"))
-  } else {
-    visioneval::writeLogMessage(paste0("Loaded Query ",self$QueryName))
   }
   invisible(self$valid())
 }
@@ -178,11 +176,20 @@ ve.query.add <- function(obj,location=0,before=FALSE,after=TRUE) {
   namesAfter  <- currentNames [ afterList]
   spec <- qry$getlist() # Check and extract specifications
   specNames   <- names(spec)
-  namesBefore <- namesBefore  [ - which(namesBefore %in% specNames) ]
+  namesAlready <- which(namesBefore %in% specNames)
+  if ( length(namesAlready) > 0 ) namesBefore <- namesBefore  [ namesAlready ]
+  namesAlready <- which(namesAfter %in% specNames)
+  if ( length(namesAlready) > 0 ) namesBefore <- namesBefore  [ namesAlready ]
   namesAfter  <- namesAfter   [ - which(namesAfter  %in% specNames) ]
 
   # Then use the names to index the lists and create a new list, replacing the existing
-  private$QuerySpec <- c( private$QuerySpec[namesBefore], spec, private$QuerySpec[namesAfter] )
+  before <- private$QuerySpec[namesBefore]
+  newSpec <- list()
+  if ( ! is.na(before) ) newSpec <- before
+  newSpec <- c( newSpec, spec )
+  after <- private$QuerySpec[namesAfter]
+  if ( ! is.na(after) ) newSpec <- c(newSpec,private$QuerySpec[namesBefore])
+  private$QuerySpec <- newSpec
 
   specNames <- names(private$QuerySpec)
   self$check() # probably all we catch here are pre-existing errors and function order problems
@@ -292,8 +299,12 @@ ve.query.spec <- function(SpecNameOrPosition) {
 ve.query.print <- function(details=FALSE) {
   # Consider some other elements like the query name, its file (if any), when it was
   # last run (available results); see ve.query.results
-  if ( ! self$valid() ) {
-    cat("Valid query with",length(private$QuerySpect),"elements\n")
+  if ( self$valid() ) {
+    cat("Valid query with",length(private$QuerySpec),"elements\n")
+    if ( length(private$QuerySpec) ) {
+      print(self$names())
+      if ( details ) for ( spec in private$QuerySpec ) print(spec)
+    }
   } else if ( length(self$checkResults)>0 ) {
     cat("Query specification has errors:\n")
     for ( err in self$checkResults ) {
@@ -302,10 +313,7 @@ ve.query.print <- function(details=FALSE) {
   } else if ( length(private$QuerySpec)==0 ) {
     cat("No query specifications.\n")
   } else {
-    print(self$names())
-    if ( details ) {
-      cat("No details available yet...\n")
-    }
+    cat("Uninitialized query.\n")
   }
 }
 
@@ -489,7 +497,7 @@ ve.spec.init <- function(other=NULL) {
   }
 }
 
-deepPrint <- function(ell,join=" = ",suffix="\n",newline=TRUE) { # x may be a list
+deepPrint <- function(ell,join=" = ",suffix="",newline=TRUE) { # x may be a list
   result <- if ( is.list(ell) || ( ! is.null(names(ell)) && length(ell)>1 ) ) {
     index <- if ( !is.null(names(ell)) ) names(ell) else 1:length(ell)
     if ( newline ) {
@@ -525,6 +533,7 @@ ve.spec.print <- function() {
   dummy <- lapply(names(self$QuerySpec),spec=self$QuerySpec,
     function(s,spec) { cat("   ",s,"= "); cat(deepPrint(spec[[s]]),"\n") }
   )
+  cat("\n")
 }
 
 ve.spec.overall.elements <- c(
