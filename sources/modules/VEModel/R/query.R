@@ -186,7 +186,6 @@ ve.query.add <- function(obj,location=0,before=FALSE,after=TRUE) {
     } else {
       character(0)
     }
-    browser(expr=(after==before))
 
     specNames   <- names(spec)
 
@@ -215,7 +214,7 @@ ve.query.add <- function(obj,location=0,before=FALSE,after=TRUE) {
 
 ve.query.update <- function(obj) {
   # If it's not already in the QuerySpec, ignore it with a warning
-  qry <- (obj)
+  qry <- VEQuery$new(obj)
   if ( ! qry$valid() ) {
     msg <- visioneval::writeLogMessage("Invalid VEQuerySpec:")
     visioneval::writeLogMessage(deparse(obj))
@@ -494,12 +493,15 @@ ve.spec.init <- function(other=NULL) {
   if ( ! is.null(other) ) {
     # A bare VEQuerySpec can be filled in with VEQuerySpec$update
     if ( "VEQuerySpec" %in% class(other) ) {
-      self$QuerySpec <- other$QuerySpec
+      # Get the list from the QuerySpec
+      self$QuerySpec <- other$QuerySpec; # it's just a standard R list
       self$check()
     } else if ( is.list(other) ) {
+      # If it's a list, assume it's a list of specifications
       self$QuerySpec <- other
       self$check()
     } else {
+      # Can't figure out what to do - an error
       self$QuerySpec <- list()
       self$checkResults <- c("Unknown source:",deparse(other))
     }
@@ -620,11 +622,11 @@ ve.spec.check <- function(Names=NULL, Clean=TRUE) {
           )
         }
       }
-      checkedSpec <- visioneval::checkQuerySpec(self$QuerySpec)
+      checkedSpec <- visioneval::checkQuerySpec(QuerySpec=self$QuerySpec$Summarize)
       if ( length(checkedSpec$Errors)>1 || any(nzchar(checkedSpec$Errors)) ) {
         self$checkResults <- c(
           self$checkResults,
-          msg<-paste("Error(s) in Query Specification:",self$Name),
+          msg<-paste("Error(s) in Query Specification:",self$Name,"\n"),
           checkedSpec$Errors
         )
       }
