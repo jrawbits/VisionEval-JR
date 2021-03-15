@@ -54,7 +54,7 @@ ve.query.save <- function(saveTo=TRUE) {
 }
 
 ve.query.load <- function(FileName=NULL,QueryName=NULL,QueryDir=NULL,QuerySpec=NULL,Param_ls=NULL) {
-  # Load from a list, if provided
+  # Load from a list of VEQuerySpec's, if provided
   if ( ! is.null(QuerySpec) ) {
     private$QuerySpec <- QuerySpec
     return( self$check() )
@@ -128,70 +128,83 @@ ve.query.add <- function(obj,location=0,before=FALSE,after=TRUE) {
   #   in QuerySpec, the existing value(s) will be over-written, regardless of location
   # If you use "update", specs not already present will be ignored with a warning.
 
-  # Start by get "obj" in order - make it into another VEQuery, using standard error checking
-  qry <- asQueryList(obj)
+  # Start by getting "obj" in order - make it into a new VEQuery, using standard error checking
+  qry <- asQuery(obj)
   if ( ! qry$valid() ) {
     msg <- c("Cannot add to query:",qry$checkResults)
     visioneval::writeLogMessage( c(msg,deparse(obj)) )
     stop(msg)
   }
-
   # Now validate and interpret "location", "before" and "after"
-  currentNames <- names(private$QuerySpec)
+  currentSpec <- self$getlist() # clone existing spec list
+  currentNames <- names(currentSpec)
   nameLen <- length(currentNames)
-  if ( is.character(location) ) {
-    if ( ! location %in% currentNames ) {
-      stop(visioneval::writeLogMessage("Location is not in current QuerySpec"))
+
+  spec <- qry$getlist() # get spec list by cloning it
+  if ( nameLen == 0 ) { # Already have query specifications
+    newSpec <- spec
+  } else {
+    if ( is.character(location) ) {
+      if ( ! location %in% currentNames ) {
+        stop(visioneval::writeLogMessage("Location is not in current QuerySpec"))
+      } else {
+        location <- which(currentNames %in% location)[1] # first instance of name in specification
+      }
+    }
+    if ( ! is.numeric(location) ) { # invalid or NULL location just appends at the end
+      location <- nameLen
+      before <- ! ( after <- TRUE ) # before is FALSE, after is TRUE
+    } else if ( before ) after <- FALSE # if before, then not after
+
+    location <- if ( location < 1 ) {
+      1
+    } else if ( location > nameLen ) {
+      nameLen
     } else {
-      location <- which(currentNames %in% location)[1] # first instance of name in specification
+      location
+    }
+
+    # adjust list locations to respect before and after
+    # location is the first position in namesAfter
+
+    namesBefore <- if ( before && location==1 ) {
+      character(0)
+    } else if ( before ) { # location > 1
+      currentNames[1:(location-1)]
+    } else if ( after ) {
+      currentNames[1:location]
+    } else {
+      character(0)
+    }
+
+    namesAfter <- if ( after && location==nameLen ) {
+      character(0)
+    } else if ( before ) {
+      currentNames[location:nameLen]
+    } else if ( after ) {
+      currentNames[(location+1):nameLen]
+    } else {
+      character(0)
+    }
+    browser(expr=(after==before))
+
+    specNames   <- names(spec)
+
+    namesAlready <- which(namesBefore %in% specNames)
+    if ( length(namesAlready) > 0 ) namesBefore <- namesBefore  [ -namesAlready ]
+    namesAlready <- which(namesAfter %in% specNames)
+    if ( length(namesAlready) > 0 ) namesAfter <- namesAfter  [ -namesAlready ]
+
+    # Then use the names to index the lists and create a new list, replacing the existing
+
+    newSpec <- if ( length(namesBefore)>0 ) currentSpec[namesBefore] else list()
+    newSpec <- c( newSpec, spec )
+    if ( length(namesAfter)>0 ) {
+      newSpec <- c(newSpec,currentSpec[namesAfter])
     }
   }
-  if ( ! is.numeric(location) ) { # invalid or NULL location just appends at the end
-    location <- length(private$QuerySpec)
-    before <- ! ( after <- TRUE )
-  }
-  
-  location <- if ( location < 1 ) 1 else if ( location > nameLen ) nameLen else location;
-
-  # adjust list locations to respect before and after
-  if ( before ) {
-    location <- location - 1
-  } else if ( after ) {
-    location <- location + 1 # 
-  }
-  
-  if ( location > nameLen ) {
-    beforeList <- 1:nameLen
-    afterList <- 0
-  } else if ( location < 1 ) {
-    beforeList <- 0
-    afterList <- 1:nameLen
-  } else {
-    beforeList <- 1:location
-    afterList <- (location+1):nameLen
-  }
-
-  # Slice the names rather than the lists themselves
-  namesBefore <- currentNames [beforeList]
-  namesAfter  <- currentNames [ afterList]
-  spec <- qry$getlist() # Check and extract specifications
-  specNames   <- names(spec)
-  namesAlready <- which(namesBefore %in% specNames)
-  if ( length(namesAlready) > 0 ) namesBefore <- namesBefore  [ namesAlready ]
-  namesAlready <- which(namesAfter %in% specNames)
-  if ( length(namesAlready) > 0 ) namesBefore <- namesBefore  [ namesAlready ]
-  namesAfter  <- namesAfter   [ - which(namesAfter  %in% specNames) ]
-
-  # Then use the names to index the lists and create a new list, replacing the existing
-  before <- private$QuerySpec[namesBefore]
-  newSpec <- list()
-  if ( ! is.na(before) ) newSpec <- before
-  newSpec <- c( newSpec, spec )
-  after <- private$QuerySpec[namesAfter]
-  if ( ! is.na(after) ) newSpec <- c(newSpec,private$QuerySpec[namesBefore])
   private$QuerySpec <- newSpec
 
-  specNames <- names(private$QuerySpec)
   self$check() # probably all we catch here are pre-existing errors and function order problems
   if ( length(self$checkResults)>0 ) {
     visioneval::writeLogMessage("QuerySpec contains errors")
@@ -220,16 +233,16 @@ ve.query.update <- function(obj) {
   return(self)
 }
 
-asQueryList <- function(obj) {
+asQuery <- function(obj) {
   if ( ! "VEQuery" %in% class(obj) ) {
-    # The next step could fail spectacularly, but we'll recover if possible
-    qry.spec <- if ( ! "VEQuerySpec" %in% class(obj) ) VEQuerySpec$new(obj) else obj
+    # If it's not a query, assume it's a single object and clone it
+    qry.spec <- VEQuerySpec$new(obj)
     name <- qry.spec$QuerySpec$Name
     loc <- if ( is.null(name) ) 1 else name
     qry <- list()
     qry[[loc]] <- qry.spec
     qry <- VEQuery$new(QuerySpec=qry)
-  } else { # it's another VEQuery (or slice thereof)
+  } else {
     qry <- obj
   }
   qry$check()
@@ -243,10 +256,10 @@ ve.query.remove <- function(SpecToRemove) {
   if ( any(is.na(nm.ext) | is.null(nm.ext) | !nzchar(names(extract))) ) {
     stop(visioneval::writeLogMessage("VEQuery specification list has unnamed elements."))
   }
-  private$QuerySpec[names(extract)] <- NULL
+  private$QuerySpec[nm.ext] <- NULL
   invisible(
     VEQuery$new(
-      QuerySpec=extract,
+      QuerySpec=private$QuerySpec,
       QueryDir=self$QueryDir
     )
   )
@@ -254,9 +267,9 @@ ve.query.remove <- function(SpecToRemove) {
 
 ve.query.assign <- function(obj) {
   # replace the query spec with the other object's query spec
-  qry <- asQueryList(obj)
+  qry <- asQuery(obj)
   if ( qry$valid() ) {
-    private$QuerySpec <- qry$getlist() # just replace what's there
+    private$QuerySpec <- qry$getlist() # just replace what's there with copy of other
   } else {
     msg <- "Cannot assign invalid query"
     visioneval::writeLogMessage( c(msg,qry$checkResults) )
@@ -319,38 +332,35 @@ ve.query.print <- function(details=FALSE) {
 
 ve.query.getlist <- function(Geography=NULL) {
   ################################
-  # Low-level function to get list to run
-  # Original List Sanity Checking (move some to $check)
-  # ALSO DOES Geography Processing/Filtering (push down individual spec operations to VEQuerySpec)
+  # Low-level function to get a copy of the specification list to run
   # We'll use this to get the actual list used internally to perform $run
   # The internal VEQUery$QuerySpec is a list of VEQuerySpec objects
   # The framework query function wants a regular R list
   ################################
   
   self$check()
+  newSpec <- lapply(private$QuerySpec,function(s) VEQuerySpec$new(s))
   if ( ! is.null(Geography) ) {
-    specProcessed <- list()
+    validity <- list()
     specResults <- character(0)
-    for ( test.spec in private$QuerySpec ) {
+    for ( test.spec in newSpec ) {
       test.spec <- test.spec$setgeo(Geography)
-      if ( ! test.spec$valid() ) {
+      validity <- if ( ! test.spec$valid() ) {
         checkResults <- c(checkResults,
-          paste0(test.spec$name(),": ",test.spec$CheckResults)
+          paste0(test.spec$name(),": ",test.spec$CheckResults," (removed)")
         )
-      } else {
-        specProcessed[[test.spec$name()]] <- test.spec$QuerySpec; # the raw list
-      }
+        append(validity,FALSE)
+      } else append(validity,TRUE)
     }
-    if ( length(specProcessed) == 0 ) {
-      checkResults <- c(checkResults,"No valid measure specifications provided.")
+    if ( length(checkResults)>0 ) {
+      newSpec <- newSpec[validity] # Remove any invalid elements from newSpec
+      cat("Specifications invalid for Geography",Geography,":\n")
+      cat(checkResults,collapse="\n")
     }
-    self$checkResults <- checkResults
-    return( specProcessed )
-  } else {
-    return( private$QuerySpec )
   }
+  return( newSpec )
 }
-
+  
 ve.query.results <- function() {
   # Maybe cache the data.frames that were computed in the most recent query run?
   # Keep timestamp data, parameters used for the query?
@@ -483,7 +493,6 @@ ve.spec.init <- function(other=NULL) {
   # Create from another query spec, or a list object, or bare
   if ( ! is.null(other) ) {
     # A bare VEQuerySpec can be filled in with VEQuerySpec$update
-    # If building from another object (copy constructor), just
     if ( "VEQuerySpec" %in% class(other) ) {
       self$QuerySpec <- other$QuerySpec
       self$check()
@@ -526,23 +535,28 @@ deepPrint <- function(ell,join=" = ",suffix="",newline=TRUE) { # x may be a list
   return(result)
 }
 
+specOverallElements <- c(
+  "Name", "Description", "Units", "Function", "Summarize", "Require", "RequireNot"
+)
+
+specSummarizeElements <- c(
+  "Expr", "Units", "By", "Breaks_ls", "Table", "Key", "Group"
+)
+
 ve.spec.print <- function() {
   # TODO, more class-specific result
   # If function, print its expression
   # If summarize, print its elements (nicely)
-  dummy <- lapply(names(self$QuerySpec),spec=self$QuerySpec,
-    function(s,spec) { cat("   ",s,"= "); cat(deepPrint(spec[[s]]),"\n") }
-  )
-  cat("\n")
+  if ( ! self$valid() ) {
+    cat("Specification is not valid:\n")
+    cat(self$checkResults,collapse="\n")
+  } else {
+    nm <- specOverallElements[ specOverallElements %in% names(self$QuerySpec) ]
+    dummy <- lapply(nm,spec=self$QuerySpec,
+      function(s,spec) { cat("   ",s,"= "); cat(deepPrint(spec[[s]]),"\n") }
+    )
+  }
 }
-
-ve.spec.overall.elements <- c(
-  "Name", "Description", "Require", "RequireNot", "Function", "Summarize" 
-)
-
-ve.spec.summarize.elements <- c(
-  "Expr", "Units", "By", "Breaks_ls", "Table", "Key", "Group"
-)
 
 # modeled after helpers in visioneval core package
 # extract names from a call or expression
@@ -580,9 +594,9 @@ ve.spec.check <- function(Names=NULL, Clean=TRUE) {
       self$checkResults <- c(self$checkResults,paste(self$Name,"Specification"))
     }
     if ( Clean ) {
-      self$QuerySpec[ ! nm.test.spec %in% ve.spec.overall.elements] <- NULL
+      self$QuerySpec[ ! nm.test.spec %in% specOverallElements] <- NULL
     } else {
-      have.names <- nm.test.spec %in% ve.spec.overall.elements
+      have.names <- nm.test.spec %in% specOverallElements
       spec.valid <- length(have.names)>0 && all(have.names)
       if ( ! spec.valid ) {
         self$checkResults <- c(
@@ -595,9 +609,9 @@ ve.spec.check <- function(Names=NULL, Clean=TRUE) {
     if ( "Summarize" %in% names(self$QuerySpec) ) { # Functions are checked by VEQuery$check
       nm.test.summarize <- names(self$QuerySpec$Summarize)
       if ( Clean ) { # Remove unknown names from Specification
-        self$QuerySpec$Summarize[ ! nm.test.summarize %in% ve.spec.summarize.elements ] <- NULL
+        self$QuerySpec$Summarize[ ! nm.test.summarize %in% specSummarizeElements ] <- NULL
       } else {
-        have.names <- nm.test.summarize %in% ve.spec.summarize.elements;
+        have.names <- nm.test.summarize %in% specSummarizeElements;
         spec.valid <- length(have.names)>0 && all(have.names)
         if ( ! spec.valid ) {
           self$checkResults <- c(
@@ -648,9 +662,9 @@ ve.spec.copy <- function() {
 
 cleanSpecNames <- function(self)
 {
-  self$QuerySpec[ ! names(self$QuerySpec) %in% ve.spec.overall.elements ] <- NULL
+  self$QuerySpec[ ! names(self$QuerySpec) %in% specOverallElements ] <- NULL
   if ( "Summarize" %in% names(self$QuerySpec) ) {
-    self$QuerySpec$Summarize[ ! names(self$QuerySpec$Summarize) %in% ve.spec.summarize.elements ] <- NULL
+    self$QuerySpec$Summarize[ ! names(self$QuerySpec$Summarize) %in% specSummarizeElements ] <- NULL
   }
   return(self)
 }
