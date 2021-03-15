@@ -227,7 +227,6 @@ test_query <- function(log="warn") {
   print(spec)
 
   testStep("Add spec details to bare query using $update...")
-  debug(visioneval::checkQuerySpec)
   spec$update(
     Name = "UrbanHhDvmt_MixNbrhd",
     Description = "Daily vehicle miles traveled by households residing in mixed use in the urban area",
@@ -245,11 +244,8 @@ test_query <- function(log="warn") {
     )
   )
   cat("Updated query is valid (TRUE): ")
-  print(spec$valid())   # Should return FALSE
+  print(spec$valid())   # Should return TRUE
   print(spec)
-  undebug(visioneval::checkQuerySpec)
-
-  return("Test Done")
 
   testStep("Add updated spec to Query and print...")
   qry$add(spec)
@@ -261,11 +257,54 @@ test_query <- function(log="warn") {
   testStep("Print query with details...")
   print(qry,details=TRUE)
 
-  testStep("Copy the updated query spec and adjust the copy with update...")
+  testStep("Complete the initial query by adding two more 'Summarize' specs...")
 
-  testStep("Complete the initial query by adding one more 'Summarize'...")
-
+  spec <- list(
+    list(
+      Name = "UrbanVanDvmt",
+      Summarize = list(
+        Expr = "sum(VanDvmt)",
+        Units = c(
+          VanDvmt = "MI/DAY",
+          Marea = ""
+        ),
+        By = "Marea",
+        Table = "Marea"
+      ),
+      Units = "Miles per day",
+      Description = "Daily vehicle miles traveled by on-demand transit vans in the Urban area."
+    ),
+    list(
+      Name = "UrbanComSvcDvmt",
+      Summarize = list(
+        Expr = "sum(ComSvcUrbanDvmt)",
+        Units = c(
+          ComSvcUrbanDvmt = "MI/DAY",
+          Marea = ""
+        ),
+        By = "Marea",
+        Table = "Marea"
+      ),
+      Units = "Miles per day",
+      Description = "Commercial service vehicle daily vehicle miles traveled attributable to the demand of households and businesses located in the urban area"
+    )
+  )
+  qry$add(spec)
+  
   testStep("Add a 'Function' query specification...")
+
+  spec <- VEQuerySpec$new()
+  spec$update(QuerySpec=list(
+      Name = "UrbanLdvDvmt",
+      Function = "UrbanHhDvmt + UrbanVanDvmt + UrbanComSvcDvmt",
+      Units = "Miles per day",
+      Description = paste0("Sum of daily vehicle miles traveled by households residing in the urban area,\n",
+      "commercial service travel attributable to the demand of urban area households and businesses,\n",
+      "and on-demand transit van travel in the urban area.")
+    )
+  )
+  cat("Function spec is valid (TRUE):"); print(spec$valid())
+  print(spec)
 
   testStep("Save the query and see it in the directory...")
 
@@ -281,4 +320,5 @@ test_query <- function(log="warn") {
   # Throw some additional specific broken queries at it to see if errors are correct.
 }
 
+# Now set it all up
 rewind()

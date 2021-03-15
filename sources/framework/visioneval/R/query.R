@@ -430,7 +430,7 @@ getOperands <- function(AST) {
   if (length(AST) == 1) {
     if (isOperand(AST)) deparse(AST)
   } else {
-    unlist(lapply(AST, function(x) Recall(x)))
+    unlist(lapply(AST, function(x) getOperands(x)))
   }
 }
 # Recursive function to get functions in an expression
@@ -438,7 +438,7 @@ getFunctions <- function(AST) {
   if (length(AST) == 1) {
     if (isFunction(AST)) deparse(AST)
   } else {
-    unlist(lapply(AST, function(x) Recall(x)))
+    unlist(lapply(AST, function(x) getFunctions(x)))
   }
 }
 # Recursive function to get operators in an expression
@@ -446,7 +446,7 @@ getOperators <- function(AST) {
   if (length(AST) == 1) {
     if (isOperator(AST)) deparse(AST)
   } else {
-    unlist(lapply(AST, function(x) Recall(x)))
+    unlist(lapply(AST, function(x) getOperators(x)))
   }
 }
 
@@ -520,8 +520,6 @@ getOperators <- function(AST) {
 #'   and the each value is a character vector containing the names of the tables
 #'   to be joined with the named key. Only the following keys may be used to
 #'   join table datasets: 'Marea', 'Azone', 'Bzone', 'HhId'.
-#' @param Group a string identifying the datastore group where the dataset is
-#'   located.
 #' @param QuerySpec an optional named list whose elements have the same possible
 #'   names as the other parameters of this function. If other parameters are also
 #'   provided, their values will replace the ones in this list. So this function
@@ -539,24 +537,23 @@ checkQuerySpec <- function(
     Breaks_ls = NULL,
     Table = NULL,
     Key = NULL,
-    Group = NULL,
     QuerySpec = list()
   ) {
 
   # Based on QuerySpec, override with named function parameters
   params <- list( Expr = Expr, Units = Units,
     By = By, Breaks_ls = Breaks_ls, Table = Table,
-    Key = Key, Group = Group
+    Key = Key
   )
   params <- params[ ! sapply(params,is.null) ]
-  QuerySpec[ names(params) ] <- params;
+  if ( length(params) > 0 ) QuerySpec[ names(params) ] <- params;
 
   # By, Breaks_ls and Key are optional
-  # Expr, Units, Table, and Group are required
-  if ( ! all( (reqd<-c("Expr","Units","Table","Group")) %in% names(QuerySpec)) ) {
+  # Expr, Units, and Table are required
+  if ( ! all( found<-((reqd<-c("Expr","Units","Table")) %in% names(QuerySpec))) ) {
     Errors_ <- c(
       "Required Query Specification elements are missing:",
-      paste( reqd,collapse=", ")
+      paste( reqd[!found],collapse=", ")
     )
     return( list(CompiledSpec=QuerySpec, Errors = Errors_) )
   }
@@ -864,7 +861,7 @@ function(
   checkedSpec <- checkQuerySpec(
     Expr=Expr,Units=Units,
     By=By, Breaks_ls=Breaks_ls,
-    Table=Table,Key=Key,Group=Group,
+    Table=Table,Key=Key,
     QuerySpec
   )
 
@@ -877,6 +874,9 @@ function(
     stop(msg)
   }
   CompiledSpec <- checkedSpec$CompiledSpec;
+  if ( !is.null(Group) && ! "Group" %in% names(CompiledSpec) ) {
+    CompiledSpec$Group <- Group
+  }
 
   # Obtain the Datasets needed to run the query
   Datasets <- getQueryDatasets(CompiledSpec, QueryPrep_ls)
