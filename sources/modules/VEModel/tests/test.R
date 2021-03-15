@@ -184,16 +184,50 @@ test_query <- function(log="warn") {
 
   testStep("Names of specifications in added query...")
   print(qry$names())    # List names of QuerySpecifications in order
-  testStep("Print function for added query...")
-  print(class(qry))
+  testStep("Print function for added queries...")
+  print(qry)
+
+  testStep("Re-add a query at the beginning of the list")
+  print(qry)
+  spec <- VEQuerySpec$new(spec)
+  spec <- spec$update(Name="UrbanHhDvmt_before")
+  qry$add(spec,before=TRUE) # Should be placed at location=1 (first element); existing list after
+  cat("Before goes at beginning\n")
+  print(qry)
+  spec <- VEQuerySpec$new(spec)
+  spec <- spec$update(Name="UrbanHhDvmt_loc2")
+  qry$add(spec,location=2,before=TRUE) # should put loc2 in between "before" and original
+  cat("loc2 goes between 'before' and original\n")
+  print(qry)
+  spec <- VEQuerySpec$new(spec)
+  spec <- spec$update(Name="UrbanHhDvmt_loc45")
+  qry$add(spec,location=45) # should put loc45 at the end
+  cat("loc45 goes at end\n")
+  print(qry)
+  spec <- VEQuerySpec$new(spec)
+  spec <- spec$update(Name="UrbanHhDvmt_loc0")
+  qry$add(spec,location=0)  # should put loc0 "after" first element: 2nd position
+  cat("loc0 goes after first element\n")
+  print(qry)
+
+  testStep("Remove test queries...")
+  cat("Removing:\n")
+  print( nm <- qry$names()[1:3] )
+  qry <- qry$remove(nm) # remove by name (bye-bye before,loc2 and loc0)
+  print(qry)
+  cat("Removing:\n")
+  print(c("2",qry$names()[2]))
+  qry <- qry$remove(2) # remove by position (bye-bye loc45)
   print(qry)
 
   testStep("Construct bare query...")
   spec <- VEQuerySpec$new()
-  cat("Bare query is valid: ")
+  cat("Bare query is valid (FALSE): ")
   print(spec$valid())   # Should return FALSE
+  print(spec)
 
   testStep("Add spec details to bare query using $update...")
+  debug(visioneval::checkQuerySpec)
   spec$update(
     Name = "UrbanHhDvmt_MixNbrhd",
     Description = "Daily vehicle miles traveled by households residing in mixed use in the urban area",
@@ -210,7 +244,12 @@ test_query <- function(log="warn") {
       Table = "Household"
     )
   )
+  cat("Updated query is valid (TRUE): ")
+  print(spec$valid())   # Should return FALSE
   print(spec)
+  undebug(visioneval::checkQuerySpec)
+
+  return("Test Done")
 
   testStep("Add updated spec to Query and print...")
   qry$add(spec)
@@ -219,7 +258,6 @@ test_query <- function(log="warn") {
   testStep("Print again with details...")
   print(qry,details=TRUE)
 
-  return("Done testing")
   testStep("Print query with details...")
   print(qry,details=TRUE)
 
