@@ -318,11 +318,15 @@ test_query <- function(log="warn") {
   cat("Name; "); print(qry$QueryName)
   cat("Path: "); print(qry$QueryFile)
 
+  testStep("Save a copy of the query and fix its extension...")
+
   qry$save("Copy-Query.R") # Essentially as "Save As"
   cat("Saved values in renamed query...\n")
   cat("Directory: "); print(qry$QueryDir)
   cat("Name; "); print(qry$QueryName)
   cat("Path: "); print(qry$QueryFile)
+
+  return("Test Done")
 
   testStep("Model QueryDir contents...")
 

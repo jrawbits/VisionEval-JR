@@ -918,10 +918,13 @@ ve.model.query <- function(QueryName=NULL,FileName=NULL) {
   # Get the Query directory for the model
   QueryDir <- visioneval::getRunParameter("QueryDir",Param_ls=self$RunParam_ls)
   if ( all(is.null(c(QueryName,FileName))) ) {
-    cat("Available Queries:\n")
     QueryPath <- file.path(self$modelPath,QueryDir)
-    if ( ! dir.exists(QueryPath) ) QueryPath <- self$modelPath
-    queries <- dir(QueryPath,pattern="\\.VEQry$")
+    if ( ! dir.exists(QueryPath) ) QueryPath <- self$modelPath;
+#     cat("QueryDir:"); print(QueryDir)
+#     cat("Query Directory:"); print(QueryPath)
+#     cat("Query Directory Exists:"); print(dir.exists(QueryPath))
+#     cat("Available Queries:\n")
+    queries <- dir(QueryPath,pattern="\\.VEqry$",ignore.case=TRUE)
     if ( length(queries)==0 ) queries <- "No queries defined"
     print(queries)
     return(NULL)
