@@ -5,34 +5,38 @@
 
 self=private=NULL
 
-# VEModel should, when opening query, provide QueryDir for the model
-# TODO: get this to flow better with RunParameter retrieval and in relation to
-#   the VEModel. Basic hierarchy:
-# VEQuery$new(FileName) - open in current directory
-# VEQuery$new(QueryName) - open in current directory; add ".R" suffix if not present to make FileName
-# VEQuery$new(QueryDir) - create a new disambiugated filename for query in QueryDir
-# Need to think more carefully about use cases.
-# VEQuery might be used to open a query spec file
-
 # Default query directory will be relative to the working directory
 ve.query.init <- function(
   QueryName=NULL,
   FileName=NULL,
   QuerySpec=NULL,
   QueryDir=NULL,
+  ModelPath=NULL,
   Param_ls=NULL
 ) {
+  # QueryDir, if provided, should be relative to ModelPath (default ve.runtime)
   if ( is.list(QuerySpec) || "VEQuery" %in% class(QuerySpec) ) {
     # Possibly using default QueryDir/FileName
     self$load(QuerySpec=QuerySpec,Param_ls=Param_ls)
-  } else if ( !is.null(QueryName) ) {
-    if ( is.null(FileName) ) {
-      FileName <- paste0(QueryName,".VEqry")
-    }
-    self$load(FileName,QueryDir=QueryDir,QueryName=QueryName,Param_ls=Param_ls)
-  } # load sets QueryName
+  }
 
-  self$QueryDir <- QueryDir;
+  # If ModelPath provided (as a VEModel or a path string), locate
+  # QueryDir relative to that. Otherwise, QueryDir will be ve.runtime/defaultQueryDir
+  if ( !is.null(ModelPath) ) {
+    # root QueryDir in ModelPath
+    if ( class(ModelPath) == "VEModel" ) {
+      ModelPath <- ModelPath$modelPath
+    } else if ( ! is.character(ModelPath) ) {
+      visioneval::writeLogMessage("Ignoring invalid ModelPath")
+    }
+    if ( is.null(QueryDir) ) {
+      QueryDir <- visioneval::getRunParameter("QueryDir",Param_ls=Param_ls)
+    }
+    QueryDir <- normalizePath(file.path(ModelPath,QueryDir),winslash="/",mustWork=FALSE)
+  }
+
+  # load sets QueryName, QueryDir, QueryFile
+  self$load(FileName=FileName,QueryDir=QueryDir,QueryName=QueryName,Param_ls=Param_ls)
 
   self$check()
   if ( length(self$checkResults)>0 ) {
@@ -41,15 +45,63 @@ ve.query.init <- function(
   invisible(self$valid())
 }
 
+# Check query name/file and provide defaults if missing
+ve.query.namecheck <- function(FileName=NULL,QueryName=NULL,QueryDir=NULL,Param_ls=NULL) {
+  # if QueryDir provided, it should be an absolute path
+  if ( ! is.null(FileName) ) {
+    # FileName replaces QueryName, QueryDir
+    FileName <- normalizePath(FileName,winslash="/",mustWork=FALSE)
+  } else if ( ! is.null(self$QueryFile) ) {
+    # Use saved self$QueryFile
+    FileName <- normalizePath(self$QueryFile,winslash="/",mustWork=FALSE)
+  } else {
+    # Build FileName from QueryDir and QueryName (possibly defaulted)
+    if ( is.null(QueryName) ) {
+      QueryName <- visioneval::getRunParameter("QueryFileName",Param_ls=Param_ls)
+    }
+    FileName <- paste0(QueryName,".VEqry")
+    if ( is.null(QueryDir) ) {
+      ve.runtime <- getRuntimeDirectory()
+      QueryDir <- visioneval::getRunParameter("QueryDir",Param_ls=Param_ls)
+      QueryDir <- normalizePath(
+        file.path(ve.runtime,QueryDir), winslash="/",mustWork=FALSE
+      )
+    }
+    FileName <- normalizePath(file.path(QueryDir,FileName),winslash="/",mustWork=FALSE)
+    # We won't check the directories etc. until we try to save
+  }
+  # Rectify file extension
+  if ( ! grepl("\\.VEqry$",FileName) ) {
+    FileName <- sub("\\.[^.]*$",".VEqry",FileName)
+  }
+  # Extract elements of filename back into QueryDir, QueryName, save QueryFile
+  self$QueryFile <- FileName
+  if ( is.null(self$QueryDir) ) {
+    self$QueryDir <- dirname(FileName)
+  }
+  self$QueryName <- sub("\\.VEqry$","",basename(FileName))
+  return(FileName)
+}
+
 # TODO: one day allow alternate storage formats
 # However, because the existing query spec format uses named vectors,
 #  it is difficult to recover full information from JSON or YAML
 ve.query.save <- function(saveTo=TRUE) {
-  if ( ! is.logical(saveTo) ) {
-    if (saveTo) saveTo <- self$QueryFile else saveTo <- ""
-  } else if ( is.character(saveTo) && nzchar(saveTo) ) {
-    saveTo <- file.path(self$QueryDir,saveTo)
-  } # else its an empty string, which says dump to console
+  if ( is.logical(saveTo) ) { # save to stored name
+    if ( saveTo ) {
+      FileName <- self$namecheck() # Build QueryFile from QueryName,QueryDir (or use as-is)
+      saveTo <- FileName
+    } else {
+      saveTo <- "" # empty string dumps to console
+    }
+  } else if ( is.character(saveTo) && nzchar(saveTo) ) { # "save as" using saveTo as name
+    # WARNING: will reset QueryDir and QueryName
+    saveTo <- self$namecheck(FileName=saveTo)
+  } else {
+    # it's something unrecognized so dump to console
+    saveTo = ""
+  }
+  print(self)
   dump("QuerySpec",file=saveTo,envir=private) # dump the QuerySpec as R
 }
 
@@ -60,27 +112,9 @@ ve.query.load <- function(FileName=NULL,QueryName=NULL,QueryDir=NULL,QuerySpec=N
     return( self$check() )
   }
 
-  # Otherwise, attempt to load from a file
-  if ( is.null(FileName) ) {
-    FileName <- visioneval::getRunParameter("QueryFileName",Param_ls=Param_ls)
-  }
+  self$namecheck(FileName=FileName,QueryName=QueryName,QueryDir=QueryDir,Param_ls=Param_ls)
 
-  # Set up the Query Directory if not provided
-  if ( is.null(QueryDir) ) {
-    self$QueryDir <- visioneval::getRunParameter("QueryDir",Param_ls=Param_ls)
-  } else {
-    self$QueryDir <- QueryDir
-  }
-
-  self$QueryFile <- normalizePath(FileName,winslash="/",mustWork=FALSE)
-  if ( ! file.exists(self$QueryFile) ) {
-    self$QueryFile <- normalizePath(file.path(self$QueryDir,FileName),winslash="/",mustWork=FALSE)
-  }
-  if ( is.null(QueryName) ) {
-    QueryName <- sub("\\.[^.]*$","",basename(self$QueryFile))
-  }
-  self$QueryName <- QueryName;
-
+  # Now try to load from QueryFile if it exists
   if ( file.exists(self$QueryFile) ) {
     # Load the query from sourceFile
     ve.model <- visioneval::modelEnvironment() # Don't need to clear ve.model
@@ -94,9 +128,9 @@ ve.query.copy <- function(newName=NULL) {
   if ( is.null(newName) ) newName <- paste(self$QueryName,"(Copy)")
   new.query <- VEQuery$new(
     QuerySpec=self$QuerySpec,
-    QueryName=paste(newName),
-    FileName=paste0(newName,".VEqry"),
-    QueryDir=self$QueryDir
+    QueryDir=self$QueryDir,
+    QueryName=newName,
+    FileName=NULL
   )
   return( new.query )
 }
@@ -311,9 +345,25 @@ ve.query.spec <- function(SpecNameOrPosition) {
 ve.query.print <- function(details=FALSE) {
   # Consider some other elements like the query name, its file (if any), when it was
   # last run (available results); see ve.query.results
+  if ( !is.null(self$QueryName) && nzchar(self$QueryName) ) {
+    cat("Query Name:",self$QueryName,"\n")
+  } else {
+    cat("Unnamed Query.\n")
+  }
+  if ( !is.null(self$QueryDir) && nzchar(self$QueryDir) ) {
+    cat("Query Directory:",self$QueryDir,"\n")
+  } else {
+    cat("No Query Directory.\n")
+  }
+  if ( !is.null(self$QueryFile) && nzchar(self$QueryFile) ) {
+    cat("Query File:",self$QueryFile,"\n")
+  } else {
+    cat("No file for Query.\n")
+  }
   if ( self$valid() ) {
     cat("Valid query with",length(private$QuerySpec),"elements\n")
     if ( length(private$QuerySpec) ) {
+      if ( ! is.null(self$QueryResults) ) cat("Results are available.\n")
       print(self$names())
       if ( details ) for ( spec in private$QuerySpec ) print(spec)
     }
@@ -456,8 +506,9 @@ VEQuery <- R6::R6Class(
     spec=ve.query.spec,             # Return a single VEQuerySpec from the list
     print=ve.query.print,           # List names of Specs in order, or optionally with details
     getlist=ve.query.getlist,       # Extract he QuerySpec list (possibly filtering geography) for $run)
+    namecheck=ve.query.namecheck,   # Check query name and file (and supply defaults if missing)
     results=ve.query.results,       # report results of last run
-    run=ve.query.run                # Option to save; results are cached in private$queryResults
+    run=ve.query.run                # Option to save; results are cached in self$QueryResults
   ),
   private = list(
     QuerySpec=list(),               # access via public functions - list of VEQuerySpec objects

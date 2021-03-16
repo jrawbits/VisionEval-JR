@@ -159,12 +159,11 @@ test_query <- function(log="warn") {
   # create a query object
   qry <- jr$query("Test-Query")
   cat("Query valid:",qry$valid(),"\n")
-  cat("Print qry$checkResults\n")
-  print(qry$checkResults)
+  cat("Print qry$checkResults:"); print(qry$checkResults)
   cat("Print query\n")
   print(qry)
 
-  testStep("Add a query formulated as a list element...")
+  testStep("Add a query specification formulated as a list element...")
   spec <- list(
     Name = "UrbanHhDvmt",
     Summarize = list(
@@ -291,7 +290,7 @@ test_query <- function(log="warn") {
   )
   qry$add(spec)
   
-  testStep("Add a 'Function' query specification...")
+  testStep("Create a 'Function' query specification...")
 
   spec <- VEQuerySpec$new()
   spec$update(QuerySpec=list(
@@ -306,14 +305,49 @@ test_query <- function(log="warn") {
   cat("Function spec is valid (TRUE):"); print(spec$valid())
   print(spec)
 
-  testStep("Save the query and see it in the directory...")
+  testStep("Add the Function spec to the query...")
+
+  qry$add(spec)
+  qry$print()
+
+  testStep("Save the query and fix its extension...")
+
+  qry$save()
+  cat("Saved values in original query...\n")
+  cat("Directory: "); print(qry$QueryDir)
+  cat("Name; "); print(qry$QueryName)
+  cat("Path: "); print(qry$QueryFile)
+
+  qry$save("Copy-Query.R") # Essentially as "Save As"
+  cat("Saved values in renamed query...\n")
+  cat("Directory: "); print(qry$QueryDir)
+  cat("Name; "); print(qry$QueryName)
+  cat("Path: "); print(qry$QueryFile)
+
+  testStep("Model QueryDir contents...")
+
+  cat("Expecting "); print(c("Copy-Query.VEqry","Test-Query.VEqry"))
+  jr$query()
 
   testStep("Open the query in a different object from the file...")
 
-  testStep("Add some more queries using the add and update functions...")
+  runqry <- VEquery$new(QueryName="Test-Query")
+  cat("Loaded query...\n")
+  cat("Directory: "); print(runqry$QueryDir)
+  cat("Name; "); print(runqry$QueryName)
+  cat("Path: "); print(runqry$QueryFile)
+  print(runqry)
+
+  runqry <- VEquery$new(QueryName="Test-Query.VEQry")
+  cat("Re-Loaded query with name extension...\n")
+  cat("Directory: "); print(runqry$QueryDir)
+  cat("Name; "); print(runqry$QueryName)
+  cat("Path: "); print(runqry$QueryFile)
+  print(runqry)
 
   testStep("Run the query on the model...")
   qry$run(jr)
+
   testStep("Run the query on the results...")
   qry$run(rs)
 

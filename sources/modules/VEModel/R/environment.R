@@ -106,7 +106,7 @@ default.parameters.table = list(
   OutputDir           = "output",  # Will create if not already present
   QueryDir            = "queries", # Home for defined queries within the ModelDir
   DisplayUnitsFile    = "display_units.csv",
-  QueryFileName       = "New-Query.VEqry",
+  QueryFileName       = "New-Query",
   QueryOutputTemplate = "Measures_%scenario%_%years%_%geography%.csv"
 )
 

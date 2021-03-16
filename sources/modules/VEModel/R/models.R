@@ -914,22 +914,28 @@ ve.model.results <- function(stage) {
 
 # open a Query object for the model from its QueryDir (or report a list
 #  of available queries if no QueryName is provided).
-ve.model.query <- function(QueryName=NULL,FileName=NULL,new=FALSE) {
+ve.model.query <- function(QueryName=NULL,FileName=NULL) {
   # Get the Query directory for the model
   QueryDir <- visioneval::getRunParameter("QueryDir",Param_ls=self$RunParam_ls)
-  QueryDir <- file.path(self$modelPath,QueryDir)
   if ( all(is.null(c(QueryName,FileName))) ) {
     cat("Available Queries:\n")
-    if ( ! dir.exists(QueryDir) ) QueryDir <- self$modelPath
-    queries <- dir(QueryDir,pattern="VEQry$")
+    QueryPath <- file.path(self$modelPath,QueryDir)
+    if ( ! dir.exists(QueryPath) ) QueryPath <- self$modelPath
+    queries <- dir(QueryPath,pattern="\\.VEQry$")
     if ( length(queries)==0 ) queries <- "No queries defined"
     print(queries)
     return(NULL)
-  } else if ( ! is.null(QueryName) && is.null(FileName) ) {
-    FileName <- paste0(QueryName,".VEqry")
   }
-  # attempt to open existing query (which may not exist) and if not there, an empty VEQuery
-  return(VEQuery$new(QueryName=QueryName,FileName=FileName,QueryDir=QueryDir,Param_ls=self$RunParam_ls))
+  # Let VEquery find the query...
+  return(
+    VEQuery$new(
+      ModelPath=self$modelPath,
+      QueryName=QueryName,
+      FileName=FileName,
+      QueryDir=QueryDir,
+      Param_ls=self$RunParam_ls
+    )
+  )
 }
 
 # Here is the VEModel R6 class
