@@ -81,7 +81,7 @@ ve.query.init <- function(
   invisible(self$valid())
 }
 
-# Build self$QueryFile, which will be used for saving (and perhaps loading)
+# Build self$QueryFile, which will be used for saving (and perhaps loading if not requested up front)
 # Filename will NOT be disambiguated until we get to the save operation
 # Just prepare a candidate absolute path to a valid directory
 ve.query.attach <- function(ModelPath=NULL, QueryName=NULL, QueryDir=NULL, OtherQuery=NULL) {

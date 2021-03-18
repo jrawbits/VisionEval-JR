@@ -265,7 +265,7 @@ ve.model.setupRunEnvironment <- function(
     LogLevel        = LogLevel
   )
   if ( ! is.null(ModelScriptFile) ) addParams_ls <- c(addParams_ls,list(ModelScriptFile=ModelScriptFile))
-  addParams_ls <- visioneval::addParameterSource(addParams_ls,paste0("Set up RunParam_ls for ",Owner))
+  addParams_ls <- visioneval::addParameterSource(addParams_ls,paste0("Owner))
   ve.model$RunParam_ls <- visioneval::mergeParameters(Param_ls,addParams_ls) # addParams_ls will override
 
   invisible(ve.model$RunParam_ls)
@@ -295,12 +295,9 @@ isAbsolutePath <- function(modelPath,collapse=TRUE) {
   return(absolute)
 }
 
-
-
 # NORMALIZE A VISIONEVAL PATH
 # ===========================
 # Like the R built-in normalizePath, but better handling for missing path components
-# Empty string elements of the path will be treated as "."
 # NOTE: Do we need this? Standard normalize path seems to handle empty path elements...
 # Always does winslash="/"
 normalizePath <- function(
@@ -323,4 +320,3 @@ normalizePath <- function(
   }
   return( base::normalizePath(elements,winslash=winslash,mustWork=mustWork) )
 }
-    
