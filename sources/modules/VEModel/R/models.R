@@ -460,6 +460,7 @@ ve.model.loadModelState <- function(log="error") {
 # modelPath may be a full path, and will be expanded into known model directories
 #  if it is a relative path.
 ve.model.init <- function(modelPath=NULL,log="error") {
+  # TODO: option to create a new "bare" model template
   # Load system model configuration
   visioneval::initLog(Save=FALSE,Threshold=log)
   self$RunParam_ls <- getRuntimeParameters()
@@ -496,6 +497,61 @@ ve.model.init <- function(modelPath=NULL,log="error") {
   visioneval::writeLogMessage(self$modelPath)
   visioneval::writeLog("Model Load Complete.",Level="info")
   invisible(self$status)
+}
+
+# Function to inspect the model configuration/setup parameters
+ve.model.setup <- function(Param_ls=list(), fromFile=NULL, show="names", src=NULL, list=NULL, pattern=NULL) {
+  # If Param_ls provided, replace any matching parameters in self$RunParam_ls
+  # If fromFile is provided, read parameters from there (in addition to Param_ls)
+  # Return value will be what is asked for in show (default, names in self$RunParam_ls)
+  #   "names" - names of settings (character vector of matching names)
+  #   "values" - named list of settings present in self$RunParam_ls - overrides "names"
+  #   "defaults" - returns the list of parameters with known defaults (either as "names" or "values")
+  #   "all" - returns known defaults plus defined parameters
+  #   "sources"
+  #      If also "names" (default), returns the unique list of sources for the matching parameters
+  #      If also "values", returns a named list of sources (name is parameter name)
+  #      If also "defaults", includes default source items only (not self$RunParam_ls)
+  #      If also "all", only looks at self$RunParam_ls
+  #   If "values" are returned, there will also be a source attribute for each list item, use
+  #   the "sources" option to ignore the values and only show their source
+  # If Param_ls is zero-length, don't update anything, just return the list
+  # If src is a character vector, find the parameter sources that match any of the elements
+  #   as a regular expression.
+  # If pattern is a character vector, look for names in the setup that match any of the
+  #  vector elements (as regular expressions)
+  # If list is a character vector, treat each item as a name and return the list of items from
+  #  the model setup (but dip into the full hierarchy, unless "src" is also set)
+  if ( is.list(Param_ls) && length(Param_ls ) ) {
+    Param_ls <- visioneval::addParameterSource(Param_ls,paste0("Model Setup ",self$modelName))
+    self$RunParam_ls <- visioneval::mergeParameters(self$RunParam_ls,Param_ls) # addParams_ls will override
+  }
+  if ( is.character(fromFile) && file.exists(fromFile) ) {
+    # TODO: use file load function
+    FileParam_ls <- visioneval::addParameterSource(Param_ls,paste0("Model Setup ",self$modelName))
+    self$RunParam_ls <- visioneval::mergeParameters(self$RunParam_ls,FileParam_ls) # addParams_ls will override
+  }
+  if ( is.character(src) ) {
+    # TODO: search for matching patterns in self$RunParam_ls source attribute
+  }
+  if ( is.character(list) ) {
+    # TODO: add any names identical to names in "list" to the matching list
+    # Slightly faster than using pattern (no "grep" step)
+    which(names(self$RunParam_ls) %in% list) # TODO: or should be look up list defaults
+  }
+  if ( is.character(pattern) ) {
+    # TODO: same as "list" except each pattern is treated as a regular expression
+  }
+  if ( values ) {
+    return (self$RunParam_ls[matching])
+  } else {
+    return (matching)
+}
+
+ve.model.save <- function(FileName="visioneval.cnf") {
+  # Write self$RunParam_ls into file.path(self$modelPath,FileName) (YAML format)
+  # Can provide alternate name (but if it's not part of the known name set, it's 'just for reference')
+  invisible(self$RunParam_ls)
 }
 
 # Run the modelPath (through its stages)
@@ -959,11 +1015,13 @@ VEModel <- R6::R6Class(
     status="Uninitialized",
 
     # Methods
-    initialize=ve.model.init,               # initialize a VEModel obje ct
+    initialize=ve.model.init,               # initialize a VEModel object
     run=ve.model.run,                       # run a model (or just a subset of stages)
     print=ve.model.print,                   # provides generic print functionality
     dir=ve.model.dir,                       # list model elements (output, scripts, etc.)
     clear=ve.model.clear,                   # delete results or outputs (current or past)
+    setup=ve.model.setup,                   # set or list model parameters and their sources
+    save=ve.model.save,                     # save changes to the model setup that were created locally (by source)
     copy=ve.model.copy,                     # copy a self$modelPath to another path (ignore results/outputs)
     results=ve.model.results,               # Create a VEResults object (if model is run); option to open a past result
     query=ve.model.query                    # Create a VEQuery object (or show a list of queries).

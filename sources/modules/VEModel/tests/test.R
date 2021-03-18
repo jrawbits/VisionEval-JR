@@ -2,11 +2,6 @@
 # Comprehensively test VEModel and related interfaces
 # Also provides working examples of the API
 
-# function: create_test_environment
-# Expects to run from <pkg>/tests; looks in parent directory
-# Creates a temporary directory and initializes it as a ve.runtime
-# Sets the working directory to that temporary location
-
 # function: pseudo_package
 # 
 if ( ! requireNamespace("pkgload",quietly=TRUE) ) {
@@ -17,6 +12,9 @@ if ( ! requireNamespace("visioneval",quietly=TRUE) ) {
 }
 
 setup <- function(ve.runtime=NULL) {
+  # Creates or uses a fresh minimal runtime environment as a sub-directory of "tests"
+  # Set VE_RUNTIME to some other location if desired (does not need to have a runtime
+  # there yet, and in fact it's better if it doesn't).
   if ( ! is.character(ve.runtime) ) {
     ve.runtime <- Sys.getenv("VE_RUNTIME",unset=NA)
     if ( ! is.na(ve.runtime ) ) {
@@ -82,7 +80,8 @@ testStep <- function(msg) {
   cat("",paste(msg,collapse="\n"),"",sep="\n")
 }
 
-test_model <- function(log="warn") {
+test_run <- function(log="warn") {
+  testStep("Install and Run a Full Model")
   owd <- getwd()
   tryCatch(
     {
@@ -103,7 +102,66 @@ test_model <- function(log="warn") {
   return("Failed to run.")
 }
 
+test_model <- function(low="warn") {
+  testStep("Model Management Functions")
+
+  testStep("open a model")
+  jr <- openModel("JRSPM")
+
+  testStep("copy a model")
+  cp <- jr$copy("CRSPM")
+  
+  testStep("model directory original")
+  jr$dir()
+
+  testStep("model directory copy")
+  cp$dir()
+
+  testStep("remove model copy")
+  unlink("models/CRSPM",recursive=TRUE)
+
+  testStep("construct a bare model from scratch")
+  dir.create("models/BARE")
+  # Create run_model.R script (two modules)
+  # Borrow model geography, units, deflators from JRSPM
+  # Set run parameters in the live model
+  #    Need "$set" function
+  #    Need save for visioneval.cnf
+  # Need to browse config parameters by source
+  # open model
+  bare <- openModel("BARE")
+  
+  # list model input files and fields
+  #   Needs to work before running - that's why ModelState is pre-loaded
+  bare$list(input=TRUE)
+
+  # populate input directory with copies of needed JRSPM files
+  # file.copy(....)
+
+  testStep("list of bare model fields: pre-run")
+  testStep("run the bare model")
+  bare$run()
+  
+  testStep("directory of the bare model: results")
+  bare$dir(results=TRUE)
+
+  testStep("list fields in bare model")
+  bare$list()
+
+  testStep("extract model results")
+  bare$extract(prefix="BareTest")
+
+  testStep("clear the bare model")
+  bare$dir(output=TRUE)
+  bare$clear()
+  bare$dir()
+  bare$unlink("models/BARE",recursive=TRUE)
+  bare$dir() # Should reveal error of some sort
+}
+
 test_results <- function (log="warn") {
+  testStep("Manipulate Model Results in Detail")
+
   testStep("Opening model and pulling out results and selection...")
   jr <- openModel("JRSPM")
   rs <- jr$results()
@@ -143,17 +201,33 @@ test_results <- function (log="warn") {
   testStep("Exporting speed fields using DATASTORE units")
   sl$export(prefix="Datastore",convertUnits=FALSE) # Using DATASTORE units
 
-  # Do some erroneous things to make sure we get suitable errors.
+  testStep("Model directory")
+  jr$dir()
+
+  testStep("Model directory of results")
+  jr$dir(results=TRUE)
+  
+  testStep("Model directory of outputs")
+  jr$dir(outputs=TRUE)
+  
+  testStep("Clear outputs")
+  jr$clear(outputs=TRUE, force=TRUE)
+
+  testStep("Directory after clearing")
+  jr$dir()
 }
 
 test_query <- function(log="warn") {
   # Process the standard query list for the test model
+  testStep("Set up Queries and Run on Model Results")
   testStep("Opening test model and caching its results...")
   jr <- openModel("JRSPM")
   rs <- jr$results()
 
   testStep("Show query directory (may be empty)...")
   jr$query()
+
+  testStep("Show model directory for queries")
 
   testStep("Create an empty query object and print it...")
   # create a query object
