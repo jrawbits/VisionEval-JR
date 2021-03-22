@@ -35,6 +35,10 @@ initModelState <- function(Save=TRUE,Param_ls=NULL) {
 
   # The required parameters will be the initial elements for the ModelState
   # Other RunParam_ls elements will be placed in ModelState_ls$RunParam_ls
+
+  # TODO: look up default values for DatastoreName, DatastoreType and
+  #       Seed, if they are not present in Param_ls.
+  # TODO: Find some way to set model parameters when starting a new model
   RequiredParam_ <- c(
     "Model", "Scenario", "Description", "Region", "BaseYear", "Years",
     "DatastoreName", "DatastoreType", "Seed"
@@ -87,7 +91,7 @@ initModelState <- function(Save=TRUE,Param_ls=NULL) {
   model.env$ModelState_ls <- newModelState_ls
   model.env$RunParam_ls <- Param_ls; # Includes all the run Parameters, including "required"
 
-  # Note that the ModelState is always saved in the working directory
+  # Note that the ModelState is saved in the working directory
   # Model is expected to run in the directory that will receive its output.
   #   ModelState.Rda is the model description for this run
   #   Datastore are the model results for this run
@@ -1604,7 +1608,7 @@ loadModelParameters <- function(FlagChanges=FALSE) {
 #' @return A list of parsed parameters for each of the VisionEval model elements found in the script.
 #' @export
 parseModelScript <- function(FilePath) {
-  writeLog("Parsing model script",Level="info")
+  writeLog(c("Parsing model script",FilePath),Level="info")
   if (!file.exists(FilePath)) {
     Msg <- c(
       paste0("Specified model script file does not exist."),
@@ -1650,6 +1654,7 @@ parseModelScript <- function(FilePath) {
   InitParams_ls      <- lapply(extractElement("initializeModel"),function(x)x$initializeModel)[[1]] # Ignore more than one
   RequiredVEPackages <- sapply(extractElement("requirePackage"),function(x)x$requirePackage$Package) # Vector of package names
 
+  writeLog("Done parsing model script",Level="info")
   return(
     list(
       AllCalls_ls        = Elements,

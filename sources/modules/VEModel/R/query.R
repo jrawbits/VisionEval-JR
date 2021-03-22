@@ -89,7 +89,7 @@ ve.query.attach <- function(ModelPath=NULL, QueryName=NULL, QueryDir=NULL, Other
     self$QueryDir <- OtherQuery$QueryDir
   } else {
     if ( is.null(ModelPath) || ! dir.exists(ModelPath) ) {
-      ModelPath <- getRuntimeDir()
+      ModelPath <- getRuntimeDirectory()
     }
     if ( is.null(QueryDir) ) {
       QueryDir <- visioneval::getRunParameter("QueryDir")
@@ -104,8 +104,8 @@ ve.query.attach <- function(ModelPath=NULL, QueryName=NULL, QueryDir=NULL, Other
   if ( is.null(QueryName) ) {
     QueryName <- visioneval::getRunParameter("QueryFileName") # no extension
   }
-  if ( ! grepl("\\.[^.]*$",QueryName) ) {
-    QueryName <- sub("\\.[^.]*$","",FileName) # No extension on QueryName
+  if ( grepl("\\.[^.]*$",QueryName) ) {
+    QueryName <- sub("\\.[^.]*$","",QueryName) # No extension on QueryName
   }
   QueryFile <- normalizePath(file.path(QueryDir,QueryName),winslash="/",mustWork=FALSE)
   QueryFile <- paste0(QueryFile,".VEqry")

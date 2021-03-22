@@ -299,7 +299,6 @@ ve.results.units <- function(selected=TRUE,display=NULL) {
       returnFields <- c(returnFields,"DisplayUnits")
     }
   }
-  if ( 
   return( Units_df[,returnFields] )
 }
 

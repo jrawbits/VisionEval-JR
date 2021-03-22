@@ -121,11 +121,11 @@ function(
   }
   RunParam_ls <- loadConfiguration(ParamDir=ModelDir,keep=Param_ls,override=DotParam_ls)
 
-  # Look for defs along InputPath, and run_parameters.json. Fail if file not found.
+  # Look for defs along InputPath, and run_parameters.json.
   # Note that we can't change parameters listed in run_parameters.json
   # Those represent model setup invariants (e.g. inputs, defs locations)
-  ParamPath <- findRuntimeInputFile("run_parameters.json","ParamDir",Param_ls=RunParam_ls)
-  RunParam_ls <- loadConfiguration(ParamPath=ParamPath,override=RunParam_ls)
+  ParamPath <- findRuntimeInputFile("run_parameters.json","ParamDir",Param_ls=RunParam_ls,StopOnError=FALSE)
+  if ( ! is.na(ParamPath) ) RunParam_ls <- loadConfiguration(ParamPath=ParamPath,override=RunParam_ls)
 
   # ModelScriptFile needs to be the absolute path to the model script
   # It will be provided either in dots, or by the pre-existing RunParam_ls environment (e.g. if

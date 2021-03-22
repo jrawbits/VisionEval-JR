@@ -327,6 +327,7 @@ installStandardModel <- function( modelName, modelPath, confirm, skeleton=c("sam
 }
 
 ve.model.copy <- function(newName=NULL,newPath=NULL) {
+  # TODO: leave behind the "results" and "outputs"
   if ( is.null(newPath) ) {
     newPath <- dirname(self$modelPath) # parent of current model
   } else {
@@ -409,6 +410,7 @@ ve.model.loadModelState <- function(log="error") {
     } else {
       # Run the initializeModel function to build in-memory ModelState_ls
       # Needed to inspect model elements (script, inputs, outputs)
+      visioneval::writeLog("Pre-Initializing ModelState",Level="info")
       self$runStatus[stage] <- "Not Run"
       stageInput <- file.path(self$modelPath,stagePath)
       scriptFile <- self$stageScripts[stage]
@@ -575,15 +577,15 @@ ve.model.setup <- function(show="values", src=NULL, namelist=NULL, pattern=NULL)
   how.many.to.return <- length(which(what.to.return))
 
   results <- data.frame( # columns in same order as return.options
-    Parameter = names(sought) else
-    Value     = sought
+    Parameter = names(sought),
+    Value     = sought,
     Source    = attr(sought,"source")
   )
   results <- results[,what.to.return] # logical indexing into columns
   if ( is.data.frame(results) ) {
-    row.names(results) <- name
+    row.names(results) <- results$Parameter
   } else {
-    names(results)<-name; # One column dropped data.frame to vector
+    names(results) <- results$Parameter; # One column dropped data.frame to vector
   }
 
   # Don't print results if we used this function to set parameters
@@ -873,7 +875,7 @@ ve.model.dir <- function(pattern=NULL,stage=NULL,root=FALSE,results=FALSE,output
       list(inputFiles,outputFiles,resultFiles,rootFiles)[c(inputs,outputs,results,root)]
     )
   )))
-  if ( nzchar(shorten) ) files <- sub(paste0(shorten,"/"),"",files)
+  if ( nzchar(shorten) ) files <- sub(paste0(shorten,"/"),"",files,fixed=TRUE)
   return(files)
 }
 
@@ -901,66 +903,70 @@ ve.model.clear <- function(force=FALSE,outputOnly=NULL,stage=NULL,show=10) {
   }
 
   force <- ( force || ! ( interactive() && length(to.delete)>0 ) )
-  if ( ! force && length(to.delete)>0 ) {
-    action = "h"
-    start = 1
-    stop <- min(start+show-1,length(to.delete))
-    while ( action != "q" ) {
-      print(to.delete[start:stop])
-      cat("Enter an item number to delete it, or a selection (2,3,7) or range (1:5)\n")
-      if ( action == "h" ) {
-        cat("'q' to quit, 'all' to delete all on this screen")
-        if ( start>1 )               cat(", 'p' for previous files")
-        if ( length(to.delete)>stop ) cat(", 'n' for more files")
-        cat("\n")
-      }
-      cat("Your choice: ")
-      response <- tolower(readline())
-      if ( grepl("^all$",response) ) {
-        response <- paste0(start,":",stop)
-      } else {
-        if ( grepl("[^hnpq0-9:, ]",response) ) { # if any illegal character, loop back to help
-          action = "h"
-          next
+  if ( length(to.delete)>0 ) {
+    if ( force ) {
+      unlink(to.delete,recursive=TRUE)
+    } else if ( ! force && length(to.delete)>0 ) {
+      action = "h"
+      start = 1
+      stop <- min(start+show-1,length(to.delete))
+      while ( action != "q" ) {
+        print(to.delete[start:stop])
+        cat("Enter an item number to delete it, or a selection (2,3,7) or range (1:5)\n")
+        if ( action == "h" ) {
+          cat("'q' to quit, 'all' to delete all on this screen")
+          if ( start>1 )               cat(", 'p' for previous files")
+          if ( length(to.delete)>stop ) cat(", 'n' for more files")
+          cat("\n")
         }
-        response <- sub("^ *","",response)
-      }
-      if ( grepl("^[0-9:, ]+$",response) ) {
-        response <- try ( eval(parse(text=paste("c(",response,")"))) )
-        # Look for character command
-        if ( is.numeric(response) ) {
-          candidates <- to.delete[start:stop]
-          unlink(candidates[response],recursive=TRUE)
-          cat("Deleted:\n",paste(candidates[response],collapse="\n"),"\n")
-        }
-        to.delete <- self$dir(outputs=TRUE)
-        if ( ! isTRUE(outputOnly) ) to.delete <- c(to.delete,self$dir(results=TRUE))
-        if ( length(to.delete) > 0 ) {
-          start = 1
-          stop <- min(start+show-1,length(to.delete))
-          action = "h"
+        cat("Your choice: ")
+        response <- tolower(readline())
+        if ( grepl("^all$",response) ) {
+          response <- paste0(start,":",stop)
         } else {
-          cat("No files remaining to delete.\n")
-          action = "q"
-        }
-      } else {
-        action <- substr(response[1],1,1)
-        if ( action %in% c("n","p") ) {
-          if ( action == "n" ) {
-            start <- min(start + show,length(to.delete))
-            if ( start == length(to.delete) ) start <- max(length(to.delete),1)
-            stop <- min(start+show-1,length(to.delete))
-          } else if ( action == "p" ) {
-            start <- max(start - show,1)
-            stop <- min(start+show-1,length(to.delete))
+          if ( grepl("[^hnpq0-9:, ]",response) ) { # if any illegal character, loop back to help
+            action = "h"
+            next
           }
-        } else if ( action %in% c("h","q") ) {
-          next
-        } else action = "h"
+          response <- sub("^ *","",response)
+        }
+        if ( grepl("^[0-9:, ]+$",response) ) {
+          response <- try ( eval(parse(text=paste("c(",response,")"))) )
+          # Look for character command
+          if ( is.numeric(response) ) {
+            candidates <- to.delete[start:stop]
+            unlink(candidates[response],recursive=TRUE)
+            cat("Deleted:\n",paste(candidates[response],collapse="\n"),"\n")
+          }
+          to.delete <- self$dir(outputs=TRUE)
+          if ( ! isTRUE(outputOnly) ) to.delete <- c(to.delete,self$dir(results=TRUE))
+          if ( length(to.delete) > 0 ) {
+            start = 1
+            stop <- min(start+show-1,length(to.delete))
+            action = "h"
+          } else {
+            cat("No files remaining to delete.\n")
+            action = "q"
+          }
+        } else {
+          action <- substr(response[1],1,1)
+          if ( action %in% c("n","p") ) {
+            if ( action == "n" ) {
+              start <- min(start + show,length(to.delete))
+              if ( start == length(to.delete) ) start <- max(length(to.delete),1)
+              stop <- min(start+show-1,length(to.delete))
+            } else if ( action == "p" ) {
+              start <- max(start - show,1)
+              stop <- min(start+show-1,length(to.delete))
+            }
+          } else if ( action %in% c("h","q") ) {
+            next
+          } else action = "h"
+        }
       }
     }
   }
-  if ( ! force ) cat("Nothing to delete.\n")
+  if ( ! force ) cat("Nothing else to delete.\n")
   return(invisible(force))
 }
 
