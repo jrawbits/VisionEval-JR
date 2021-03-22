@@ -413,7 +413,7 @@ ve.model.loadModelState <- function(log="error") {
       stageInput <- file.path(self$modelPath,stagePath)
       scriptFile <- self$stageScripts[stage]
       Param_ls <- ve.model.setupRunEnvironment(
-        "VEModel::loadModelState",
+        Owner="VEModel::loadModelState",
         PreviousState=self$ModelState, # previously loaded model states
         Param_ls=self$RunParam_ls,
         RunModel=FALSE,
@@ -463,7 +463,7 @@ ve.model.init <- function(modelPath=NULL,log="error") {
   # TODO: option to create a new "bare" model template
   # Load system model configuration
   visioneval::initLog(Save=FALSE,Threshold=log)
-  self$RunParam_ls <- getRuntimeParameters()
+  self$RunParam_ls <- getSetup()
   # Opportunity to override names of ModelState, run_model.R, Datastore, etc.
   # Also to establish standard model directory structure (inputs, results)
 
@@ -500,57 +500,103 @@ ve.model.init <- function(modelPath=NULL,log="error") {
 }
 
 # Function to inspect the model configuration/setup parameters
-ve.model.setup <- function(Param_ls=list(), fromFile=NULL, show="names", src=NULL, list=NULL, pattern=NULL) {
-  # If Param_ls provided, replace any matching parameters in self$RunParam_ls
-  # If fromFile is provided, read parameters from there (in addition to Param_ls)
-  # Return value will be what is asked for in show (default, names in self$RunParam_ls)
-  #   "names" - names of settings (character vector of matching names)
-  #   "values" - named list of settings present in self$RunParam_ls - overrides "names"
-  #   "defaults" - returns the list of parameters with known defaults (either as "names" or "values")
-  #   "all" - returns known defaults plus defined parameters
-  #   "sources"
-  #      If also "names" (default), returns the unique list of sources for the matching parameters
-  #      If also "values", returns a named list of sources (name is parameter name)
-  #      If also "defaults", includes default source items only (not self$RunParam_ls)
-  #      If also "all", only looks at self$RunParam_ls
-  #   If "values" are returned, there will also be a source attribute for each list item, use
-  #   the "sources" option to ignore the values and only show their source
-  # If Param_ls is zero-length, don't update anything, just return the list
+ve.model.setup <- function(show="values", src=NULL, namelist=NULL, pattern=NULL) {
+  # "show" is a character vector describing what to return (default, "values" defined in self$RunParam_ls)
+  #   "name" - names of settings (character vector of matching names)
+  #   "value" - named list of settings present in self$RunParam_ls (or defaults) (DEFAULT)
+  #   "source" - return the source of the parameter
+  # "show" also describes where to look
+  #   "runtime" - use just the list from VEModel::getSetup() (optionally including undefined defaults)
+  #   "defaults" - include the list of parameter defaults as if they were defined
+  #       (overridden by any that actually are defined)
+  #   "self" - returns the model specification (optionally including undefined defaults)
+  #   If only one of "source", "name", "value":
+  #      return a named vector (parameter names; corresponding element)
+  #   If both "source" and "value":
+  #      return a data.frame (row.names == "name")
+  #   If both "source" (or "value") and "name":
+  #      return a data.frame with a "name" column plus either source or value
+  #   If all of "source", "name", "value":
+  #      return a data.frame of all three
   # If src is a character vector, find the parameter sources that match any of the elements
   #   as a regular expression.
   # If pattern is a character vector, look for names in the setup that match any of the
   #  vector elements (as regular expressions)
-  # If list is a character vector, treat each item as a name and return the list of items from
+  # If namelist is a character vector, treat each item as a name and return the list of items from
   #  the model setup (but dip into the full hierarchy, unless "src" is also set)
-  if ( is.list(Param_ls) && length(Param_ls ) ) {
-    Param_ls <- visioneval::addParameterSource(Param_ls,paste0("Model Setup ",self$modelName))
-    self$RunParam_ls <- visioneval::mergeParameters(self$RunParam_ls,Param_ls) # addParams_ls will override
+
+  where.options <- c("defaults","self","runtime")
+  where.to.look <- where.options %in% show;
+  if ( ! any(where.to.look) ) {
+    where.to.look <- c(TRUE,TRUE,FALSE) # self + system defaults
+  } else if ( where.to.look[3] ) {
+    # runtime requested - deselect "self"
+    where.to.look[2] <- FALSE
   }
-  if ( is.character(fromFile) && file.exists(fromFile) ) {
-    # TODO: use file load function
-    FileParam_ls <- visioneval::addParameterSource(Param_ls,paste0("Model Setup ",self$modelName))
-    self$RunParam_ls <- visioneval::mergeParameters(self$RunParam_ls,FileParam_ls) # addParams_ls will override
+  where.to.look <- where.options[where.to.look]
+  
+  searchParams_ls <- list()
+  if ( "defaults" %in% where.to.look ) {
+    # defaults, possibly plus self
+    if ( "self" %in% where.to.look ) in.self <- self$RunParam_ls else in.self <- list()
+    searchParams_ls <-visioneval::mergeParameters(searchParams_ls,visioneval::defaultVERunParameters(in.self))
   }
+  if ( "runtime" %in% where.to.look ) { # only self
+    searchParams_ls <- visioneval::mergeParameters(searchParams_ls,getSetup())
+  } else {
+    searchParams_ls <- visioneval::mergeParameters(searchParams_ls,self$RunParam_ls)
+  }
+
   if ( is.character(src) ) {
-    # TODO: search for matching patterns in self$RunParam_ls source attribute
+    # search for matching patterns in searchParams_ls source attribute
+    sources <- attr(searchParams_ls,"source")
+    matchsrc <- unique(sapply(src, function(s) sapply(sources,grep,pattern=s)) )
+  } else {
+    matchsrc <- integer(0)
   }
-  if ( is.character(list) ) {
-    # TODO: add any names identical to names in "list" to the matching list
+  if ( is.character(namelist) ) {
     # Slightly faster than using pattern (no "grep" step)
-    which(names(self$RunParam_ls) %in% list) # TODO: or should be look up list defaults
+    matchname <- which(names(searchParams_ls) %in% namelist)
+  } else {
+    matchname <- integer(0)
   }
   if ( is.character(pattern) ) {
-    # TODO: same as "list" except each pattern is treated as a regular expression
-  }
-  if ( values ) {
-    return (self$RunParam_ls[matching])
+    nms <- names(searchParams_ls)
+    matchpat <- unique(sapply(src, function(s) sapply(nms,grep,pattern=s)) )
   } else {
-    return (matching)
+    matchpat <- integer(0)
+  }
+  matching <- unique(c(matchsrc,matchname,matchpat))
+  sought <- searchParams_ls[matching]
+
+  return.options <- c("name","value","source")
+  what.to.return <- return.options %in% show
+  if ( ! any(what.to.return) ) what.to.return <- c(FALSE,TRUE,FALSE) # just values
+  how.many.to.return <- length(which(what.to.return))
+
+  results <- data.frame( # columns in same order as return.options
+    Parameter = names(sought) else
+    Value     = sought
+    Source    = attr(sought,"source")
+  )
+  results <- results[,what.to.return] # logical indexing into columns
+  if ( is.data.frame(results) ) {
+    row.names(results) <- name
+  } else {
+    names(results)<-name; # One column dropped data.frame to vector
+  }
+
+  # Don't print results if we used this function to set parameters
+  return(results)
 }
 
 ve.model.save <- function(FileName="visioneval.cnf") {
-  # Write self$RunParam_ls into file.path(self$modelPath,FileName) (YAML format)
+  # Write self$RunParam_ls into file.path(self$modelPath,FileName) (YAML format).
+  # Do not include default values or those in the runtime setup
+  # Use the "setup" function to limit what is shown.
   # Can provide alternate name (but if it's not part of the known name set, it's 'just for reference')
+  normalizePath(FileName,winslash="/",mustWork=FALSE)
+  yaml::write_yaml(self$RunParam_ls,FileName,indent=2)
   invisible(self$RunParam_ls)
 }
 

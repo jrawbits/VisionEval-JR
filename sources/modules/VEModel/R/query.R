@@ -542,7 +542,6 @@ VEQuery <- R6::R6Class(
     spec=ve.query.spec,             # Return a single VEQuerySpec from the list
     print=ve.query.print,           # List names of Specs in order, or optionally with details
     getlist=ve.query.getlist,       # Extract he QuerySpec list (possibly filtering geography) for $run)
-    namecheck=ve.query.namecheck,   # Check query name and file (and supply defaults if missing)
     results=ve.query.results,       # report results of last run
     run=ve.query.run                # Option to save; results are cached in self$QueryResults
   ),
