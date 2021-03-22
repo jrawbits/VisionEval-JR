@@ -202,16 +202,16 @@ test_results <- function (log="warn") {
   sl$export(prefix="Datastore",convertUnits=FALSE) # Using DATASTORE units
 
   testStep("Model directory")
-  jr$dir()
+  print(jr$dir())
 
   testStep("Model directory of results")
-  jr$dir(results=TRUE)
+  print(jr$dir(results=TRUE))
   
   testStep("Model directory of outputs")
-  jr$dir(outputs=TRUE)
+  print(jr$dir(outputs=TRUE))
   
   testStep("Clear outputs")
-  jr$clear(outputs=TRUE, force=TRUE)
+  jr$clear(outputOnly=TRUE, force=FALSE)
 
   testStep("Directory after clearing")
   jr$dir()

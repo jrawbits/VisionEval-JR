@@ -166,18 +166,18 @@ loadRuntimeConfig <- function(ParamDir=NULL,ParamFile=NULL) {
   invisible( ve.env$RunParam_ls )
 }
 
-#GET RUNTIME PARAMETERS
-#======================
+#GET RUNTIME SETUP
+#=================
 #' Return runtime base RunParam_ls (loading it if not present)
 #'
-#' \code{getRuntimeParameters} gets a subset of the current runParameters by name. It does NOT
+#' \code{getSetup} gets a subset of the current runParameters by name. It does NOT
 #' supply default values. It returns the ones that are defined.
 #'
 #' @param paramNames is a character vector of parameter names identifying a subset of runParameters
 #'   to retrieve. If not provided, return all defined parameters (but not any that are defaulted).
 #' @return A list of defined run parameters (possibly empty, if no parameters are defined)
 #' @export
-getRuntimeParameters <- function(paramNames=NULL) {
+getSetup <- function(paramNames=NULL) {
   RunParams_ls <- if ( is.null(ve.env$RunParam_ls) ) ve.env$RunParam_ls else loadRuntimeConfig()
   if ( is.character(paramNames) ) RunParams_ls <- RunParams_ls[names(RunParams_ls) %in% paramNames]
   return(RunParams_ls)
@@ -265,7 +265,7 @@ ve.model.setupRunEnvironment <- function(
     LogLevel        = LogLevel
   )
   if ( ! is.null(ModelScriptFile) ) addParams_ls <- c(addParams_ls,list(ModelScriptFile=ModelScriptFile))
-  addParams_ls <- visioneval::addParameterSource(addParams_ls,paste0("Owner))
+  addParams_ls <- visioneval::addParameterSource(addParams_ls,paste0("Owner"))
   ve.model$RunParam_ls <- visioneval::mergeParameters(Param_ls,addParams_ls) # addParams_ls will override
 
   invisible(ve.model$RunParam_ls)
