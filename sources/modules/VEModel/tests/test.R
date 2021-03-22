@@ -108,54 +108,104 @@ test_model <- function(low="warn") {
   testStep("open a model")
   jr <- openModel("JRSPM")
 
+  testStep("model directory original")
+  print(jr$dir())
+
   testStep("copy a model")
   cp <- jr$copy("CRSPM")
+  cp$clear(force=TRUE)
   
-  testStep("model directory original")
-  jr$dir()
-
   testStep("model directory copy")
-  cp$dir()
+  print(cp)
+  print(cp$dir())
 
   testStep("remove model copy")
   unlink("models/CRSPM",recursive=TRUE)
 
   testStep("construct a bare model from scratch")
-  dir.create("models/BARE")
-  # Create run_model.R script (two modules)
-  # Borrow model geography, units, deflators from JRSPM
-  # Set run parameters in the live model
-  #    Need "$set" function
-  #    Need save for visioneval.cnf
-  # Need to browse config parameters by source
-  # open model
-  bare <- openModel("BARE")
+  bare.dir <- file.path("models","BARE")
+  base.dir <- file.path("models","JRSPM")
+  if ( dir.exists(bare.dir) ) unlink(bare.dir,recursive=TRUE)
+  dir.create(bare.dir)
   
+  # Create run_model.R script (two modules)
+  writeLines(
+    c(
+      'initializeModel()',
+      'for(Year in getYears()) {',
+      'runModule("CreateHouseholds","VESimHouseholds",RunFor = "AllYears",RunYear = Year)',
+      'runModule("PredictWorkers","VESimHouseholds",RunFor = "AllYears",RunYear = Year)',
+      '}'
+    ),
+    con=file.path(bare.dir,"run_model.R")
+  )
+  # Borrow model geography, units, deflators from JRSPM
+  base.defs <- file.path(base.dir,"defs")
+  base.inputs <- file.path(base.dir,"inputs")
+  bare.defs <- file.path(bare.dir,"defs")
+  bare.inputs <- file.path(bare.dir,"inputs")
+  dir.create(bare.defs)
+  dir.create(bare.inputs)
+
+  from <- file.path(base.defs,c("units.csv","deflators.csv","geo.csv"))
+  print(from)
+  file.copy(from=from,to=bare.defs)
+  # Copy input files
+  from <- file.path(base.defs,"model_parameters.json")
+  file.copy(from=from,to=bare.inputs)
+  # Inputs for CreateHouseholds and PredictWorkers
+  print(getwd())
+  print(bare.dir)
+  from <- file.path( base.inputs,c(
+    "azone_hh_pop_by_age.csv",
+    "azone_hhsize_targets.csv",
+    "azone_gq_pop_by_age.csv"
+  ) )
+  print(from)
+  file.copy(from=from, to=file.path(bare.inputs) )
+
+  testStep("Open BARE model using defaults...")
+  # TODO: make sure the requisite paramters can be accessed during initModelState
+  # Don't necessarily want to force these...
+  bare <- openModel("BARE",log="info")
+
+  return("Stop test")
+
+  testStep("Configure BARE model...")
+  # TODO: need to provide the following gracefully when we first open the model
+  bare$setup(
+    list(
+      Model       = "BARE Model Test",
+      Scenario    = "Test",
+      Description = "Minimal model constructed programmatically",
+      Region      = "RVMPO",
+      BaseYear    = "2010",
+      Years       = c("2010", "2038")
+    )
+  )
+
+  testStep("List model inputs...")
   # list model input files and fields
   #   Needs to work before running - that's why ModelState is pre-loaded
   bare$list(input=TRUE)
 
-  # populate input directory with copies of needed JRSPM files
-  # file.copy(....)
-
-  testStep("list of bare model fields: pre-run")
   testStep("run the bare model")
-  bare$run()
+#  bare$run()
   
   testStep("directory of the bare model: results")
-  bare$dir(results=TRUE)
+#  bare$dir(results=TRUE)
 
   testStep("list fields in bare model")
-  bare$list()
+#  bare$list()
 
   testStep("extract model results")
-  bare$extract(prefix="BareTest")
+#  bare$extract(prefix="BareTest")
 
   testStep("clear the bare model")
-  bare$dir(output=TRUE)
-  bare$clear()
+#   bare$dir(output=TRUE)
+#   bare$clear()
   bare$dir()
-  bare$unlink("models/BARE",recursive=TRUE)
+  bare$unlink(bare.dir,recursive=TRUE)
   bare$dir() # Should reveal error of some sort
 }
 
