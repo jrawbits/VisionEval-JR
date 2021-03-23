@@ -138,7 +138,7 @@ VEPackageRunParameters <- function(Param_ls=list()) {
 
 #LOAD RUNTIME CONFIGURATION
 #==========================
-#' Load a VisionEval.cnf file from a directory into the runtime environment
+#' Load a VisionEval.cnf file from the runtime directory into the runtime environment
 #'
 #' \code{loadRuntimeConfig} merges a configuration file from a directory into the runtime R
 #' environment. With no parameters it will read and merge the file's contents into the system
@@ -178,7 +178,7 @@ loadRuntimeConfig <- function(ParamDir=NULL,ParamFile=NULL) {
 #' @return A list of defined run parameters (possibly empty, if no parameters are defined)
 #' @export
 getSetup <- function(paramNames=NULL) {
-  RunParams_ls <- if ( is.null(ve.env$RunParam_ls) ) ve.env$RunParam_ls else loadRuntimeConfig()
+  RunParams_ls <- if ( ! is.null(ve.env$RunParam_ls) ) ve.env$RunParam_ls else loadRuntimeConfig()
   if ( is.character(paramNames) ) RunParams_ls <- RunParams_ls[names(RunParams_ls) %in% paramNames]
   return(RunParams_ls)
 }
