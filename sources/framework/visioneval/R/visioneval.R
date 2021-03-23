@@ -124,6 +124,7 @@ function(
   # Look for defs along InputPath, and run_parameters.json.
   # Note that we can't change parameters listed in run_parameters.json
   # Those represent model setup invariants (e.g. inputs, defs locations)
+  # New style model will already have loaded those from visioneval.cnf in the model root
   ParamPath <- findRuntimeInputFile("run_parameters.json","ParamDir",Param_ls=RunParam_ls,StopOnError=FALSE)
   if ( ! is.na(ParamPath) ) RunParam_ls <- loadConfiguration(ParamPath=ParamPath,override=RunParam_ls)
 
@@ -236,6 +237,7 @@ function(
     # open the existing model state
     loadModelState(currentModelStatePath)
   }
+  RunParam_ls <- ve.model$RunParam_ls; # May have been modified in initModelState or loadModelState
 
   # ===================================
   # PUT LOG PARAMETERS INTO MODEL STATE

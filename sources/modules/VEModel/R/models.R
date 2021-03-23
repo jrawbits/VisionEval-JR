@@ -364,7 +364,9 @@ ve.model.copy <- function(newName=NULL,newPath=NULL) {
 }
 
 # Helper function:
-#  Open an existing ModelState file, or create a fresh one in-memory
+#  Open an existing ModelState file, or create a stripped-down one in memory
+#    The role of the in-memory version is to have the parsed model script
+#    And to identify the model input data elements and files
 #  Will eventually support interrogating the model script and structures (e.g. inputs and
 #  outputs) without actually running the model.
 ve.model.loadModelState <- function(log="error") {
@@ -408,6 +410,7 @@ ve.model.loadModelState <- function(log="error") {
         self$runStatus[stage] <- "Prior Run"
       }
     } else {
+      # ModelState file does not yet exist (not run)
       # Run the initializeModel function to build in-memory ModelState_ls
       # Needed to inspect model elements (script, inputs, outputs)
       visioneval::writeLog("Pre-Initializing ModelState",Level="info")
@@ -430,6 +433,7 @@ ve.model.loadModelState <- function(log="error") {
       parsedScript <- visioneval::parseModelScript(Param_ls$ModelScriptFile)
 
       # Execute the initializeModel function from the model script
+      # Process the module specifications 
       # (RunModel==FALSE so working directory is irrelevant).
       initArgs                   <- parsedScript$InitParams_ls; # includes LoadDatastore etc.
       # Naming explicit arguments below (e.g. ModelScriptFile) makes them higher priority than Param_ls
@@ -462,10 +466,10 @@ ve.model.loadModelState <- function(log="error") {
 # modelPath may be a full path, and will be expanded into known model directories
 #  if it is a relative path.
 ve.model.init <- function(modelPath=NULL,log="error") {
-  # TODO: option to create a new "bare" model template
   # Load system model configuration
   visioneval::initLog(Save=FALSE,Threshold=log)
   self$RunParam_ls <- getSetup()
+
   # Opportunity to override names of ModelState, run_model.R, Datastore, etc.
   # Also to establish standard model directory structure (inputs, results)
 
@@ -494,7 +498,7 @@ ve.model.init <- function(modelPath=NULL,log="error") {
   initMsg <- paste("Loading Model",self$modelName)
   visioneval::writeLog(initMsg,Level="info")
 
-  private$loadModelState(log=log)
+  private$loadModelState(log=log) # load bare bones...
 
   visioneval::writeLogMessage(self$modelPath)
   visioneval::writeLog("Model Load Complete.",Level="info")

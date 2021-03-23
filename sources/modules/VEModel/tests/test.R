@@ -10,6 +10,12 @@ if ( ! requireNamespace("pkgload",quietly=TRUE) ) {
 if ( ! requireNamespace("visioneval",quietly=TRUE) ) {
   stop("Missing required package: 'visioneval'")
 }
+if ( ! requireNamespace("jsonlite",quietly=TRUE) ) {
+  stop("Missing required package: 'jsonlite'")
+}
+if ( ! requireNamespace("yaml",quietly=TRUE) ) {
+  stop("Missing required package: 'yaml'")
+}
 
 setup <- function(ve.runtime=NULL) {
   # Creates or uses a fresh minimal runtime environment as a sub-directory of "tests"
@@ -102,7 +108,7 @@ test_run <- function(log="warn") {
   return("Failed to run.")
 }
 
-test_model <- function(low="warn") {
+test_model <- function(oldstyle=TRUE, low="warn") {
   testStep("Model Management Functions")
 
   testStep("open a model")
@@ -127,19 +133,23 @@ test_model <- function(low="warn") {
   base.dir <- file.path("models","JRSPM")
   if ( dir.exists(bare.dir) ) unlink(bare.dir,recursive=TRUE)
   dir.create(bare.dir)
-  
-  # Create run_model.R script (two modules)
-  writeLines(
-    c(
-      'initializeModel()',
-      'for(Year in getYears()) {',
-      'runModule("CreateHouseholds","VESimHouseholds",RunFor = "AllYears",RunYear = Year)',
-      'runModule("PredictWorkers","VESimHouseholds",RunFor = "AllYears",RunYear = Year)',
-      '}'
-    ),
-    con=file.path(bare.dir,"run_model.R")
+
+  testStep("Create minimal run_model.R")
+
+  runModelFile <- file.path(bare.dir,"run_model.R")
+  runModel_vc <- c(
+    'initializeModel()',
+    'for(Year in getYears()) {',
+    'runModule("CreateHouseholds","VESimHouseholds",RunFor = "AllYears",RunYear = Year)',
+    'runModule("PredictWorkers","VESimHouseholds",RunFor = "AllYears",RunYear = Year)',
+    '}'
   )
-  # Borrow model geography, units, deflators from JRSPM
+  cat(paste(runModelFile,runModel_vc,"",sep="\n",collapse="\n"))
+  writeLines(runModel_vc,con=runModelFile)
+
+  testStep("Borrow inputs and defs from standard VERSPM")
+
+  # Borrow model geography, units, deflators from VERSPM
   base.defs <- file.path(base.dir,"defs")
   base.inputs <- file.path(base.dir,"inputs")
   bare.defs <- file.path(bare.dir,"defs")
@@ -147,12 +157,39 @@ test_model <- function(low="warn") {
   dir.create(bare.defs)
   dir.create(bare.inputs)
 
+  testStep(paste0("Create configuration: ",if (oldstyle) "defs/run_parameters.json" else "visioneval.cnf"))
+
+  # Create run_model.R script (two variants)
+  # Create model-specific configuration
+  # Could equivalently place these in run_parameters.json
+  runConfig_ls <-  list(
+      Model       = "BARE Model Test",
+      Scenario    = "Test",
+      Description = "Minimal model constructed programmatically",
+      Region      = "RVMPO",
+      BaseYear    = "2010",
+      Years       = c("2010", "2038")
+    )
+
+  if ( oldstyle ) {
+    configFile <- file.path(bare.defs,"run_parameters.json")
+    write(jsonlite::toJSON(runConfig_ls),configFile)
+  } else {
+    configFile <- file.path(bare.dir,"visioneval.cnf")
+    yaml::write_yaml(runConfig_ls,configRile)
+  }
+
+  testStep("Copy other configuration files (geo, units, deflators)")
+
   from <- file.path(base.defs,c("units.csv","deflators.csv","geo.csv"))
   print(from)
   file.copy(from=from,to=bare.defs)
   # Copy input files
   from <- file.path(base.defs,"model_parameters.json")
   file.copy(from=from,to=bare.inputs)
+
+  testStep("Copy basic input files")
+
   # Inputs for CreateHouseholds and PredictWorkers
   print(getwd())
   print(bare.dir)
@@ -165,24 +202,9 @@ test_model <- function(low="warn") {
   file.copy(from=from, to=file.path(bare.inputs) )
 
   testStep("Open BARE model using defaults...")
-  # TODO: make sure the requisite paramters can be accessed during initModelState
-  # Don't necessarily want to force these...
   bare <- openModel("BARE",log="info")
 
   return("Stop test")
-
-  testStep("Configure BARE model...")
-  # TODO: need to provide the following gracefully when we first open the model
-  bare$setup(
-    list(
-      Model       = "BARE Model Test",
-      Scenario    = "Test",
-      Description = "Minimal model constructed programmatically",
-      Region      = "RVMPO",
-      BaseYear    = "2010",
-      Years       = c("2010", "2038")
-    )
-  )
 
   testStep("List model inputs...")
   # list model input files and fields
