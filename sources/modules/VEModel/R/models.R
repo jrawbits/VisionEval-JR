@@ -364,6 +364,72 @@ ve.model.copy <- function(newName=NULL,newPath=NULL) {
 }
 
 # Helper function:
+# parse a table of package/module inputs from assembled AllSpecs_ls
+# returns a data.frame summarizing the inputs
+# Columns returned:
+#   StageNum StageName Package Module
+#   Use(Get/Set/Inp) Group Table Name
+#   Units Description Spec(as "dump" text)
+#   InputDir File
+# In the order in which modules appear in the run_model script(s)
+# Structure of AllSpecs:
+#   Stage
+#     Package::Module
+#       ModuleName
+#       PackageName
+#       RunFor (not extracted)
+#       Specs
+#         RunBy
+#         NewSetTable (Group/Table to be created by package::module)
+#           TABLE
+#           GROUP
+#         Inp
+#  [1] "NAME"        "FILE"        "TABLE"       "GROUP"       "TYPE"
+#  [6] "UNITS"       "NAVALUE"     "SIZE"        "PROHIBIT"    "ISELEMENTOF"
+# [11] "UNLIKELY"    "TOTAL"       "DESCRIPTION" "INPUTDIR"    "MULTIPLIER"
+# [16] "YEAR"
+#         Get
+# [1] "NAME"        "TABLE"       "GROUP"       "TYPE"        "UNITS"
+# [6] "PROHIBIT"    "ISELEMENTOF" "MULTIPLIER"  "YEAR"
+#         Set
+#  [1] "NAME"        "TABLE"       "GROUP"       "TYPE"        "UNITS"
+#  [6] "NAVALUE"     "PROHIBIT"    "ISELEMENTOF" "SIZE"        "DESCRIPTION"
+# [11] "MULTIPLIER"  "YEAR"
+
+summarizeInputs <- function(AllSpecs_ls) {
+#   specs <- data.frame()
+#   stages <- names(AllSpecs_ls)
+#   for ( s in 1:length(AllSpecs_ls ) {
+#     specs <- rbind(specs,summarizeStageInput(AllSpecs_ls[[s]])
+#       RunBy (e.g. "Region")
+#       NewSetTable
+#       Inp (a list)
+#       Get
+#       Set
+# Unique Names in specifications:
+#  [1] "NAME"        "FILE"        "TABLE"       "GROUP"       "TYPE"
+#  [6] "UNITS"       "NAVALUE"     "SIZE"        "PROHIBIT"    "ISELEMENTOF"
+# [11] "UNLIKELY"    "TOTAL"       "DESCRIPTION" "INPUTDIR"    "MULTIPLIER"
+# [16] "YEAR"        "OPTIONAL"
+
+  allnames <- character(0)
+  for ( as in AllSpecs_ls ) {
+    cat("AllSpecs contains:\n")
+    print(names(as))
+    for ( packmod in as ) {
+      cat("PackMod contains:\n")
+      print(names(packmod))
+      spc <- packmod$Specs
+      inames <- if ( "Inp" %in% names(spc) ) unlist(sapply(spc$Inp,function(s) names(s) )) else character(0)
+      gnames <- if ( "Get" %in% names(spc) ) unlist(sapply(spc$Get,function(s) names(s) )) else character(0)
+      snames <- if ( "Set" %in% names(spc) ) unlist(sapply(spc$Set,function(s) names(s) )) else character(0)
+      allnames <- unique(c(allnames,inames,gnames,snames))
+    }
+  }
+  return(allnames)
+}
+
+# Helper function:
 #  Open an existing ModelState file, or create a stripped-down one in memory
 #    The role of the in-memory version is to have the parsed model script
 #    And to identify the model input data elements and files
@@ -419,7 +485,6 @@ ve.model.loadModelState <- function(log="error") {
       scriptFile <- self$stageScripts[stage]
       Param_ls <- ve.model.setupRunEnvironment(
         Owner="VEModel::loadModelState",
-        PreviousState=self$ModelState, # previously loaded model states
         Param_ls=self$RunParam_ls,
         RunModel=FALSE,
         ModelDir=stageInput,
@@ -432,17 +497,46 @@ ve.model.loadModelState <- function(log="error") {
       # Parse the model script
       parsedScript <- visioneval::parseModelScript(Param_ls$ModelScriptFile)
 
-      # Execute the initializeModel function from the model script
-      # Process the module specifications 
+      visioneval::writeLog("InitializeModel...",Level="info")
+
+      # Execute the initializeModel function from the model script with RunModel==FALSE
+      # Loads the model configuration elements and builds a ModelState
       # (RunModel==FALSE so working directory is irrelevant).
       initArgs                   <- parsedScript$InitParams_ls; # includes LoadDatastore etc.
       # Naming explicit arguments below (e.g. ModelScriptFile) makes them higher priority than Param_ls
       initArgs$ModelScriptFile   <- Param_ls$ModelScriptFile
-      initArgs$ParsedModelScript <- parsedScript
       initArgs$LogLevel          <- log
-      self$ModelState[[ toupper(basename(stagePath)) ]] <- do.call(visioneval::initializeModel,args=initArgs)
+      ms <- do.call(visioneval::initializeModel,args=initArgs)
+      self$ModelState[[ toupper(basename(stagePath)) ]] <- ms
+      Param_ls <- ms$RunParam_ls
+
+      visioneval::writeLog("Process Package Specifications...",Level="info")
+
+      # Process required packages and specification list (similar to what is done in
+      # initializeModel when actually running a model).
+      RequiredPackages <- parsedScript$RequiredPackages
+      AlreadyInitialized <- character(0)
+      if ( ! is.null(Param_ls$LoadDstoreName) ) {
+        LoadEnv <- new.env()
+        LoadDstoreDir <- dirname(Param_ls$LoadDstoreName) # Null if not set during initializeModel
+        LoadEnv$ModelState_ls <- self$ModelState[[toupper(basename(LoadDstoreDir))]]
+        if ( is.null(LoadEnv$ModelState_ls) ) {
+          ModelStateFileName <- getRunParameter("ModelStateFileName",Param_ls=Param_ls)
+          modelStatePath <- file.path(LoadDstoreDir,ModelStateFileName) # TODO: Unpack LoadDstoreDir from InitializeModel arguments
+          loadModelState(modelStatePath,envir=LoadEnv)
+        }
+        if ( "RequiredVEPackages" %in% names(LoadEnv$ModelState_ls) ) {
+          AlreadyInitialized <- LoadEnv$ModelState_ls$RequiredVEPackages
+          RequiredPackages <- unique(c(RequiredPackages, AlreadyInitialized))
+        }
+      }
+      self$AllSpecs_ls[[toupper(basename(stagePath))]] <- visioneval::parseModuleCalls(parsedScript$ModuleCalls_df, AlreadyInitialized, RequiredPackages, Save=FALSE)
     }
   }
+#  private$index <- summarizeInputs()
+  ve.model <- visioneval::modelEnvironment()
+  ve.model$AllSpecs_ls <- self$AllSpecs_ls; # Temporary for debugging
+  # Build in self a data.frame of Stage Package Module Get/Set/Inp Group Table Name InputDir File
 
   if ( length(self$ModelState)!=self$stageCount ) {
     self$status <- "Failed to Load"
@@ -1067,6 +1161,7 @@ VEModel <- R6::R6Class(
     stageCount=NULL,
     ModelState=NULL,                        # ModelState placeholder
     RunParam_ls=NULL,
+    AllSpecs_ls=NULL,                       # Processed list of input/output specifications
     runStatus=NULL,
     status="Uninitialized",
 
@@ -1086,6 +1181,7 @@ VEModel <- R6::R6Class(
     # Private Members
     runError=NULL,
     lastResults=list(),                      # Cache previous results object
+    index=NULL,
     # Private Methods
     loadModelState=ve.model.loadModelState  # Function to load a model state file
   )
