@@ -111,23 +111,23 @@ test_run <- function(log="warn") {
 test_model <- function(oldstyle=TRUE, low="warn") {
   testStep("Model Management Functions")
 
-  testStep("open a model")
-  jr <- openModel("JRSPM")
-
-  testStep("model directory original")
-  print(jr$dir())
-
-  testStep("copy a model")
-  cp <- jr$copy("CRSPM")
-  cp$clear(force=TRUE)
-  
-  testStep("model directory copy")
-  print(cp)
-  print(cp$dir())
-
-  testStep("remove model copy")
-  unlink("models/CRSPM",recursive=TRUE)
-
+#   testStep("open a model")
+#   jr <- openModel("JRSPM")
+# 
+#   testStep("model directory original")
+#   print(jr$dir())
+# 
+#   testStep("copy a model")
+#   cp <- jr$copy("CRSPM")
+#   cp$clear(force=TRUE)
+#   
+#   testStep("model directory copy")
+#   print(cp)
+#   print(cp$dir())
+# 
+#   testStep("remove model copy")
+#   unlink("models/CRSPM",recursive=TRUE)
+# 
   testStep("construct a bare model from scratch")
   bare.dir <- file.path("models","BARE")
   base.dir <- file.path("models","JRSPM")
@@ -144,10 +144,10 @@ test_model <- function(oldstyle=TRUE, low="warn") {
     'runModule("PredictWorkers","VESimHouseholds",RunFor = "AllYears",RunYear = Year)',
     '}'
   )
-  cat(paste(runModelFile,runModel_vc,"",sep="\n",collapse="\n"))
+  cat(runModelFile,paste(runModel_vc,collapse="\n"),sep="\n")
   writeLines(runModel_vc,con=runModelFile)
 
-  testStep("Borrow inputs and defs from standard VERSPM")
+  testStep("Set up model directory structure.")
 
   # Borrow model geography, units, deflators from VERSPM
   base.defs <- file.path(base.dir,"defs")
@@ -156,6 +156,7 @@ test_model <- function(oldstyle=TRUE, low="warn") {
   bare.inputs <- file.path(bare.dir,"inputs")
   dir.create(bare.defs)
   dir.create(bare.inputs)
+  print(dir(bare.dir,recursive=TRUE,full.names=TRUE,include.dirs=TRUE))
 
   testStep(paste0("Create configuration: ",if (oldstyle) "defs/run_parameters.json" else "visioneval.cnf"))
 
@@ -163,48 +164,53 @@ test_model <- function(oldstyle=TRUE, low="warn") {
   # Create model-specific configuration
   # Could equivalently place these in run_parameters.json
   runConfig_ls <-  list(
-      Model       = "BARE Model Test",
-      Scenario    = "Test",
-      Description = "Minimal model constructed programmatically",
-      Region      = "RVMPO",
-      BaseYear    = "2010",
+      Model       = jsonlite::unbox("BARE Model Test"),
+      Scenario    = jsonlite::unbox("Test"),
+      Description = jsonlite::unbox("Minimal model constructed programmatically"),
+      Region      = jsonlite::unbox("RVMPO"),
+      BaseYear    = jsonlite::unbox("2010"),
       Years       = c("2010", "2038")
     )
 
   if ( oldstyle ) {
+    cat("Old style model setup (defs/run_parameters.json)")
     configFile <- file.path(bare.defs,"run_parameters.json")
-    write(jsonlite::toJSON(runConfig_ls),configFile)
+    write(jsonlite::toJSON(runConfig_ls, pretty=TRUE),configFile)
+    print(bare.defs)
+    print(configFile)
+    cat(readLines(configFile),sep="\n")
   } else {
     configFile <- file.path(bare.dir,"visioneval.cnf")
     yaml::write_yaml(runConfig_ls,configRile)
+    print(bare.dir)
+    print(configFile)
+    cat(readLines(configFile),sep="\n")
   }
 
   testStep("Copy other configuration files (geo, units, deflators)")
 
   from <- file.path(base.defs,c("units.csv","deflators.csv","geo.csv"))
-  print(from)
   file.copy(from=from,to=bare.defs)
-  # Copy input files
+  print(bare.defs)
+  print(dir(bare.defs,full.names=TRUE))
+
+  testStep("Copy basic input files (model_parameters.json could also live in 'defs')")
+
+  # Inputs for CreateHouseholds and PredictWorkers
   from <- file.path(base.defs,"model_parameters.json")
   file.copy(from=from,to=bare.inputs)
 
-  testStep("Copy basic input files")
-
-  # Inputs for CreateHouseholds and PredictWorkers
-  print(getwd())
-  print(bare.dir)
   from <- file.path( base.inputs,c(
     "azone_hh_pop_by_age.csv",
     "azone_hhsize_targets.csv",
     "azone_gq_pop_by_age.csv"
   ) )
-  print(from)
   file.copy(from=from, to=file.path(bare.inputs) )
+  print(bare.inputs)
+  print(dir(bare.inputs,full.names=TRUE))
 
   testStep("Open BARE model using defaults...")
   bare <- openModel("BARE",log="info")
-
-  return("Stop test")
 
   testStep("List model inputs...")
   # list model input files and fields

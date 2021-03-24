@@ -390,7 +390,8 @@ getUnits <- function(Type_) {
 #' @param RequiredPackages a character vector of packages already required
 #' @param Save if FALSE, just update ModelState in memory, otherwise write changes to disk
 #' @return A list of all processed module specifications
-parseModuleCalls <- function( ModuleCalls_df, AlreadyInitialized, RequiredPackages, Save=TRUE ) {
+#' @export
+parseModuleCalls <- function( ModuleCalls_df, AlreadyInitialized="", RequiredPackages="", Save=TRUE ) {
 
   ModuleCalls_df <- unique(ModuleCalls_df)
 
@@ -486,6 +487,7 @@ parseModuleCalls <- function( ModuleCalls_df, AlreadyInitialized, RequiredPackag
     PackageName <- ModuleCalls_df$PackageName[i]
     AllSpecs_ls[[i]]$PackageName <- PackageName
     AllSpecs_ls[[i]]$RunFor <- ModuleCalls_df$RunFor[i]
+    names(AllSpecs_ls)[i] <- paste0(PackageName,"::",ModuleName)
     #Check module availability
     Err <- checkModuleExists(ModuleName, PackageName, InstalledPkgs_)
     if (length(Err) > 0) {
