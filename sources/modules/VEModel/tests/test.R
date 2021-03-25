@@ -215,6 +215,8 @@ test_model <- function(oldstyle=TRUE, low="warn") {
   testStep("List model inputs...")
   # list model input files and fields
   #   Needs to work before running - that's why ModelState is pre-loaded
+  return(bare)
+  
   bare$list(input=TRUE)
 
   testStep("run the bare model")
@@ -477,8 +479,6 @@ test_query <- function(log="warn") {
   cat("Directory: "); print(qry$QueryDir)
   cat("Name; "); print(qry$QueryName)
   cat("Path: "); print(qry$QueryFile)
-
-  return("Test Done")
 
   testStep("Model QueryDir contents...")
 
