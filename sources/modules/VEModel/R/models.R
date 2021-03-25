@@ -446,6 +446,7 @@ ve.model.loadModelState <- function(log="error") {
 
   for ( stage in 1:self$stageCount ) {
     stagePath <- self$stagePaths[stage]
+    stageIndex <- toupper(basename(stagePath))
 
     if ( self$stageCount>1 ) {
       visioneval::writeLog(paste(initMsg,stage,":",stagePath),Level="debug")
@@ -477,7 +478,6 @@ ve.model.loadModelState <- function(log="error") {
         ModelScriptFile=normalizePath(file.path(stageInput,scriptFile),winslash="/"),
         LogLevel=log
       )
-      stageIndex <- toupper(basename(stagePath))
 
       # Parse the model script
       parsedScript <- visioneval::parseModelScript(Param_ls$ModelScriptFile)
@@ -515,9 +515,10 @@ ve.model.loadModelState <- function(log="error") {
           RequiredPackages <- unique(c(RequiredPackages, AlreadyInitialized))
         }
       }
-      allSpecs <- visioneval::parseModuleCalls(parsedScript$ModuleCalls_df, AlreadyInitialized, RequiredPackages, Save=FALSE)
-      self$specSummary[[stageIndex]] <- summarizeSpecs(allSpecs)
+      AllSpecs_ls <- visioneval::parseModuleCalls(parsedScript$ModuleCalls_df, AlreadyInitialized, RequiredPackages, Save=FALSE)
+      self$ModelState[[ stageIndex ]][["AllSpecs_ls"]] <- AllSpecs_ls
     }
+    self$specSummary[[stageIndex]] <- summarizeSpecs(self$ModelState[[ stageIndex ]]$AllSpecs_ls)
   }
 
   if ( length(self$ModelState)!=self$stageCount ) {
@@ -796,7 +797,7 @@ ve.model.run <- function(stage=NULL,lastStage=NULL,log="warn") {
             } else {
               remark <- "Model stage failed"
             }
-              
+            traceback(1)
             msg <- c(conditionMessage(e),deparse(conditionCall(e)))
             if ( ! nzchar(msg)[1] ) msg <- "Stopped."
             self$status <- "Error"

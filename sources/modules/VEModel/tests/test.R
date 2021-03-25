@@ -86,23 +86,24 @@ testStep <- function(msg) {
   cat("",paste(msg,collapse="\n"),"",sep="\n")
 }
 
-test_run <- function(log="warn") {
+test_run <- function(modelName="JRSPM",log="warn") {
   testStep("Install and Run a Full Model")
+  modelPath <- file.path("models",modelName)
   owd <- getwd()
   tryCatch(
     {
       testStep("Clearing previous model, if any")
-      if ( dir.exists("models/JRSPM") ) {
+      if ( dir.exists(modelPath) ) {
         message("Clearing runtime environment")
-        unlink("models/JRSPM",recursive=TRUE)
+        unlink(modelPath,recursive=TRUE)
       }
-      testStep("Installing model from package")
-      rs <- installModel("VERSPM","JRSPM",log=log)
-      testStep("Running model")
+      testStep(paste("Installing VERSPM model from package as",modelName))
+      rs <- installModel("VERSPM",modelName,log=log,confirm=FALSE)
+      testStep("Running model...")
       rs$run(log=log)
       return(rs)
     },
-    error=function(e) { cat(conditionMessage(e),"\n"); takedown(); stop(e) },
+    error=function(e) { cat("Runtime error:\n",conditionMessage(e),"\n"); takedown(); stop(e) },
     finally=setwd(owd)
   )
   return("Failed to run.")
