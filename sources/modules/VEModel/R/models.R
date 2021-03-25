@@ -366,67 +366,51 @@ ve.model.copy <- function(newName=NULL,newPath=NULL) {
 # Helper function:
 # parse a table of package/module inputs from assembled AllSpecs_ls
 # returns a data.frame summarizing the inputs
-# Columns returned:
-#   StageNum StageName Package Module
-#   Use(Get/Set/Inp) Group Table Name
-#   Units Description Spec(as "dump" text)
-#   InputDir File
-# In the order in which modules appear in the run_model script(s)
-# Structure of AllSpecs:
-#   Stage
-#     Package::Module
-#       ModuleName
-#       PackageName
-#       RunFor (not extracted)
-#       Specs
-#         RunBy
-#         NewSetTable (Group/Table to be created by package::module)
-#           TABLE
-#           GROUP
-#         Inp
-#  [1] "NAME"        "FILE"        "TABLE"       "GROUP"       "TYPE"
-#  [6] "UNITS"       "NAVALUE"     "SIZE"        "PROHIBIT"    "ISELEMENTOF"
-# [11] "UNLIKELY"    "TOTAL"       "DESCRIPTION" "INPUTDIR"    "MULTIPLIER"
-# [16] "YEAR"
-#         Get
-# [1] "NAME"        "TABLE"       "GROUP"       "TYPE"        "UNITS"
-# [6] "PROHIBIT"    "ISELEMENTOF" "MULTIPLIER"  "YEAR"
-#         Set
-#  [1] "NAME"        "TABLE"       "GROUP"       "TYPE"        "UNITS"
-#  [6] "NAVALUE"     "PROHIBIT"    "ISELEMENTOF" "SIZE"        "DESCRIPTION"
-# [11] "MULTIPLIER"  "YEAR"
 
-summarizeInputs <- function(AllSpecs_ls) {
-#   specs <- data.frame()
-#   stages <- names(AllSpecs_ls)
-#   for ( s in 1:length(AllSpecs_ls ) {
-#     specs <- rbind(specs,summarizeStageInput(AllSpecs_ls[[s]])
-#       RunBy (e.g. "Region")
-#       NewSetTable
-#       Inp (a list)
-#       Get
-#       Set
 # Unique Names in specifications:
-#  [1] "NAME"        "FILE"        "TABLE"       "GROUP"       "TYPE"
-#  [6] "UNITS"       "NAVALUE"     "SIZE"        "PROHIBIT"    "ISELEMENTOF"
-# [11] "UNLIKELY"    "TOTAL"       "DESCRIPTION" "INPUTDIR"    "MULTIPLIER"
-# [16] "YEAR"        "OPTIONAL"
+# Not all names will be present in all specs
+specNames <- c(
+  "NAME", "FILE", "TABLE", "GROUP", "TYPE",
+  "UNITS", "NAVALUE", "SIZE", "PROHIBIT", "ISELEMENTOF",
+  "UNLIKELY", "TOTAL", "DESCRIPTION", "INPUTDIR", "MULTIPLIER",
+  "YEAR", "OPTIONAL","SPEC"
+)
+# SPEC is added to what might otherwise be there,
+#   and it contains either "Inp", "Get" or "Set"
 
-  allnames <- character(0)
-  for ( as in AllSpecs_ls ) {
-    cat("AllSpecs contains:\n")
-    print(names(as))
-    for ( packmod in as ) {
-      cat("PackMod contains:\n")
-      print(names(packmod))
-      spc <- packmod$Specs
-      inames <- if ( "Inp" %in% names(spc) ) unlist(sapply(spc$Inp,function(s) names(s) )) else character(0)
-      gnames <- if ( "Get" %in% names(spc) ) unlist(sapply(spc$Get,function(s) names(s) )) else character(0)
-      snames <- if ( "Set" %in% names(spc) ) unlist(sapply(spc$Set,function(s) names(s) )) else character(0)
-      allnames <- unique(c(allnames,inames,gnames,snames))
+summarizeSpecs <- function(AllSpecs_ls) {
+  specFrame <- data.frame()
+  dummyRow <- rep(as.character(NA),length(specNames))
+  specFrame <- rbind(specFrame,dummyRow) # establish data.frame names
+  names(specFrame) <- specNames
+  for ( packmod in AllSpecs_ls ) {
+    spc <- packmod$Specs
+    for ( spectype in c("Inp","Get","Set") ) {
+      if ( ! spectype %in% names(spc) ) next
+      addSpecs <- lapply(spc[[spectype]],
+        function(x) {
+          # Set SPEC type and add other missing names as <NA>
+          for ( f in 1:length(x) ) {
+            if ( length(x[[f]])>1 || !is.character(x) ) {
+              x[[f]] <- paste(x[[f]],collapse=", ")
+            }
+          }
+          x$SPEC <- spectype
+          miss <- ! names(x) %in% specNames
+          x[miss] <- as.character(NA)
+          unlist(x)
+        }
+      )
+      # bind the augmented specs into the data.frame of all specs
+      # In principle could use do.call(rbind,addSpecs) but it's too hard to get
+      #  the arguments right
+      for ( sp in addSpecs ) {
+        specFrame <- rbind(specFrame[,specNames],sp[specNames]) # Force name order
+      }
     }
   }
-  return(allnames)
+  specFrame <- specFrame[!is.na(specFrame$SPEC),] # remove dummyRow
+  return(specFrame)
 }
 
 # Helper function:
@@ -493,6 +477,7 @@ ve.model.loadModelState <- function(log="error") {
         ModelScriptFile=normalizePath(file.path(stageInput,scriptFile),winslash="/"),
         LogLevel=log
       )
+      stageIndex <- toupper(basename(stagePath))
 
       # Parse the model script
       parsedScript <- visioneval::parseModelScript(Param_ls$ModelScriptFile)
@@ -507,7 +492,7 @@ ve.model.loadModelState <- function(log="error") {
       initArgs$ModelScriptFile   <- Param_ls$ModelScriptFile
       initArgs$LogLevel          <- log
       ms <- do.call(visioneval::initializeModel,args=initArgs)
-      self$ModelState[[ toupper(basename(stagePath)) ]] <- ms
+      self$ModelState[[ stageIndex ]] <- ms
       Param_ls <- ms$RunParam_ls
 
       visioneval::writeLog("Process Package Specifications...",Level="info")
@@ -530,13 +515,10 @@ ve.model.loadModelState <- function(log="error") {
           RequiredPackages <- unique(c(RequiredPackages, AlreadyInitialized))
         }
       }
-      self$AllSpecs_ls[[toupper(basename(stagePath))]] <- visioneval::parseModuleCalls(parsedScript$ModuleCalls_df, AlreadyInitialized, RequiredPackages, Save=FALSE)
+      allSpecs <- visioneval::parseModuleCalls(parsedScript$ModuleCalls_df, AlreadyInitialized, RequiredPackages, Save=FALSE)
+      self$specSummary[[stageIndex]] <- summarizeSpecs(allSpecs)
     }
   }
-#  private$index <- summarizeInputs()
-  ve.model <- visioneval::modelEnvironment()
-  ve.model$AllSpecs_ls <- self$AllSpecs_ls; # Temporary for debugging
-  # Build in self a data.frame of Stage Package Module Get/Set/Inp Group Table Name InputDir File
 
   if ( length(self$ModelState)!=self$stageCount ) {
     self$status <- "Failed to Load"
@@ -1159,9 +1141,9 @@ VEModel <- R6::R6Class(
     stagePaths=NULL,
     stageScripts=NULL,
     stageCount=NULL,
-    ModelState=NULL,                        # ModelState placeholder
+    ModelState=NULL,
     RunParam_ls=NULL,
-    AllSpecs_ls=NULL,                       # Processed list of input/output specifications
+    specSummary=NULL,                       # List of inputs, gets and sets from master module spec list  
     runStatus=NULL,
     status="Uninitialized",
 
