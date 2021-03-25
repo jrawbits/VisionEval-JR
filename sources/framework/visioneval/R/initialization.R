@@ -55,12 +55,12 @@ initModelState <- function(Save=TRUE,Param_ls=NULL) {
     )
     stop( writeLog(Message,Level="error") )
   }
+
   # Install the parameters that do exist - the required parameters become the foundation for
   # ModelState_ls. Other parameters are placed in newModelState_ls$RunParameters,
   # (including things like ParamDir, UnitsFile, etc.)
   # ModelState version of Param_ls now also includes the required parameters
-  # Formerly: newModelState_ls$RunParam_ls <- RunParam_ls[ ! (names(RunParam_ls) %in% RequiredParam_) ]
-  newModelState_ls <- Param_ls[RequiredParam_[ParamExists_]]
+  newModelState_ls <- Param_ls[c(names(DefaultValues_),RequiredParam_[ParamExists_])]
   newModelState_ls$LastChanged <- Sys.time()
   
   # Also load the complete deflators and units files, which will be accessed later via ModelState_ls
