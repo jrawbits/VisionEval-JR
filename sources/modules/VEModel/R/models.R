@@ -384,7 +384,8 @@ summarizeSpecs <- function(AllSpecs_ls) {
   specFrame <- rbind(specFrame,dummyRow) # establish data.frame names
   names(specFrame) <- specNames
   for ( packmod in AllSpecs_ls ) {
-    spc <- packmod$Specs
+    spc <- packmod$Specs;
+    # TODO: Add Package and Module to specSummary
     for ( spectype in c("Inp","Get","Set") ) {
       if ( ! spectype %in% names(spc) ) next
       addSpecs <- lapply(spc[[spectype]],
@@ -583,24 +584,32 @@ ve.model.init <- function(modelPath=NULL,log="error") {
 }
 
 # Function to inspect the model configuration/setup parameters
-ve.model.setup <- function(show="values", src=NULL, namelist=NULL, pattern=NULL) {
+# With no arguments, reports name/value pair for values explicitly defined
+# If Param_ls is set, it adds its named components to self$RunParam_ls
+# The return is the new set of named values (using default or other show/search arguments)
+ve.model.set <- function(show="values", src=NULL, namelist=NULL, pattern=NULL,Param_ls=NULL) {
+  # break out the "do something" function (Param_ls provided - set values defined in Param_ls in
+  # self$RunParam_ls).
   # "show" is a character vector describing what to return (default, "values" defined in self$RunParam_ls)
   #   "name" - names of settings (character vector of matching names)
   #   "value" - named list of settings present in self$RunParam_ls (or defaults) (DEFAULT)
-  #   "source" - return the source of the parameter
+  #   "source" - return the source of the parameter (plus name or value if also requested)
   # "show" also describes where to look
-  #   "runtime" - use just the list from VEModel::getSetup() (optionally including undefined defaults)
+  #   "runtime" - use just the list from VEModel::getSetup() ignoring the model-specific settings
+  #       (optionally include undefined defaults if "defaults" is also included in "show")
   #   "defaults" - include the list of parameter defaults as if they were defined
   #       (overridden by any that actually are defined)
-  #   "self" - returns the model specification (optionally including undefined defaults)
+  #   "self" - (DEFAULT) returns the constructed model specification
+  #       (optionally including undefined defaults if "defaults" in "show)
+  #       (if "self" and "runtime", use "self")
   #   If only one of "source", "name", "value":
   #      return a named vector (parameter names; corresponding element)
   #   If both "source" and "value":
   #      return a data.frame (row.names == "name")
   #   If both "source" (or "value") and "name":
-  #      return a data.frame with a "name" column plus either source or value
+  #      return a data.frame with a "name" column plus either source or value (row.names==names)
   #   If all of "source", "name", "value":
-  #      return a data.frame of all three
+  #      return a data.frame of all three (row.names==names)
   # If src is a character vector, find the parameter sources that match any of the elements
   #   as a regular expression.
   # If pattern is a character vector, look for names in the setup that match any of the
@@ -608,27 +617,29 @@ ve.model.setup <- function(show="values", src=NULL, namelist=NULL, pattern=NULL)
   # If namelist is a character vector, treat each item as a name and return the list of items from
   #  the model setup (but dip into the full hierarchy, unless "src" is also set)
 
-  where.options <- c("defaults","self","runtime")
-  where.to.look <- where.options %in% show;
-  if ( ! any(where.to.look) ) {
-    where.to.look <- c(TRUE,TRUE,FALSE) # self + system defaults
-  } else if ( where.to.look[3] ) {
-    # runtime requested - deselect "self"
-    where.to.look[2] <- FALSE
-  }
-  where.to.look <- where.options[where.to.look]
+  if ( is.null(Param_ls) ) {
+    where.options <- c("defaults","self","runtime")
+    where.to.look <- where.options %in% show;
+    if ( ! any(where.to.look) ) {
+      where.to.look <- c(TRUE,TRUE,FALSE) # self + system defaults
+    } else if ( where.to.look[3] ) {
+      # runtime requested - deselect "self"
+      where.to.look[2] <- FALSE
+    }
+    where.to.look <- where.options[where.to.look]
   
-  searchParams_ls <- list()
-  if ( "defaults" %in% where.to.look ) {
-    # defaults, possibly plus self
-    if ( "self" %in% where.to.look ) in.self <- self$RunParam_ls else in.self <- list()
-    searchParams_ls <-visioneval::mergeParameters(searchParams_ls,visioneval::defaultVERunParameters(in.self))
-  }
-  if ( "runtime" %in% where.to.look ) { # only self
-    searchParams_ls <- visioneval::mergeParameters(searchParams_ls,getSetup())
-  } else {
-    searchParams_ls <- visioneval::mergeParameters(searchParams_ls,self$RunParam_ls)
-  }
+    searchParams_ls <- list()
+    if ( "defaults" %in% where.to.look ) {
+      # defaults, possibly plus self
+      if ( "self" %in% where.to.look ) in.self <- self$RunParam_ls else in.self <- list()
+      searchParams_ls <-visioneval::mergeParameters(searchParams_ls,visioneval::defaultVERunParameters(in.self))
+    }
+    if ( "runtime" %in% where.to.look ) { # only self
+      searchParams_ls <- visioneval::mergeParameters(searchParams_ls,getSetup())
+    } else {
+      searchParams_ls <- visioneval::mergeParameters(searchParams_ls,self$RunParam_ls)
+    }
+  } else searchParams_ls <- Params_ls; # search in command line structure
 
   if ( is.character(src) ) {
     # search for matching patterns in searchParams_ls source attribute
@@ -673,12 +684,44 @@ ve.model.setup <- function(show="values", src=NULL, namelist=NULL, pattern=NULL)
   return(results)
 }
 
+# List the model contents, using parsedScript and specSummary from ve.model.load
+ve.model.list <- function(inputs=TRUE,outputs=TRUE,details=NULL) {
+  # "inputs" lists the input files (Inp) by package and module (details = field attributes)
+  # "outputs" lists the fields that are Set in the Datastore (details = field attributes)
+  # if both are true, we also liet the Get elements
+  # "details" FALSE lists units and description plus pacakge/module/group/table/name
+  # "details" TRUE lists all the field attributes (the full data.frame of specSummary
+
+  # which rows to return
+  inputRows <- if ( inputs ) which(self$specSummary$SPEC=="Inp") else integer(0)
+  outputRows <- if ( outputs ) which(self$specSummary$SPEC=="Set") else integer(0)
+  usedRows <- if ( inputs && outputs ) which(self$specSummary$SPEC=="Get") else integer(0)
+
+  # which fields to return
+  listFields <- c("PACKAGE","MODULE","GROUP","TABLE","NAME")
+  addFields <- if ( ! is.null(details) ) {
+    if ( is.character(details) ) {
+      details[which(details %in% names(self$specSummary))]
+    } else character(0)
+    if ( is.logical(details) ) {
+      if ( details ) {
+        setdiff(names(self$specSummary),listFields)
+      } else {
+        c("UNITS","DESCRIPTION")
+      }
+    } else character(0)
+  } else character(0)
+  listFields <- c(listFields, addFields)
+
+  return(self$specSummary[listRows,listFields])
+}
+
 ve.model.save <- function(FileName="visioneval.cnf") {
   # Write self$RunParam_ls into file.path(self$modelPath,FileName) (YAML format).
   # Do not include default values or those in the runtime setup
-  # Use the "setup" function to limit what is shown.
+  # Use the "set" function to limit what is shown.
   # Can provide alternate name (but if it's not part of the known name set, it's 'just for reference')
-  normalizePath(FileName,winslash="/",mustWork=FALSE)
+  normalizePath(file.path(self$modelPath,FileName),winslash="/",mustWork=FALSE)
   yaml::write_yaml(self$RunParam_ls,FileName,indent=2)
   invisible(self$RunParam_ls)
 }
@@ -689,7 +732,13 @@ ve.model.save <- function(FileName="visioneval.cnf") {
 # TODO: replace the "stages" subdirectories with the more flexible concept of a "BaseModel"
 #   which provides Datastore components previously computed (and possibly the entire run_model.R
 #   script).
-ve.model.run <- function(stage=NULL,lastStage=NULL,log="warn") {
+ve.model.run <- function(run="continue",stage=NULL,lastStage=NULL,log="warn") {
+  # mode can be "continue" (run all steps, starting from first incomplete)
+  #   or "save" in which case we restart, but first renaming ResultsDir
+  #   or "reset" in which case we restart, but first clearing out ResultsDir
+  # TODO: perhaps get rid of "stage" and "lastStage" - a "model" is a complete set of runSteps, and
+  #   if you want to break it out, you put the first part into a Base Model
+  #
   # stage and lastStage will run a sequence of *exterior* model stages (separate run_model.R in
   # subdirectories)
   # If self$stagePaths has length > 1, stage refers to that *exterior* stage unless stageScript is
@@ -1152,14 +1201,19 @@ VEModel <- R6::R6Class(
     initialize=ve.model.init,               # initialize a VEModel object
     run=ve.model.run,                       # run a model (or just a subset of stages)
     print=ve.model.print,                   # provides generic print functionality
+    list=ve.model.list,                     # interrogator function (script,inputs,outputs,parameters
     dir=ve.model.dir,                       # list model elements (output, scripts, etc.)
     clear=ve.model.clear,                   # delete results or outputs (current or past)
-    setup=ve.model.setup,                   # set or list model parameters and their sources
+    set=ve.model.set,                       # set or list model parameters and their sources
     save=ve.model.save,                     # save changes to the model setup that were created locally (by source)
     copy=ve.model.copy,                     # copy a self$modelPath to another path (ignore results/outputs)
     results=ve.model.results,               # Create a VEResults object (if model is run); option to open a past result
     query=ve.model.query                    # Create a VEQuery object (or show a list of queries).
   ),
+  active = list(                            # Object interface to "set" function; "set" called explicitly has additional options
+    settings=function(Param_ls) {
+      if ( missing(Param_ls) ) return self$set() else return self$set(Param_ls=Param_ls)
+    }
   private = list(
     # Private Members
     runError=NULL,
