@@ -370,6 +370,7 @@ ve.model.copy <- function(newName=NULL,newPath=NULL) {
 # Unique Names in specifications:
 # Not all names will be present in all specs
 specNames <- c(
+  "PACKAGE","MODULE",
   "NAME", "FILE", "TABLE", "GROUP", "TYPE",
   "UNITS", "NAVALUE", "SIZE", "PROHIBIT", "ISELEMENTOF",
   "UNLIKELY", "TOTAL", "DESCRIPTION", "INPUTDIR", "MULTIPLIER",
@@ -384,6 +385,8 @@ summarizeSpecs <- function(AllSpecs_ls) {
   specFrame <- rbind(specFrame,dummyRow) # establish data.frame names
   names(specFrame) <- specNames
   for ( packmod in AllSpecs_ls ) {
+    package <- packmod$PackageName
+    module <- packmod$ModuleName
     spc <- packmod$Specs;
     # TODO: Add Package and Module to specSummary
     for ( spectype in c("Inp","Get","Set") ) {
@@ -397,6 +400,8 @@ summarizeSpecs <- function(AllSpecs_ls) {
             }
           }
           x$SPEC <- spectype
+          x$PACKAGE <- package
+          x$MODULE <- module
           miss <- ! names(x) %in% specNames
           x[miss] <- as.character(NA)
           unlist(x)
@@ -445,6 +450,8 @@ ve.model.loadModelState <- function(log="error") {
     visioneval::writeLog(initMsg,Level="debug")
   }
 
+  self$specSummary <- NULL
+
   for ( stage in 1:self$stageCount ) {
     stagePath <- self$stagePaths[stage]
     stageIndex <- toupper(basename(stagePath))
@@ -455,7 +462,7 @@ ve.model.loadModelState <- function(log="error") {
     modelState <- normalizePath(file.path(workingResultsDir,stagePath,ModelStateFileName),winslash="/",mustWork=FALSE)
     if ( visioneval::loadModelState(modelState, ( ms.env <- new.env() )) ) {
       # Attempt to load existing ModelState
-      self$ModelState[[ basename(stagePath) ]] <- ms.env$ModelState_ls
+      self$ModelState[[ stageIndex ]] <- ms.env$ModelState_ls
       if ( "RunStatus" %in% ms.env$ModelState_ls ) {
         self$runStatus[stage] <- ms.env$ModelState_ls$RunStatus
       } else {
@@ -519,7 +526,12 @@ ve.model.loadModelState <- function(log="error") {
       AllSpecs_ls <- visioneval::parseModuleCalls(parsedScript$ModuleCalls_df, AlreadyInitialized, RequiredPackages, Save=FALSE)
       self$ModelState[[ stageIndex ]][["AllSpecs_ls"]] <- AllSpecs_ls
     }
-    self$specSummary[[stageIndex]] <- summarizeSpecs(self$ModelState[[ stageIndex ]]$AllSpecs_ls)
+    sumspec <- summarizeSpecs(self$ModelState[[ stageIndex ]]$AllSpecs_ls)
+    if ( is.null(self$specSummary) ) {
+      self$specSummary <- sumspec
+    } else {
+      self$specSummary <- rbind(self$specSummary,sumspec)
+    }
   }
 
   if ( length(self$ModelState)!=self$stageCount ) {
@@ -685,32 +697,35 @@ ve.model.set <- function(show="values", src=NULL, namelist=NULL, pattern=NULL,Pa
 }
 
 # List the model contents, using parsedScript and specSummary from ve.model.load
-ve.model.list <- function(inputs=TRUE,outputs=TRUE,details=NULL) {
+ve.model.list <- function(inputs=FALSE,outputs=FALSE,details=NULL) {
   # "inputs" lists the input files (Inp) by package and module (details = field attributes)
   # "outputs" lists the fields that are Set in the Datastore (details = field attributes)
   # if both are true, we also liet the Get elements
   # "details" FALSE lists units and description plus pacakge/module/group/table/name
-  # "details" TRUE lists all the field attributes (the full data.frame of specSummary
+  # "details" TRUE lists all the field attributes (the full data.frame of specSummary)
 
   # which rows to return
+  print(class(self$specSummary))
   inputRows <- if ( inputs ) which(self$specSummary$SPEC=="Inp") else integer(0)
   outputRows <- if ( outputs ) which(self$specSummary$SPEC=="Set") else integer(0)
-  usedRows <- if ( inputs && outputs ) which(self$specSummary$SPEC=="Get") else integer(0)
+  usedRows <- if ( inputs == outputs ) which(self$specSummary$SPEC=="Get") else integer(0)
+  listRows <- unique(c(inputRows,outputRows,usedRows))
 
   # which fields to return
-  listFields <- c("PACKAGE","MODULE","GROUP","TABLE","NAME")
-  addFields <- if ( ! is.null(details) ) {
+  listFields <- c("SPEC","PACKAGE","MODULE","GROUP","TABLE","NAME")
+  addFields <- character(0)
+  if ( ! is.null(details) ) {
     if ( is.character(details) ) {
-      details[which(details %in% names(self$specSummary))]
-    } else character(0)
+      addFields <- details[which(details %in% names(self$specSummary))]
+    }
     if ( is.logical(details) ) {
       if ( details ) {
-        setdiff(names(self$specSummary),listFields)
+        addFields <- setdiff(names(self$specSummary),listFields)
       } else {
-        c("UNITS","DESCRIPTION")
+        addFields <- c("UNITS","DESCRIPTION")
       }
-    } else character(0)
-  } else character(0)
+    }
+  }
   listFields <- c(listFields, addFields)
 
   return(self$specSummary[listRows,listFields])
@@ -960,20 +975,18 @@ ve.model.dir <- function(pattern=NULL,stage=NULL,root=FALSE,results=FALSE,output
       inputFiles <- inputFiles[ dir.exists(inputFiles) ]
     }
   } else inputFiles <- character(0)
-  if ( outputs ) {
-    outputPath <- file.path(
-      self$modelPath,c(
-        (OutputDir <- visioneval::getRunParameter("OutputDir",Param_ls=self$RunParam_ls)),
-        file.path(self$stagePaths[stage],OutputDir)
-      )
-    )
-    outputFiles <- dir(normalizePath(outputPath,winslash="/",mustWork=FALSE),full.names=TRUE)
-    outputFiles <- outputFiles[ ! dir.exists(outputFiles) ] # keep only the files, not subdirectories
-  } else outputFiles <- character(0)
   ResultsDir <- normalizePath(
     file.path(self$modelPath,visioneval::getRunParameter("ResultsDir",Param_ls=self$RunParam_ls)),
     winslash="/",mustWork=FALSE
   )
+  if ( outputs ) {
+    outputPath <- file.path(
+      ResultsDir,(OutputDir <- visioneval::getRunParameter("OutputDir",Param_ls=self$normalizePathRunParam_ls)),
+      self$stagePaths[stage]
+    )
+    outputFiles <- dir(normalizePath(outputPath,winslash="/",mustWork=FALSE),full.names=TRUE)
+    outputFiles <- outputFiles[ ! dir.exists(outputFiles) ] # keep only the files, not subdirectories
+  } else outputFiles <- character(0)
   ResultsInRoot <- ( root && ResultsDir==self$modelPath )
   if ( results || ResultsInRoot  ) {
     # Handle the old-style case where ResultsDir==modelPath
@@ -1212,8 +1225,8 @@ VEModel <- R6::R6Class(
   ),
   active = list(                            # Object interface to "set" function; "set" called explicitly has additional options
     settings=function(Param_ls) {
-      if ( missing(Param_ls) ) return self$set() else return self$set(Param_ls=Param_ls)
-    }
+      if ( missing(Param_ls) ) return(self$set()) else return(self$set(Param_ls=Param_ls))
+    }),
   private = list(
     # Private Members
     runError=NULL,

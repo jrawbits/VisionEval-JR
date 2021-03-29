@@ -109,26 +109,28 @@ test_run <- function(modelName="JRSPM",log="warn") {
   return("Failed to run.")
 }
 
-test_model <- function(oldstyle=TRUE, low="warn") {
+test_model <- function(oldstyle=TRUE, test.copy=FALSE, log="warn") {
   testStep("Model Management Functions")
 
-#   testStep("open a model")
-#   jr <- openModel("JRSPM")
-# 
-#   testStep("model directory original")
-#   print(jr$dir())
-# 
-#   testStep("copy a model")
-#   cp <- jr$copy("CRSPM")
-#   cp$clear(force=TRUE)
-#   
-#   testStep("model directory copy")
-#   print(cp)
-#   print(cp$dir())
-# 
-#   testStep("remove model copy")
-#   unlink("models/CRSPM",recursive=TRUE)
-# 
+  if ( test.copy ) {
+    testStep("open a model")
+    jr <- openModel("JRSPM")
+
+    testStep("model directory original")
+    print(jr$dir())
+
+    testStep("copy a model")
+    cp <- jr$copy("CRSPM")
+    cp$clear(force=TRUE)
+
+    testStep("model directory copy")
+    print(cp)
+    print(cp$dir())
+
+    testStep("remove model copy")
+    unlink("models/CRSPM",recursive=TRUE)
+  }
+
   testStep("construct a bare model from scratch")
   bare.dir <- file.path("models","BARE")
   base.dir <- file.path("models","JRSPM")
@@ -139,6 +141,7 @@ test_model <- function(oldstyle=TRUE, low="warn") {
 
   runModelFile <- file.path(bare.dir,"run_model.R")
   runModel_vc <- c(
+    'library(visioneval)',
     'initializeModel()',
     'for(Year in getYears()) {',
     'runModule("CreateHouseholds","VESimHouseholds",RunFor = "AllYears",RunYear = Year)',
@@ -211,33 +214,40 @@ test_model <- function(oldstyle=TRUE, low="warn") {
   print(dir(bare.inputs,full.names=TRUE))
 
   testStep("Open BARE model using defaults...")
-  bare <- openModel("BARE",log="info")
+  bare <<- openModel("BARE",log="info")
 
   testStep("List model inputs...")
-  # list model input files and fields
-  #   Needs to work before running - that's why ModelState is pre-loaded
-  return(bare)
-  
-  bare$list(input=TRUE)
+
+  print(bare$list(inputs=TRUE))
 
   testStep("run the bare model")
-#  bare$run()
+  bare$run()
   
   testStep("directory of the bare model: results")
-#  bare$dir(results=TRUE)
+  print(bare$dir(results=TRUE))
 
-  testStep("list fields in bare model")
-#  bare$list()
+  testStep("list all fields in bare model")
+  print(bare$list())
 
   testStep("extract model results")
-#  bare$extract(prefix="BareTest")
+  br <- bare$results()
+  br$extract(prefix="BareTest")
 
   testStep("clear the bare model")
-#   bare$dir(output=TRUE)
-#   bare$clear()
-  bare$dir()
-  bare$unlink(bare.dir,recursive=TRUE)
-  bare$dir() # Should reveal error of some sort
+  print(bare$dir(output=TRUE))
+  bare$clear(force=TRUE)
+
+  testStep("model after clearing outputs...")
+  print(bare$dir())
+
+  testStep("clear results as well...")
+  bare$clear(force=TRUE,outputOnly=FALSE) # default is FALSE if no outputs exist - delete results
+  print(bare$dir())
+
+  testStep("remove model")
+
+  unlink(bare.dir,recursive=TRUE)
+  bare$dir() # reports an empty character vector
 }
 
 test_results <- function (log="warn") {
