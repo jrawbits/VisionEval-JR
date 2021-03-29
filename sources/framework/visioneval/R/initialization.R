@@ -1480,20 +1480,21 @@ initDatastoreGeography <- function(GroupNames = NULL) {
 #' @export
 loadModelParameters <- function(FlagChanges=FALSE) {
   G <- getModelState()
-  RunParam_ls <- G$RunParam_ls
-  ModelParamInfo <- c("ParamDir","ModelParamFile")
-  missingParams <- ! ModelParamInfo %in% names(RunParam_ls)
-  if ( any(missingParams) ) {
-    stop(
-      writeLog(
-        paste(
-          "Missing parameter names:",
-          paste(ModelParamInfo[missingParams],collapse=",")
-        ),
-        Level="error"
-      )
-    )
-  }
+  RunParam_ls <- G$RunParam_ls;
+#   Commented out: Default parameters will suffice
+#   ModelParamInfo <- c("ParamDir","ModelParamFile")
+#   missingParams <- ! ModelParamInfo %in% names(RunParam_ls)
+#   if ( any(missingParams) ) {
+#     stop(
+#       writeLog(
+#         paste(
+#           "Missing parameter names:",
+#           paste(ModelParamInfo[missingParams],collapse=",")
+#         ),
+#         Level="error"
+#       )
+#     )
+#   }
   writeLog("Loading model parameters file.",Level="info")
   ModelParamFile <- getRunParameter("ModelParamFile",Param_ls=RunParam_ls)
   ParamFile <- findRuntimeInputFile(ModelParamFile,"ParamDir",Param_ls=RunParam_ls,StopOnError=FALSE)
