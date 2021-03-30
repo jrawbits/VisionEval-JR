@@ -227,7 +227,7 @@ test_model <- function(oldstyle=TRUE, test.copy=FALSE, log="warn") {
   print(bare$dir(results=TRUE))
 
   testStep("list all fields in bare model")
-  print(bare$list())
+  print(bare$list(inputs=TRUE,outputs=TRUE))
 
   testStep("extract model results")
   br <- bare$results()

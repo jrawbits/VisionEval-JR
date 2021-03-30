@@ -161,9 +161,10 @@ default.parameters.table = list(
   InputDir = "inputs",
   ParamDir = "defs",
   DatastoreType = "RD",
-  SaveDatastore = TRUE,
-  ResultsDir = ".",        # To get framework support for VEModel, which overrides
-  StageDir = "."           # To get framework support for VEModel, which overrides
+  SaveDatastore = TRUE,           # Whether to archive any existing ResultsDir
+  ArchiveResultsName = "Results", # Root name for archived Results directory
+  ResultsDir = ".",               # To get framework support for VEModel, which overrides
+  StageDir = "."                  # To get framework support for VEModel, which overrides
 )
 
 #GET DEFAULT PARAMETERS
@@ -633,6 +634,25 @@ findRuntimeInputFile <- function(File,Dir="InputDir",Param_ls=NULL,StopOnError=T
   return(candidates[1]) # if StopOnError==FALSE, return NA if no matching File was found
 }
 
+#MAKE TIME INTO TIMESTAMP TEXT
+#=============================
+#' Format a time into text suitable for use in a file name
+#'
+#' \code{textTimeStamp} will return a string suitable for use in a file name
+#' from a standard text version of a time
+#'
+#' @param TimeStamp a time value (e.g. from Sys.time())
+#' @param Prefix An optional prefix to put ahead of the time
+#' @return A string representing date and time with all characters sanitized for use in a file or
+#'   directory name
+fileTimeStamp <- function( TimeStamp, Prefix=NULL ) {
+  TimeStamp <- gsub(":","-",gsub(" ", "_",TimeStamp))
+  LogNameParts <- unlist(strsplit(TimeStamp,split=" "))
+  if ( ! is.null(Prefix) ) LogNameParts <- c(Prefix,LogNameParts)
+  LogNameParts <- gsub("[^-[:alnum:]._]","",LogNameParts) # filter illegal filename characters
+  return( paste(LogNameParts,collapse="_") )
+}
+
 #INITIALIZE LOG
 #==============
 #' Initialize logging.
@@ -666,15 +686,10 @@ findRuntimeInputFile <- function(File,Dir="InputDir",Param_ls=NULL,StopOnError=T
 initLog <- function(TimeStamp = NULL, Threshold="warn", Save=TRUE, Prefix = NULL, Quiet=TRUE) {
 
   if (is.null(TimeStamp)) {
-    TimeStamp <- as.character(Sys.time())
+    TimeStamp <- Sys.time()
   }
-  LogNameParts <- unlist(strsplit(TimeStamp,split=" "))
-
-  if ( ! is.null(Prefix) ) LogNameParts <- c(Prefix,LogNameParts)
-
   if ( Save ) {
-    LogNameParts <- gsub("[^-[:alnum:]._]","",LogNameParts) # filter illegal filename characters
-    LogFile <- paste0(paste(c("Log",LogNameParts),collapse="_"),".txt")
+    LogFile <- paste0(fileTimeStamp(TimeStamp,Prefix=c("Log",Prefix)),".txt")
   } else {
     LogFile <- "console"
   }
@@ -692,6 +707,32 @@ initLog <- function(TimeStamp = NULL, Threshold="warn", Save=TRUE, Prefix = NULL
   futile.logger::flog.threshold("WARN",name="stderr")
   futile.logger::flog.layout( log.layout.visioneval, name="stderr")
 
+  saveLog(LogFile)
+
+  if ( ! Quiet && interactive() ) {
+    startMsg <- paste("Logging started at",TimeStamp,"for",toupper(Threshold),"to",LogFile)
+    writeLogMessage(startMsg)
+  }
+
+  invisible(list(LogFile=LogFile,ModelStart=TimeStamp))
+}
+#initLog()
+
+#SAVE LOG
+#========
+#' Turn log saving on and off.
+#'
+#' \code{saveLog} a visioneval framework control function that shifts logging to the log file or
+#' back just to the console. see \code{initLog}.
+#'
+#' @param LogFile the file into which to save the log. If the specific value "console", then do
+#'   not log to a vile.
+#' @return TRUE if saving to a file, else FALSE
+#' @import futile.logger
+#' @export
+saveLog <- function(LogFile="console") {
+  writeLog(paste("Logging to",LogFile),Level="info")
+  Save <- LogFile != "console"
   if ( Save ) {
     if ( interactive() ) {
       futile.logger::flog.appender(futile.logger::appender.tee(LogFile),name="ve.logger")
@@ -704,15 +745,8 @@ initLog <- function(TimeStamp = NULL, Threshold="warn", Save=TRUE, Prefix = NULL
     futile.logger::flog.appender(futile.logger::appender.console(),name="ve.logger")
     futile.logger::flog.appender(futile.logger::appender.console(),name="stderr")
   }
-
-  if ( ! Quiet && interactive() ) {
-    startMsg <- paste("Logging started at",TimeStamp,"for",toupper(Threshold),"to",LogFile)
-    writeLogMessage(startMsg)
-  }
-
-  invisible(list(LogFile=LogFile,ModelStart=TimeStamp))
+  return(Save)
 }
-#initLog()
 
 # futile.logger layout for visioneval (adjusted from futile.logger::layout.simple)
 
@@ -746,7 +780,11 @@ log.layout.visioneval <- function(level, msg, id='', ...) {
   }
   level <- names(level)[1]
   level <- paste(substring(level, 1, 1), tolower(substring(level, 2)), sep = "")
-  log.msg <- sprintf("%s [%s]: %s\n", the.time, level, msg)
+  if ( level=="Warn" ) { # Don't put level in "warnings"
+    log.msg <- sprintf("%s : %s\n", the.time, msg)
+  } else {
+    log.msg <- sprintf("%s [%s]: %s\n", the.time, level, msg)
+  }
   return( log.msg )
 }
 

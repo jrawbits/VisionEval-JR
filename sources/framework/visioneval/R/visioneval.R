@@ -124,8 +124,8 @@ function(
   }
   ModelStateFileName <- getRunParameter("ModelStateFileName",Param_ls=RunParam_ls)
 
-  # Timestamp will be placed in new ModelState (and possibly used to rename an old one)
-  Timestamp <- gsub(":","-",gsub(" ", "_",Sys.time())) # Suitable for use in file name
+  # TimeStamp will be placed in new ModelState (and possibly used to rename an old one)
+  TimeStamp <- Sys.time()
 
   #=========================================
   # CONFIGURE SAVE MODEL STATE AND DATASTORE
@@ -135,15 +135,6 @@ function(
   # If SaveDatastore is TRUE (default), the ResultsDir and any existing ModelState and Datastore
   #  will be renamed rather than deleted and over-written.
 
-  SaveParameters <- list()
-  if ( RunModel && SaveDatastore ) {
-    # Set up model state transition parameters
-    SaveParameters$previousModelState <- NULL
-    SaveParameters$previousModelStateName <- ""
-    SaveParameters$savedPreviousModelState <- FALSE
-    SaveParameters$previousTimestamp <- Timestamp
-  }
-
   #=======================
   # START MODEL RUN LOGGER
   #=======================
@@ -151,7 +142,7 @@ function(
   # Valid log levels (from least to most important) [ see environment.R ]
   #   trace, debug, info, warn, error, fatal
   LogLevel <- getRunParameter("LogLevel",Param_ls=RunParam_ls)
-  logState <- initLog(Timestamp,Threshold=LogLevel,Save=RunModel) # start/reset the model run logger
+  logState <- initLog(TimeStamp,Threshold=LogLevel,Save=FALSE) # start/reset the model run logger
   # Save logState parameters later to ModelState after it is created
   # Includes log file name for later cross-checks
 
@@ -169,7 +160,6 @@ function(
     )
   }
   currentModelStateExists <- file.exists(currentModelStatePath)
-  SaveParameters$currentModelStatePath <- currentModelStatePath;
 
   #================================
   # ESTABLISH MODEL STATE IN MEMORY
@@ -186,9 +176,7 @@ function(
   RunParam_ls <- ve.model$RunParam_ls; # May have been modified in initModelState or loadModelState
 
   # We started the log before we had a ModelState into which to save its configuration
-  if ( length(logState)>0 ) {
-    setModelState(logState,Save=FALSE)
-  }
+  setModelState(logState,Save=FALSE)
 
   # If not
   if ( ! RunModel ) {
@@ -199,7 +187,7 @@ function(
   # REMAINDER RUNS THE MODEL
   #=========================
 
-  # IMPORTANT: Do not write/re-write a model state until archiving is done.
+  # IMPORTANT: Do not write/re-write a model state or log until archiving is done.
 
   #===================================================
   # DEVELOP RUN DATASTORE AND LOAD DATASTORE LOCATIONS
@@ -213,6 +201,9 @@ function(
   RunDstoreName <- normalizePath(RunDstoreName, winslash = "/", mustWork = FALSE)
   RunDstoreDir <- dirname(RunDstoreName)
   RunDstoreFile <- basename(RunDstoreName)
+
+  # Allow explicit function parameter to be overridden from RunParam_ls if defined there
+  LoadDatastore  <- getRunParameter("LoadDatastore",Default=LoadDatastore,Param_ls=RunParam_ls)
 
   # Set up load datastore parameters
   if (is.null(DatastoreName) ) { # DatastoreName here is NOT the RunDstoreName
@@ -286,10 +277,12 @@ function(
     }
 
     # Save the previous results directory if present and requested
-    if (SaveDatastore && file.exists(RunDstoreName)) {
+    if (SaveDatastore ) {
       # copies the Datastore plus the ModelState plus any log file from
       # ResultsDir to new location based on run timestamp in ModelState
-      if ( ! archiveDatastore( RunDstoreName, SaveParameters ) )
+      writeLog("Saving previous model results...",Level="warn")
+      ResultsName = getRunParameter("ArchiveResultsName",Param_ls=RunParam_ls)
+      if ( ! archiveResults( ModelDir, RunDstoreName, currentModelStatePath, ResultsName ) )
       {
         stop( writeLog("Failed to save old Datastore!",Level="error") )
       }
@@ -305,9 +298,8 @@ function(
   # We started the log before we had a ModelState into which to save its configuration
   # Now we have archived and initialized the model state so we can save the log parameters
   # After this point, Save=RunModel will always be TRUE because we already returned if not.
-  if ( length(logState)>0 ) {
-    setModelState(logState,Save=RunModel)
-  }
+  saveLog(logState$LogFile)  # start saving the log for the current results
+  setModelState()            # save the in-memory model state
 
   writeLog("Initializing Model. This may take a while.",Level="warn")
 
@@ -450,7 +442,7 @@ function(
   # EXTRACT INPUT/OUTPUT SPECIFICATIONS FROM MODULE CALLS
   #======================================================
 
-  writeLog("Parsing Module Calls...",Level="warn")
+  writeLog("Parsing Module Calls...",Level="info")
   AllSpecs_ls <- parseModuleCalls(
     parsedScript$ModuleCalls_df,
     AlreadyInitialized,
@@ -470,6 +462,7 @@ function(
   #  what is supposed to exist in the loaded datastore. Since we passed the
   #  required packages into parseModuleCalls, AllSpecs_ls probably may have the
   #  specs for the required packages as well.
+  SimulateRun  <- getRunParameter("SimulateRun",Default=SimulateRun,Param_ls=RunParam_ls)
   if (SimulateRun) {
     writeLog("Simulating Model Run...",Level="info")
     simDataTransactions(AllSpecs_ls)
@@ -493,7 +486,7 @@ function(
   #  the model state datastore listing, with DstoreLoc links to BaseModel
   #  final (or specified) run step
 
-  writeLog("Preparing Data Store...",Level="warn")
+  writeLog("Preparing Data Store...",Level="info")
 
   if ( ! LoadDatastore ) {
     # not loading, so make a new Datastore
@@ -553,7 +546,7 @@ function(
   #===============================
 
   # TODO: AllSpecs_ls should only include modules from the current Run Step
-  writeLog("Adding input files...",Level="warn")
+  writeLog("Adding input files...",Level="info")
   processInputFiles(AllSpecs_ls) # Add them to the Datastore
 
   #============================
@@ -637,7 +630,7 @@ runModule <- function(ModuleName, PackageName, RunFor, RunYear, StopOnErr = TRUE
   ModuleFunction <- paste0(PackageName, "::", ModuleName)
   ModuleSpecs <- paste0(ModuleFunction, "Specifications")
   Msg <- paste0("Start  module '", ModuleFunction, "' for year '", RunYear, "'.")
-  writeLog(Msg)
+  writeLog(Msg,Level="warn")
   #Load the package and module
   #---------------------------
   M <- list()
@@ -779,7 +772,7 @@ runModule <- function(ModuleName, PackageName, RunFor, RunYear, StopOnErr = TRUE
   #Log and print ending message
   #----------------------------
   Msg <- paste0("Finish module '", ModuleFunction, "' for year '", RunYear, "'.")
-  writeLog(Msg)
+  writeLog(Msg,Level="warn")
 
   if ( length(Warnings_) > 0 ) {
     writeLog(Warnings_,Level="warn")
