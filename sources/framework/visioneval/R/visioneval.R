@@ -177,11 +177,11 @@ function(
 
   # We'll start saving the model state after we have (if necessary) archived the existing one.
   if ( ! RunModel && currentModelStateExists ) {
-    loadModelState(currentModelStatePath)
+    RunParam_ls <- loadModelState(currentModelStatePath)
   } else {
     # In all cases, initialize a fresh model state - may replace it later if loading existing
     # datastore
-    initModelState(Save=FALSE,Param_ls=RunParam_ls)
+    RunParam_ls <- initModelState(Save=FALSE,Param_ls=RunParam_ls)
   }
   RunParam_ls <- ve.model$RunParam_ls; # May have been modified in initModelState or loadModelState
 
@@ -295,8 +295,7 @@ function(
       }
     }
   } else {
-    loadModelState(currentModelStatePath)
-    RunParam_ls <- ve.model$RunParam_ls; # May have been modified in initModelState or loadModelState
+    RunParam_ls <- loadModelState(currentModelStatePath)
   }
     
   # ===================================================
@@ -423,7 +422,8 @@ function(
     #  if it's not right, that other model needs to be re-run in
     #  the current environment.
     modelStatePath <- file.path(LoadDstoreDir,ModelStateFileName)
-    modelStateLoaded <- loadModelState(modelStatePath,envir=LoadEnv)
+    LoadRunParam_ls <- loadModelState(modelStatePath,envir=LoadEnv)
+    modelStateLoaded <- length(LoadRunParam_ls)>0
     if ( ! modelStateLoaded ) {
       stop(
         writeLog(
