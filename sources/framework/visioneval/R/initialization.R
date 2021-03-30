@@ -70,8 +70,7 @@ getModelParameters <- function(DotParam_ls=list(),DatastoreName) {
 #' @param Save A logical (default=TRUE) indicating whether the model state file
 #'   should be written out.
 #' @param Param_ls A named list of model run parameters
-#' @return TRUE if the model state list is created and file is saved, FALSE if
-#' the model state file was not saved.
+#' @return The updated RunParam_ls with ModelState parameters fleshed out
 #' @export
 initModelState <- function(Save=TRUE,Param_ls=NULL) {
 
@@ -149,7 +148,7 @@ initModelState <- function(Save=TRUE,Param_ls=NULL) {
 
   writeLog(paste0("Parameter Names from initModelState:\n",paste(names(model.env$RunParam_ls),collapse=",")),Level="info")
 
-  return(Save) 
+  return(Param_ls) 
 }
 #initModelState(ParamDir = "tests/defs")
 
@@ -230,15 +229,21 @@ archiveDatastore <- function(RunDstoreName,SaveParameters) {
 #' the ModelState_ls list. The default is the ModelStateFileName in getwd().
 #' @param envir An environment into which to load ModelState.Rda
 #' (default ve.model)
-#' @return TRUE if ModelState was loaded, FALSE if it could not be
-#  (invisibly)
+#' @return The RunParam_ls from the saved model state (or an empty list if not found)
 #' @export
 loadModelState <- function(FileName=getModelStateFileName(),envir=NULL) {
   if ( is.null(envir) ) envir = modelEnvironment()
   if (file.exists(FileName)) {
     load(FileName,envir=envir)
   }
-  invisible( "ModelState_ls" %in% ls(envir) )
+  Param_ls <- get0( "RunParam_ls", envir=envir, ifnotfound=list() )
+  if ( length(Param_ls) == 0 ) {
+    ModelState_ls <- get0( "ModelState_ls", envir=envir, ifnotfound=list() )
+    if ( length(ModelState_ls) > 0 ) {
+      Param_ls <- ModelState_ls$RunParam_ls
+    }
+  }
+  return ( Param_ls )
 }
 
 # GET MODEL STATE
