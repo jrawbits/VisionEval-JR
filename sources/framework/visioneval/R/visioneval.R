@@ -282,7 +282,8 @@ function(
       # ResultsDir to new location based on run timestamp in ModelState
       writeLog("Saving previous model results...",Level="warn")
       ResultsName = getRunParameter("ArchiveResultsName",Param_ls=RunParam_ls)
-      if ( ! archiveResults( ModelDir, RunDstoreName, currentModelStatePath, ResultsName ) )
+      OutputDir = getRunParameter("OutputDir",Param_ls=RunParam_ls)
+      if ( ! archiveResults( ModelDir, RunDstoreName, currentModelStatePath, OutputDir, ResultsName ) )
       {
         stop( writeLog("Failed to save old Datastore!",Level="error") )
       }
