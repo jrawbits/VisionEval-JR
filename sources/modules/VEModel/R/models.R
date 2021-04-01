@@ -461,6 +461,7 @@ ve.model.loadModelState <- function(log="error") {
     visioneval::writeLog(initMsg,Level="debug")
   }
 
+  self$runStatus <- rep("Uninitialized",self$stageCount)
   self$specSummary <- NULL
 
   for ( stage in 1:self$stageCount ) {
@@ -478,7 +479,7 @@ ve.model.loadModelState <- function(log="error") {
       if ( "RunStatus" %in% ms.env$ModelState_ls ) {
         self$runStatus[stage] <- ms.env$ModelState_ls$RunStatus
       } else {
-        self$runStatus[stage] <- "Prior Run"
+        self$runStatus[stage] <- "Unknown Prior Run"
       }
     } else {
       # ModelState file does not yet exist (not run)
@@ -669,7 +670,9 @@ ve.model.set <- function(show="values", src=NULL, namelist=NULL, pattern=NULL,Pa
     } else {
       searchParams_ls <- visioneval::mergeParameters(searchParams_ls,self$RunParam_ls)
     }
-  } else searchParams_ls <- Param_ls; # search in command line structure
+  } else {
+    searchParams_ls <- Param_ls; # search in command line structure
+  }
 
   if ( is.character(src) ) {
     # search for matching patterns in searchParams_ls source attribute
@@ -691,12 +694,15 @@ ve.model.set <- function(show="values", src=NULL, namelist=NULL, pattern=NULL,Pa
     matchpat <- integer(0)
   }
   matching <- unique(c(matchsrc,matchname,matchpat))
-  sought <- searchParams_ls[matching]
+  if ( is.null(matching) || length(matching)==0 ) {
+    sought <- searchParams_ls
+  } else {
+    sought <- searchParams_ls[matching]
+  }
 
   return.options <- c("name","value","source")
   what.to.return <- return.options %in% show
   if ( ! any(what.to.return) ) what.to.return <- c(FALSE,TRUE,FALSE) # just values
-  how.many.to.return <- length(which(what.to.return))
 
   results <- data.frame( # columns in same order as return.options
     Parameter = names(sought),
@@ -707,7 +713,7 @@ ve.model.set <- function(show="values", src=NULL, namelist=NULL, pattern=NULL,Pa
   if ( is.data.frame(results) ) {
     row.names(results) <- results$Parameter
   } else {
-    names(results) <- results$Parameter; # One column dropped data.frame to vector
+    names(results) <- names(sought); # One column, so data.frame drops to vector
   }
 
   # Don't print results if we used this function to set parameters
@@ -776,7 +782,7 @@ ve.model.save <- function(FileName="visioneval.cnf") {
 # TODO: replace the "stages" subdirectories with the more flexible concept of a "BaseModel"
 #   which provides Datastore components previously computed (and possibly the entire run_model.R
 #   script).
-ve.model.run <- function(run="continue",stage=NULL,lastStage=NULL,log="warn") {
+ve.model.run <- function(run="reset",stage=NULL,lastStage=NULL,log="warn") {
   # run parameter can be
   #      "continue" (run all steps, starting from first incomplete)
   #   or "save" in which case we restart, but first renaming ResultsDir
@@ -802,13 +808,25 @@ ve.model.run <- function(run="continue",stage=NULL,lastStage=NULL,log="warn") {
     return( invisible(self$status) )
   }
   
-  # TODO: Interpreting the "run" parameter:
-  # If continue, then check for existing self$ModelState and set stageStart to
-  #   the first one that is not status "Complete"
-  # If restart, then go back to the first stage and run from there
+  # If reset, then go back to the first stage and run from there
   #   Leaves SaveDatastore untouched
   # If save, then forces SaveDatastore to be TRUE (below, after copying self$RunParam_ls
   #   into the local stage's RunParam_ls
+
+  SaveDatastore = NULL
+  if ( run == "restart" || run=="reset" ) {
+    SaveDatastore <- FALSE
+  } else if ( run == "save" ) {
+    SaveDatastore <- TRUE
+  }
+  if ( ! is.null(SaveDatastore) ) {
+    self$set(
+      Param_ls=visioneval::addParameterSource(
+        Param_ls=list(SaveDatastore=SaveDatastore),
+        Source=paste0(self$modelName,"$run()")
+      )
+    )
+  }
 
   if ( is.null(stage) ) {
     stageStart <- 1
@@ -853,7 +871,7 @@ ve.model.run <- function(run="continue",stage=NULL,lastStage=NULL,log="warn") {
   on.exit(setwd(owd))
 
   # Set up the model runtime environment
-  for ( ms in stageStart:lastStage ) {
+  for ( ms in 1:lastStage ) {
     stagePath <- self$stagePaths[ms]
     scriptFile <- self$stageScripts[ms]
     stageInput <- file.path(self$modelPath,stagePath)
@@ -864,6 +882,17 @@ ve.model.run <- function(run="continue",stage=NULL,lastStage=NULL,log="warn") {
     } else {
       visioneval::writeLog(initMsg,Level="info")
     }
+
+    if ( run == "continue" || ms < stageStart ) {
+      if ( self$runStatus[ms] == "Complete" ) {
+        visioneval::writeLog(paste("Stage",stage,"is Complete"),Level="warn")
+        next
+      } else if ( ms < stageStart ) {
+        stop(
+          visioneval::writeLog("Stage",ms,paste0("(prior to ",stageStart,")"),"is not Complete. Try again",Level="error")
+        )
+      } # else runStatus is not Complete and ms>=stageStart so just fall through and run this stage
+    } # else we will re-run the stage (respecting run="save" or run="reset" with respect to archiving prior results
 
     self$status <- ""
     suppressWarnings (
@@ -935,7 +964,6 @@ ve.model.run <- function(run="continue",stage=NULL,lastStage=NULL,log="warn") {
                 list(
                   RunStatus=self$runStatus[ms]
                 ),
-                Save=file.exists(visioneval::getModelStateFileName()) # expecting to be in ResultsDir
               )
               self$ModelState[[ toupper(basename(stagePath)) ]] <- ve.model$ModelState_ls
             }

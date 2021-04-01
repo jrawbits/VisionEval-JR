@@ -160,16 +160,19 @@ initModelState <- function(Save=TRUE,Param_ls=NULL) {
 }
 #initModelState(ParamDir = "tests/defs")
 
-#ARCHIVE DATASTORE
-#=================
+#ARCHIVE RESULTS
+#===============
 #' Move an existing set of results into a different time-stamped directory
 #'
 #' @param ModelDir the directory in which to create the archive
-#' @param RunDstoreName the name of the Datastore (file/folder) for the archive
+#' @param RunDstoreName the name of the Datastore (file/folder) for the archive within
+#'   dirname(ModelStatePath)
 #' @param ModelStatePath the absolute path to the current model state
+#' @param OutputDir the name of the outputs directory (possibly non-existent) containing
+#'   extracted results from this model run
 #' @param ResultsName the root name for the created archive directory
 #' @return TRUE if all files were moved successfully, otherwise FALSE
-archiveResults <- function(ModelDir, RunDstoreName, ModelStatePath, ResultsName) {
+archiveResults <- function(ModelDir, RunDstoreName, ModelStatePath, OutputDir, ResultsName) {
   # Create a temporary directory under ModelDir to hold the archive
 
   # Get the timestamp from the ModelStatePath
@@ -200,22 +203,57 @@ archiveResults <- function(ModelDir, RunDstoreName, ModelStatePath, ResultsName)
   existingResultsDir <- dirname(ModelStatePath)
   # that directory was current when the model ran, and it necessarily contains
   # the Datastore, the Model State and the log (if they exist at all)
-  DatastorePath <- normalizePath(
-    file.path(
-      existingResultsDir,
-      RunDstoreName,
-    ), winslash="/",mustWork=FALSE
-  )
+  owd <- setwd(existingResultsDir)
+  on.exit(setwd(owd))
 
-  # Clear all the relevant log files (if more than one)
-  LogPath <- dir(existingResultsDir,pattern="Log_.*\\.txt",full.names=TRUE) # see initLog for template
+  # Now working in existingResultsDir
 
-  # Copy the three files to the ArchiveDirectory
-  success <- file.copy(
-    c( DatastorePath, ModelStatePath, LogPath ),
-    ArchiveDirectory
-  )
-  return(invisible(!all(success)))
+  # Process Datastore
+  remove <- c(Datastore=TRUE,Outputs=TRUE,ModelState=TRUE,Logs=TRUE)
+  success <- file.copy(RunDstoreName,ArchiveDirectory,recursive=TRUE,copy.date=TRUE)
+  if ( ! all(success) ) {
+    writeLog("Failed to copy previous Datastore; original not removed.",Level="error")
+    remove["Datastore"] <- FALSE
+  }
+
+  # Process Output directory (extracts, query results from this run)
+  if ( dir.exists(OutputDir) ) {
+    success <- file.copy(OutputDir,ArchiveDirectory,recursive=TRUE,copy.date=TRUE)
+    if ( ! all(success) ) {
+      writeLog("Failed to copy previous Outputs; original not removed.",Level="error")
+      remove["Outputs"] <- FALSE
+    }
+  } else remove <- remove[ c("Datastore","ModelState","Logs") ] # don't bother with OutputDir
+
+  # Process ModelState
+  success <- file.copy(ModelStatePath,ArchiveDirectory,copy.date=TRUE)
+  if ( ! all(success) ) {
+    writeLog("Failed to copy previous ModelState; original not removed.",Level="error")
+    remove["ModelState"] <- FALSE
+  }
+
+  # Process all the relevant log files (may be more than one)
+  LogPath <- dir(pattern="Log_.*\\.txt",full.names=TRUE) # see initLog for template
+  if ( length(LogPath) == 0 ) {
+    remove["Logs"] <- FALSE
+  } else {
+    success <- file.copy(LogPath,ArchiveDirectory,copy.date=TRUE)
+    remove["Logs"] <- all(success)
+  }
+
+  # Remove the previous Results if they were copied successfully
+  for ( file in names(remove) ) {
+    if ( remove[file] ) {
+      if ( file=="Datastore" ) unlink(RunDstoreName,recursive=TRUE)
+      if ( file=="Outputs"   ) unlink(OutputDir,recursive=TRUE)
+      if ( file=="ModelState") unlink(ModelStatePath)
+      if ( file=="Logs"      ) unlink(LogPath)
+    } else {
+      writeLog(paste("Saving prior results failed; Not removing",file),Level="error")
+    }
+  }
+
+  return(invisible(all(remove)))
 }
 
 #LOAD MODEL STATE
