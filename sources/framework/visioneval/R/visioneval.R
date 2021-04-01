@@ -283,9 +283,9 @@ function(
       writeLog("Saving previous model results...",Level="warn")
       ResultsName = getRunParameter("ArchiveResultsName",Param_ls=RunParam_ls)
       OutputDir = getRunParameter("OutputDir",Param_ls=RunParam_ls)
-      if ( ! archiveResults( ModelDir, RunDstoreName, currentModelStatePath, OutputDir, ResultsName ) )
-      {
-        stop( writeLog("Failed to save old Datastore!",Level="error") )
+      failToArchive <- archiveResults( ModelDir, RunDstoreName, currentModelStatePath, OutputDir, ResultsName )
+      if ( length(failToArchive)>0 ) {
+        writeLog(paste0("Failed to save prior results (",paste(failToArchive,collapse=","),"). Continuing anyway..."),Level="error")
       }
     }
   } else {

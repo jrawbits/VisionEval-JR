@@ -179,12 +179,12 @@ archiveResults <- function(ModelDir, RunDstoreName, ModelStatePath, OutputDir, R
   # Alternative - could extract it from the log file (but the log may or may not
   # exist - the model state is more likely to be there).
   loadModelState( ModelStatePath, (ms.env <- new.env()) )
-  Timestamp <- if ( "FirstCreated" %in% names(ms.env$ModelState_ls) ) {
+  TimeStamp <- if ( "FirstCreated" %in% names(ms.env$ModelState_ls) ) {
     ms.env$ModelState_ls$FirstCreated
   } else if ( "LastChanged" %in% names(ms.env$ModelState_ls) ) {
     ms.env$ModelState_ls$LastChanged
   } else {
-    TimeStamp = Sys.time()
+    Sys.time()
   }
 
   ArchiveDirectory <- normalizePath(
@@ -234,8 +234,9 @@ archiveResults <- function(ModelDir, RunDstoreName, ModelStatePath, OutputDir, R
 
   # Process all the relevant log files (may be more than one)
   LogPath <- dir(pattern="Log_.*\\.txt",full.names=TRUE) # see initLog for template
-  if ( length(LogPath) == 0 ) {
-    remove["Logs"] <- FALSE
+  if ( length(LogPath) == 0 ) { # No Log present; a recoverable error
+    writeLog(paste0("No Log file for run at",TimeStamp),Level="error")
+    remove["Logs"] <- TRUE
   } else {
     success <- file.copy(LogPath,ArchiveDirectory,copy.date=TRUE)
     remove["Logs"] <- all(success)
@@ -253,7 +254,7 @@ archiveResults <- function(ModelDir, RunDstoreName, ModelStatePath, OutputDir, R
     }
   }
 
-  return(invisible(all(remove)))
+  return(invisible(names(remove)[remove]))
 }
 
 #LOAD MODEL STATE

@@ -476,7 +476,7 @@ ve.model.loadModelState <- function(log="error") {
     self$ModelState[[ stageIndex ]] <- ms.env$ModelState_ls
     if ( length(self$ModelState[[ stageIndex ]]) > 0 ) {
       # Attempt to load existing ModelState
-      if ( "RunStatus" %in% ms.env$ModelState_ls ) {
+      if ( "RunStatus" %in% names(ms.env$ModelState_ls) ) {
         self$runStatus[stage] <- ms.env$ModelState_ls$RunStatus
       } else {
         self$runStatus[stage] <- "Unknown Prior Run"
@@ -599,7 +599,7 @@ ve.model.init <- function(modelPath=NULL,log="error") {
     private$loadModelState(log=log) # load bare bones...
 
     if ( self$valid ) {
-      visioneval::writeLogMessage(self$modelPath)
+      visioneval::writeLog(self$modelPath,Level="info")
       visioneval::writeLog("Model Load Complete.",Level="info")
     } else {
       visioneval::writeLog(c("Model Load Failed",paste(self$modelPath,"\nStatus:",self$status)),Level="error")
@@ -934,7 +934,10 @@ ve.model.run <- function(run="reset",stage=NULL,lastStage=NULL,log="warn") {
             } else {
               remark <- "Model stage failed"
             }
-            traceback(1)
+            cat("Traceback:\n")
+            for ( t in .traceback(1) ) {
+              cat(class(t),":",substr(head(t),1,40),"\n")
+            }
             msg <- c(conditionMessage(e),deparse(conditionCall(e)))
             if ( ! nzchar(msg)[1] ) msg <- "Stopped."
             self$status <- "Error"
@@ -958,7 +961,7 @@ ve.model.run <- function(run="reset",stage=NULL,lastStage=NULL,log="warn") {
               ),
               Level="info"
             )
-            if ( is.list(ve.model$ModelState_ls) && is.list(ve.model$RunParams_ls) ) {
+            if ( is.list(ve.model$ModelState_ls) ) {
               visioneval::writeLog(c("Current directory saving model state:",getwd()),Level="info")
               visioneval::setModelState(
                 list(
@@ -966,6 +969,8 @@ ve.model.run <- function(run="reset",stage=NULL,lastStage=NULL,log="warn") {
                 ),
               )
               self$ModelState[[ toupper(basename(stagePath)) ]] <- ve.model$ModelState_ls
+            } else {
+              visioneval::writeLog("No model state to receive RunStatus",Level="error")
             }
             setwd(owd)
           }
@@ -1202,7 +1207,7 @@ ve.model.print <- function() {
     cat("Model:",self$modelName,"\n")
     cat("Path:\n")
     print(self$modelPath)
-    cat("Datastore Type:",self$RunParam_ls$DatastoreType,"\n")
+    cat("Datastore Type:",self$ModelState[[1]]$DatastoreType,"\n")
   } else {
     cat("Model: Invalid\n")
   }
