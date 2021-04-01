@@ -90,7 +90,13 @@ test_run <- function(modelName="JRSPM",reset=FALSE,log="warn") {
   if ( ! reset ) {
     testStep(paste("Attempting to re-open existing",modelName))
     rs <- openModel(modelName)
-    if ( rs$status != "Complete" ) reset <- TRUE else return(rs)
+    if ( rs$status != "Complete" ) {
+      reset <- TRUE
+      message("Rebuilding model")
+    } else {
+      message("Using existing model run")
+      return(rs)
+    }
   }
   if (reset) {
     testStep("Install and Run a Full Model")
@@ -99,14 +105,13 @@ test_run <- function(modelName="JRSPM",reset=FALSE,log="warn") {
     tryCatch(
       {
         if ( dir.exists(modelPath) ) {
-          message("Clearing runtime environment")
+          testStep("Clearing runtime environment")
           unlink(modelPath,recursive=TRUE)
         }
         testStep(paste("Installing VERSPM model from package as",modelName))
         rs <- installModel("VERSPM",modelName,log=log,confirm=FALSE)
 
         testStep("Running model...")
-        debug(rs$run)
         rs$run(run="reset",log=log) # clears results directory
         return(rs)
       },
@@ -123,6 +128,7 @@ test_model <- function(oldstyle=TRUE, test.copy=FALSE, log="warn") {
   testStep("open (and maybe run) the test model")
   jr <- openModel("JRSPM")
   if ( ! jr$status=="Complete" ) {
+    cat("Re-running model due to status",jr$status,"\n")
     jr <- test_run(modelName="JRSPM",log=log)
   }
   if (! "VEModel" %in% class(jr) ) {
@@ -131,8 +137,8 @@ test_model <- function(oldstyle=TRUE, test.copy=FALSE, log="warn") {
 
   testStep("gather base model parameters")
   base.dir <- jr$modelPath
-  cat("Base defs:\n")
-  print(base.defs)
+  cat("Base Model directory:\n")
+  print(base.dir)
 
   jrParam_ls <- jr$RunParam_ls
   base.defs <- normalizePath(
@@ -148,7 +154,7 @@ test_model <- function(oldstyle=TRUE, test.copy=FALSE, log="warn") {
     file.path(
       base.dir,
       visioneval::getRunParameter("InputPath",Param_ls = jrParam_ls),
-      visioneval::getRunParameter("InputDir",Param_ls = jrParam_ls),
+      visioneval::getRunParameter("InputDir",Param_ls = jrParam_ls)
     ),winslash="/",mustWork=TRUE
   )
   cat("Base inputs:\n")
@@ -189,13 +195,14 @@ test_model <- function(oldstyle=TRUE, test.copy=FALSE, log="warn") {
 
   # Create run_model.R script (two variants)
   # Create model-specific configuration
+  # TODO: does the "unboxing" also work for yaml?
   runConfig_ls <-  list(
       Model       = jsonlite::unbox("BARE Model Test"),
       Scenario    = jsonlite::unbox("Test"),
       Description = jsonlite::unbox("Minimal model constructed programmatically"),
       Region      = jsonlite::unbox("RVMPO"),
       BaseYear    = jsonlite::unbox("2010"),
-      Years       = c("2010", "2038")
+      Years       = c("2010") #, "2038")
     )
 
   if ( oldstyle ) {
@@ -225,14 +232,21 @@ test_model <- function(oldstyle=TRUE, test.copy=FALSE, log="warn") {
 
   testStep("List model inputs (only)...")
 
-  print(inputs <- bare$list(inputs=TRUE))
-  required.files <- unique(paste(inputs["INPUTDIR"],inputs[,"FILE"]))
+  # NOTE: though the specs will have an "INPUTDIR" column, it will be "NA"
+  #   if the file does not exist on the model's InputPath (which is the case
+  #   for the bare model).
+  # TODO: ModelDir/Inputs should be the default INPUTDIR in that case.
+
+  print(inputs <- bare$list(inputs=TRUE,details="FILE")) # or just details=TRUE
+  required.files <- unique(file.path(base.inputs,inputs[,"FILE"]))
+  required.files <- required.files[which(file.exists(required.files))]
 
   testStep("Copy model parameters to 'inputs' - could also be in 'defs')")
 
   # Inputs for sample modules: CreateHouseholds and PredictWorkers
   from <- file.path(base.defs,"model_parameters.json")
   file.copy(from=from,to=bare.inputs)
+  print(dir(bare.inputs))
 
   testStep(paste("Copy the other required input files from",jr$modelName))
 
@@ -243,17 +257,16 @@ test_model <- function(oldstyle=TRUE, test.copy=FALSE, log="warn") {
   print(dir(bare.inputs,full.names=TRUE))
 
   testStep("run the bare model")
-  bare$run() # no results yet - just checking the logic
-  print(bare$dir())
+  bare$run() # no results yet - it will try to 'continue' then 'reset' if not 'Complete'
+  print(bare$dir(results=TRUE))
 
   testStep("run the bare model again with 'save'")
-  bare$run(run="save")
-  
-  testStep("directory of the bare model with archived results")
-  print(bare$dir(results=TRUE))
+  bare$run(run="save") # should generate a results archive
+  print(bare$dir())
 
   testStep("run (really DON'T run) the bare model again with 'continue'")
   bare$run(run="continue") # examine last run status and don't run if "Complete"
+  print(bare$dir())
   
   testStep("directory of the bare model: results")
   print(bare$dir(results=TRUE))
@@ -263,7 +276,7 @@ test_model <- function(oldstyle=TRUE, test.copy=FALSE, log="warn") {
   print(bare$dir())
 
   testStep("list all fields in bare model - Inp/Get/Set")
-  print(bare$list(inputs=TRUE,outputs=TRUE))
+  print(bare$list(inputs=TRUE,outputs=TRUE,details=c("INPUTDIR","FILE")))
 
   testStep("extract model results")
   br <- bare$results()
@@ -271,13 +284,13 @@ test_model <- function(oldstyle=TRUE, test.copy=FALSE, log="warn") {
 
   testStep("clear the bare model")
   print(bare$dir(output=TRUE))
-  bare$clear(force=TRUE)
+  bare$clear(force=!interactive())
 
   testStep("model after clearing outputs...")
   print(bare$dir())
 
   testStep("clear results as well...")
-  bare$clear(force=TRUE,outputOnly=FALSE) # default is FALSE if no outputs exist - delete results
+  bare$clear(force=!interactive(),outputOnly=FALSE) # default is FALSE if no outputs exist - delete results
   print(bare$dir())
 
   testStep("copy a model")
@@ -286,7 +299,7 @@ test_model <- function(oldstyle=TRUE, test.copy=FALSE, log="warn") {
 
   testStep("model directory copy")
   print(cp)
-  cp$clear(force=TRUE)
+  cp$clear(force=!interactive())
   print(cp$dir())
 
   testStep("remove model copy")
