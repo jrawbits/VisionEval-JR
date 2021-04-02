@@ -143,6 +143,7 @@ function(
   #   trace, debug, info, warn, error, fatal
   LogLevel <- getRunParameter("LogLevel",Param_ls=RunParam_ls)
   logState <- initLog(TimeStamp,Threshold=LogLevel,Save=FALSE) # start/reset the model run logger
+  # LogState also goes in modelEnvironment() for use in visioneval::saveLog
   # Save logState parameters later to ModelState after it is created
   # Includes log file name for later cross-checks
 
@@ -178,7 +179,9 @@ function(
   # We started the log before we had a ModelState into which to save its configuration
   setModelState(logState,Save=FALSE)
 
-  # If not
+  # If not running model, we've done everything needed from initializeModel. Additional setup
+  # operations (parsing model script, examining base model, loading module specifications
+  # can be done externally in VEModel, for example)
   if ( ! RunModel ) {
     return(invisible(ve.model$ModelState_ls))
   }
@@ -233,9 +236,9 @@ function(
   # Flag if we're trying to (re-)load the existing Datastore
   LoadExistingDatastore <- LoadDatastore && (RunDstoreName == LoadDstoreName) && (RunDstoreDir == LoadDstoreDir)
 
-  #=======================================
-  #INITIALIZE MODEL STATE OR LOAD PREVIOUS
-  #=======================================
+  #====================================
+  #LOAD PREVIOUS DATASTORE IF REQUESTED
+  #====================================
 
   DstoreConflicts <- character(0)
 
@@ -289,9 +292,14 @@ function(
       }
     }
   } else {
+    # TODO: Re-evaluate the use case for restarting with the current Datastore
+    # It might be useful while developing code, but it's probably smarter to
+    #   make an explicit BaseModel in a different directory.
+    # Reload existing ModelSTate and Datastore to continue run
+    # (e.g. after an error condition due to missing or failed input file
     RunParam_ls <- loadModelState(currentModelStatePath)
   }
-    
+
   # ===================================================
   # INITIALIZE LOG AND START WRITING TO NEW MODEL STATE
   # ===================================================
@@ -299,8 +307,8 @@ function(
   # We started the log before we had a ModelState into which to save its configuration
   # Now we have archived and initialized the model state so we can save the log parameters
   # After this point, Save=RunModel will always be TRUE because we already returned if not.
-  saveLog(logState$LogFile)  # start saving the log for the current results
-  setModelState()            # save the in-memory model state
+  saveLog()        # start saving the log for the current results
+  setModelState()  # save the in-memory model state
 
   writeLog("Initializing Model. This may take a while.",Level="warn")
 
@@ -372,9 +380,9 @@ function(
     stop("Datastore configuration error: See log messages.",call.=FALSE)
   }
 
-  #===========================================================================
-  #PARSE SCRIPT TO MAKE TABLE OF ALL THE MODULE CALLS, CHECK AND COMBINE SPECS
-  #===========================================================================
+  #==========================================================
+  #PARSE RUN SCRIPT FOR MODULE CALLS, CHECK AND COMBINE SPECS
+  #==========================================================
 
   # Parse script and make data frame of modules that are called directly
   parsedScript <- parseModelScript(ModelScriptFile)
@@ -458,7 +466,10 @@ function(
   #SIMULATE MODEL RUN
   #==================
 
-  # TODO: See if this works without RunModel
+  # TODO: Re-evaluate use case (See if this works without RunModel)
+  # TODO: Probably don't want to roll over into actually running if we're just simulating
+  # TODO: Or perhaps we just don't want to write to Log/ModelState/Datastore when SimulateRun is true
+
   # May be some hangups for LoadDatastore workflow, since it might need to know
   #  what is supposed to exist in the loaded datastore. Since we passed the
   #  required packages into parseModuleCalls, AllSpecs_ls probably may have the
