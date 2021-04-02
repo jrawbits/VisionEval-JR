@@ -250,6 +250,7 @@ ve.model.setupRunEnvironment <- function(
   ModelDir=getwd(),
   ResultsDir=".",         # Should be relative to ModelDir
   InputPath=".",          # Should be relative to ModelDir
+  SaveDatastore=NULL,     # Override if set to TRUE or FALSE
   ModelScriptFile = NULL, # Override if provided
   Name=NULL,              # Override with self$modelName
   LogLevel="warn"
@@ -264,6 +265,7 @@ ve.model.setupRunEnvironment <- function(
     InputPath       = InputPath,
     LogLevel        = LogLevel
   )
+  if ( ! is.null(SaveDatastore) )   addParams_ls <- c(addParams_ls,list(SaveDatastore=SaveDatastore))
   if ( ! is.null(ModelScriptFile) ) addParams_ls <- c(addParams_ls,list(ModelScriptFile=ModelScriptFile))
   if ( ! is.null(Name) )            addParams_ls <- c(addParams_ls,list(Model=Name))
   addParams_ls <- visioneval::addParameterSource(addParams_ls,paste0(Owner))

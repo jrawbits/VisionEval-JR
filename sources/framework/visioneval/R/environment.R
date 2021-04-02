@@ -665,12 +665,6 @@ fileTimeStamp <- function( TimeStamp, Prefix=NULL ) {
 #' initialization date and '<time>' is the initialization time, and '<prefix>' is the Prefix
 #' parameter provided to the function.
 #'
-#' Logging can be re-initialized at any time to divert subsequent log messages to a different file.
-#' If logging to a file is turned off and writeLog is not in an interactive environment
-#' (e.g. inside an Rscript), logging to a file will be turned on, with the log file being placed
-#' in ve.runtime (if it exists) or the current working directory, with filePrefix set to
-#' "VisionEval".
-#'
 #' @param TimeStamp Force the log message time stamp to this value (default: \code{Sys.time()})
 #' @param Threshold Logging threshold to display (see \code{writeLog()} for available levels).
 #' Messages below the threshold will be ignored. Default is "info" which shows a lot. "warn" is
@@ -688,11 +682,7 @@ initLog <- function(TimeStamp = NULL, Threshold="warn", Save=TRUE, Prefix = NULL
   if (is.null(TimeStamp)) {
     TimeStamp <- Sys.time()
   }
-  if ( Save ) {
-    LogFile <- paste0(fileTimeStamp(TimeStamp,Prefix=c("Log",Prefix)),".txt")
-  } else {
-    LogFile <- "console"
-  }
+  LogFile <- paste0(fileTimeStamp(TimeStamp,Prefix=c("Log",Prefix)),".txt")
 
   # Create and provision the ve.logger
   th <- which( log.threshold %in% toupper(Threshold) )
@@ -707,14 +697,19 @@ initLog <- function(TimeStamp = NULL, Threshold="warn", Save=TRUE, Prefix = NULL
   futile.logger::flog.threshold("WARN",name="stderr")
   futile.logger::flog.layout( log.layout.visioneval, name="stderr")
 
-  saveLog(LogFile)
+  if ( Save ) saveLog(LogFile) # Can always do so later...
+  # If not Save, we stash the TimeStamp and LogFile in ve.model environment
+  # and use them later to start file logging with an explicit call to saveLog
 
   if ( ! Quiet && interactive() ) {
     startMsg <- paste("Logging started at",TimeStamp,"for",toupper(Threshold),"to",LogFile)
     writeLogMessage(startMsg)
   }
 
-  invisible(list(LogFile=LogFile,ModelStart=TimeStamp))
+  # Save and return the Log status (e.g. to use TimeStamp or start saving later)
+  ve.model <- modelEnvironment()
+  ve.model$LogStatus <- list(LogFile=LogFile,ModelStart=TimeStamp)
+  invisible(ve.model$LogStatus)
 }
 #initLog()
 
@@ -726,12 +721,19 @@ initLog <- function(TimeStamp = NULL, Threshold="warn", Save=TRUE, Prefix = NULL
 #' back just to the console. see \code{initLog}.
 #'
 #' @param LogFile the file into which to save the log. If the specific value "console", then do
-#'   not log to a vile.
+#'   not log to a file. If NULL, look in ve.model environment, and fall back to "console"
 #' @return TRUE if saving to a file, else FALSE
 #' @import futile.logger
 #' @export
-saveLog <- function(LogFile="console") {
+saveLog <- function(LogFile=NULL) {
   writeLog(paste("Logging to",LogFile),Level="info")
+  if ( is.null(LogFile) ) {
+    ve.model <- modelEnvironment()
+    if ( "LogStatus" %in% ls(ve.model) ) LogFile <- ve.model$LogStatus$LogFile
+    if ( is.null(LogFile) ) { # if still null, it wasn't in ve.model$LogStatus...
+      LogFile <- "console"
+    }
+  }
   Save <- LogFile != "console"
   if ( Save ) {
     if ( interactive() ) {
@@ -749,13 +751,6 @@ saveLog <- function(LogFile="console") {
 }
 
 # futile.logger layout for visioneval (adjusted from futile.logger::layout.simple)
-
-log.appender.errtee <- function(file) {
-  function(line) {
-    cat(line,sep="",file=stderr())
-    cat(line,file=file,append=TRUE,sep="")
-  }
-}
 
 prepare_arg <- function(x) {
   if (is.null(x) || length(x) == 0) return(deparse(x))
