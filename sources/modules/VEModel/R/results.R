@@ -448,15 +448,17 @@ ve.results.print <- function(details=FALSE) {
   cat("VEResults object for these results:\n")
   print(self$resultsPath)
   cat("Output is valid:",self$valid(),"\n")
-  if ( ! details ) {
-    sel <- length(self$selection$selection)
-    all <- nrow(self$modelIndex)
-    if ( sel < all ) {
-      cat("Selected",sel,"out of",all,"fields.\n")
-      print(self$selection) # Just the field names
-    } else cat("Selected all fields.\n")
-  } else {
-    print(self$selection,details=TRUE)
+  if ( self$valid() ) {
+    if ( ! details ) {
+      sel <- length(self$selection$selection)
+      all <- nrow(self$modelIndex)
+      if ( sel < all ) {
+        cat("Selected",sel,"out of",all,"fields.\n")
+        print(self$selection) # Just the field names
+      } else cat("Selected all fields.\n")
+    } else {
+      print(self$selection,details=TRUE)
+    }
   }
 }
 
@@ -498,17 +500,21 @@ ve.select.initialize <- function( results, select=integer(0) ) {
   # self$selection is just a list of integers pointing to rows
   #  in self$results$modelIndex
   self$results <- results
-  rows <- self$parse(select)
-  if ( is.null(rows) || any(is.na(rows)) ) {
-    self$selection <- as.integer(NA) # no rows selected
-  } else if (
-    ! is.numeric(rows) ||
-    length(rows)==0 ||
-    ! min(rows)>0 ||
-    max(rows)>nrow(self$results$modelIndex) ) {
-    self$selection <- 1:nrow(self$results$modelIndex)
+  if ( self$results$valid() ) {
+    rows <- self$parse(select)
+    if ( is.null(rows) || any(is.na(rows)) ) {
+      self$selection <- as.integer(NA) # no rows selected
+    } else if (
+      ! is.numeric(rows) ||
+      length(rows)==0 ||
+      ! min(rows)>0 ||
+      max(rows)>nrow(self$results$modelIndex) ) {
+      self$selection <- 1:nrow(self$results$modelIndex)
+    } else {
+      self$selection <- rows
+    }
   } else {
-    self$selection <- rows
+    self$selection <- integer(0)
   }
 }
 
@@ -516,12 +522,16 @@ ve.select.copy <- function(select) VESelection$new(self$results,self$selection)
 
 ve.select.print <- function(details=FALSE) {
   # print the selected fields
-  if ( ! details ) {            # just the field names (see below)
-    print( self$fields() )
-  } else {                      # full data frame of selected model results
-    print( self$results$modelIndex[ self$selection, ] )
+  if ( ! self$valid() ) cat("No results: has model been run?\n") else {
+    if ( ! details ) {            # just the field names (see below)
+      print( self$fields() )
+    } else {                      # full data frame of selected model results
+      print( self$results$modelIndex[ self$selection, ] )
+    }
   }
 }
+
+ve.select.valid <- function() { return(self$results$valid()) }
 
 ve.select.groups <- function() {
   if ( ! self$results$valid() ) stop("Model has not been run yet.")
@@ -530,7 +540,7 @@ ve.select.groups <- function() {
     return(character(0))
   }
   idxGroups <- unique(self$results$modelIndex[self$selection,c("Group"),drop=FALSE])
-  return(sort(idxGroups)) # Group
+  return(idxGroups[order(idxGroups$Group),]) # Group
 }
 
 ve.select.tables <- function() {
@@ -635,7 +645,7 @@ ve.select.find <- function(pattern=NULL,Group=NULL,Table=NULL,Name=NULL,as.objec
     if ( !is.null(pattern ) ) {
       fld <- grepl(pattern,Name,ignore.case=TRUE)     # RegEx search for name
     } else if ( !is.null(searchName) ) {
-      fld <- Name == searchName;                      # Exact name match
+      fld <- Name %in% searchName;                    # Exact name match
     } else {
       fld <- rep(TRUE,nrow(self$results$modelIndex))  # Start with all selected
     }
@@ -643,11 +653,11 @@ ve.select.find <- function(pattern=NULL,Group=NULL,Table=NULL,Name=NULL,as.objec
       if ( searchGroup %in% c("Year","Years","AllYears") ) {  # shorthand for non-Global group
         group <- Group != "Global"
       } else {
-        group <- Group == searchGroup
+        group <- (Group %in% searchGroup)
       }
       fld <- fld & group
     }
-    if ( !is.null(searchTable) ) fld <- fld & Table==searchTable
+    if ( !is.null(searchTable) ) fld <- fld & (Table %in% searchTable)
     which(fld)
   })
   if ( length(newSelection) == 0 ) newSelection <- as.integer(NA)
@@ -725,6 +735,7 @@ VESelection <- R6::R6Class(
     initialize=ve.select.initialize,
     copy=ve.select.copy,          # Create a new selection object with the same results and indices
     print=ve.select.print,
+    valid=ve.select.valid,
 #    save=ve.select.save,          # This saves the selection
 #    open=ve.select.open,          # This opens a selection
     extract=ve.select.extract,

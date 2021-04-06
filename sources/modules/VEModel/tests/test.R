@@ -366,18 +366,57 @@ test_model <- function(oldstyle=TRUE, test.copy=FALSE, log="info") {
 test_results <- function (log="warn") {
   testStep("Manipulate Model Results in Detail")
 
-  testStep("Opening model and pulling out results and selection...")
+  testStep("Copy model and get 'results' and 'selection' from empty model...")
   jr <- openModel("JRSPM")
+  cp <- jr$copy("COPY")
+  cat("Directory before clearing...\n")
+  print(cp$dir())
+  cp$clear(force=TRUE,outputOnly=FALSE)
+  cat("Directory after clearing...\n")
+  print(cp$dir())
+  cat("Results after clearing...\n")
+  rs <- cp$results()
+  print(rs)
+  cat("Selection after clearing...\n")
+  sl <- rs$select()
+  print(sl)
+
+  testStep("Pull out results and selection (head 12)...")
+  cat("Results...\n")
   rs <- jr$results()
+  print(rs)
+  cat("Selection...\n")
   sl <- rs$select() # Get full field list
-  # Check error: No results or selection if the model has not been run.
+  print(head(capture.output(print(sl)),n=12))
 
   # Do some basic field extraction - list fields
+  cat("Groups\n")
+  print(sl$groups())
+  cat("Tables\n")
+  print(sl$tables())
+  cat("Fields (random 20)\n")
+  fld <- sl$fields()
+  print(fld[sample(length(fld),20)])
+  
   # Select some subsets by group, table or field name and extract those...
   # Can we easily identify group names, table names, field names and zero in on selecting them?
+  testStep("Select some Groups")
+  cat("Only the years...\n")
+  sl$select( sl$find(Group="Years") )
+  print(sl$groups())
+  cat("Only the first of the years...\n")
+  sl$select( sl$groups()[1] )         # Just the first ones
+  print(sl$groups())
 
+  testStep("Select Household and Vehicle Tables")
+  sl$select( sl$find(Table=c("Household","Vehicle")) )
+  print(sl)
+  cat("Print with details...\n")
+  print(sl,details=TRUE)
+  
   # Test display units, select speeds, create unit conversion
   testStep("Creating and Writing Display Units...")
+  sl$all() # Deselect everything
   un <- rs$list(details=TRUE)[,c("Group","Table","Name","Units")]
   spd <- un[ grepl("MI/",un$Units)&grepl("sp",un$Name,ignore.case=TRUE), ]
   spd$DisplayUnits <- "MI/HR"
@@ -391,10 +430,13 @@ test_results <- function (log="warn") {
   write.csv(spd,file=display_units_file)
 
   testStep("Selecting speed fields...")
+  sl$all() # re-select everything
   sl$select( with(spd,paste(Group,Table,Name,sep="/")) )
   print(sl$fields())
 
-  testStep("Showing currently defined UNITS/DISPLAYUNITS")
+  testStep("Showing currently defined UNITS/DISPLAYUNITS (via sl$results)")
+  print(sl$results$units())
+  testStep("Showing currently defined UNITS/DISPLAYUNITS (directly from rs)")
   print(rs$units())
 
   # Clean up the fields to add the geography fields in the Marea Table
