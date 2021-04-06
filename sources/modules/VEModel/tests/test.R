@@ -411,8 +411,8 @@ test_results <- function (log="warn") {
   testStep("Select Household and Vehicle Tables")
   sl$select( sl$find(Table=c("Household","Vehicle")) )
   print(sl)
-  cat("Print with details...\n")
-  print(sl,details=TRUE)
+  cat("Print selection with details...\n")
+  print(head(capture.output(print(sl,details=TRUE)),n=12))
   
   # Test display units, select speeds, create unit conversion
   testStep("Creating and Writing Display Units...")
@@ -449,7 +449,7 @@ test_results <- function (log="warn") {
   sl$extract(prefix="DisplayUnits")                 # Using DISPLAY units
 
   testStep("Exporting speed fields using DATASTORE units")
-  sl$export(prefix="Datastore",convertUnits=FALSE) # Using DATASTORE units
+  sl$export(prefix="Datastore",convertUnits=FALSE)  # Using DATASTORE units
 
   testStep("Model directory")
   print(jr$dir())
@@ -460,7 +460,7 @@ test_results <- function (log="warn") {
   testStep("Model directory of outputs")
   print(jr$dir(outputs=TRUE))
   
-  testStep("Clear outputs")
+  testStep("Interactively clear outputs but leave results")
   jr$clear(outputOnly=TRUE, force=FALSE)
 
   testStep("Directory after clearing")
