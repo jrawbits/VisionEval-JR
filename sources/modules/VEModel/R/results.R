@@ -359,6 +359,10 @@ ve.results.extract <- function(
       Metadata_ls[[table]] <- meta
     }
 
+    # TODO: the following fails for VERPAT since the future vehicles table
+    #  includes two different series of data with different lengths. Those
+    #  should be put into different tables in the model (e.g. Vehicles versus
+    #  VehiclesFuture).
     # Get a list of data.frames, one for each Table configured in Tables_ls
     Data_ls <- visioneval::readDatastoreTables(Tables_ls, group, QueryPrep_ls)
 
@@ -609,17 +613,6 @@ ve.select.parse <- function(select) {
   message(deparse(select))
   return( as.integer(NA) )
 }
-
-# There's some quirk to completing documentation of this operator as written...
-#   We probably don't need it...
-# #' Assign new selection to VESelection
-# #'
-# #' @usage x <- value
-# #' @param x a VESelection object whose selected fields will be updated by value
-# #' @param value an object to be made into a VESelection and then assigned to this one
-# #' @return the VESelection that was modified
-# #' @export
-# `<-.VESelection` <- function(value) self$select(value)
 
 # Return a reference to this selection, changing its indices if an argument is provided
 ve.select.select <- function(select) {
