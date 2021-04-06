@@ -372,6 +372,10 @@ test_results <- function (log="warn") {
   sl <- rs$select() # Get full field list
   # Check error: No results or selection if the model has not been run.
 
+  # Do some basic field extraction - list fields
+  # Select some subsets by group, table or field name and extract those...
+  # Can we easily identify group names, table names, field names and zero in on selecting them?
+
   # Test display units, select speeds, create unit conversion
   testStep("Creating and Writing Display Units...")
   un <- rs$list(details=TRUE)[,c("Group","Table","Name","Units")]
