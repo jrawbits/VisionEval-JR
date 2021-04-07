@@ -1130,15 +1130,7 @@ with( CompiledSpec,
     #----------------------------------------------
     #Calculate the Expression and Return the Result
     #----------------------------------------------
-    if (is.null(By)) {
-      #If there isn't a By argument
-      tryCatch(
-        Result <- eval(parse(text = Expr), envir = Data_ls$Data[[1]]),
-        warning=function(w) { return(list(Result=NA,Errors=conditionMessage(w))) },
-        error=function(e) { return(list(Result=NA,Errors=conditionMessage(e))) }
-      )
-    }
-    else if ( !is.null(By) ) {
+    if ( "By" %in% names(CompiledSpec) ) {
       # There is a By argument, with one or two merged datasets
       if ( length(Data_ls$Data) == 1 ) {
         #If there is a By but only one merged dataset
