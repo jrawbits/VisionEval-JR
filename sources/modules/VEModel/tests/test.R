@@ -368,6 +368,7 @@ test_results <- function (log="warn") {
 
   testStep("Copy model and get 'results' and 'selection' from empty model...")
   jr <- openModel("JRSPM")
+  if ( "COPY" %in% dir("models") ) unlink("models/COPY",recursive=TRUE)
   cp <- jr$copy("COPY")
   cat("Directory before clearing...\n")
   print(cp$dir())
@@ -503,6 +504,8 @@ test_query <- function(log="warn") {
   qry$add(spec)
   qry$print(details=TRUE)
 
+  return("Test Done")
+
   testStep("Names of specifications in added query...")
   print(qry$names())    # List names of QuerySpecifications in order
   testStep("Print function for added queries...")
@@ -533,6 +536,7 @@ test_query <- function(log="warn") {
 
   testStep("Remove test queries...")
   cat("Removing:\n")
+  browser()
   print( nm <- qry$names()[1:3] )
   qry <- qry$remove(nm) # remove by name (bye-bye before,loc2 and loc0)
   print(qry)

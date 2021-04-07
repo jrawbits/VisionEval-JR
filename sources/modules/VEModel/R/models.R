@@ -1315,11 +1315,10 @@ ve.model.query <- function(QueryName=NULL,FileName=NULL) {
   # Let VEquery find the query...
   return(
     VEQuery$new(
-      ModelPath=self$modelPath,
       QueryName=QueryName,
-      FileName=FileName,
+      ModelPath=self$modelPath,
       QueryDir=QueryDir,
-      Param_ls=self$RunParam_ls
+      FileName=FileName
     )
   )
 }

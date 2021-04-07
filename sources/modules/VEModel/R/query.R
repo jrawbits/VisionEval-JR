@@ -32,10 +32,8 @@ ve.query.init <- function(
   QueryDir=NULL,     # relative sub-directory for Queries (could be ".")
   FileName=NULL,     # relative to ModelPath/QueryDir or ve.runtime/QueryDir, or absolute
                      # Forces "load=TRUE"; also fills unattached QueryName; "FromFile"
-  OtherQuery=NULL,   # provides fully-formed QueryDir for attach
+  OtherQuery=NULL,   # provides fully-formed VEQuery for attach
   QuerySpec=NULL,    # A list of VEQuerySpec's (or another VEQuery) to initialize with
-  # Param_ls=NULL,   # Don't bother - pre-construct in "ModelPath" if coming from a model, otherwise
-                     # use runtime environment RunParams_ls
   load=FALSE         # If TRUE, build a FileName as ModelPath/QueryDir/QueryName.VEqry
                      # However, if FileName is provided, use that if absolute, othewise normalize
                      # with ModelPath/QueryDir, attaching ".VEqry" if need be. See ve.query.load
@@ -45,7 +43,13 @@ ve.query.init <- function(
     QueryName <- sub("\\.[^.]*$","",basename(FileName))
   }
   if ( ! is.list(QuerySpec) && ! "VEQuery" %in% class(QuerySpec) ) {
-    QuerySpec <- NULL
+    if ( "VEQuerySpec" %in% class(QuerySpec) ) {
+      QuerySpec <- list(QuerySpec) # a single query spec becomes a list of one
+    } else {
+      visioneval::writeLogMessage("Unrecognized QuerySpec:")
+      visioneval::writeLogMessage(deparse(QuerySpec))
+      QuerySpec <- NULL # Invalid query spec
+    }
   }
   otherValid <- TRUE
   if ( ! is.null(OtherQuery) && class(OtherQuery)!="VEQuery" ) {
@@ -84,7 +88,7 @@ ve.query.init <- function(
 # Build self$QueryFile, which will be used for saving (and perhaps loading if not requested up front)
 # Filename will NOT be disambiguated until we get to the save operation
 # Just prepare a candidate absolute path to a valid directory
-ve.query.attach <- function(ModelPath=NULL, QueryName=NULL, QueryDir=NULL, OtherQuery=NULL) {
+ve.query.attach <- function(OtherQuery=NULL, ModelPath=NULL, QueryDir=NULL, QueryName=NULL) {
   if ( !is.null(OtherQuery) ) {
     self$QueryDir <- OtherQuery$QueryDir
   } else {
@@ -95,7 +99,7 @@ ve.query.attach <- function(ModelPath=NULL, QueryName=NULL, QueryDir=NULL, Other
       QueryDir <- visioneval::getRunParameter("QueryDir")
     }
     QueryDir <- normalizePath(file.path(ModelPath,QueryDir),winslash="/",mustWork=FALSE)
-    if ( ! dir.exists(self$QueryDir) ) {
+    if ( ! dir.exists(QueryDir) ) {
       QueryDir <- normalizePath(file.path(ModelPath),winslash="/",mustWork=FALSE)
     }
     self$QueryDir  <- QueryDir
@@ -203,19 +207,28 @@ ve.query.add <- function(obj,location=0,before=FALSE,after=TRUE) {
   #   in QuerySpec, the existing value(s) will be over-written, regardless of location
   # If you use "update", specs not already present will be ignored with a warning.
 
-  # Start by getting "obj" in order - make it into a new VEQuery, using standard error checking
-  qry <- asQuery(obj)
-  if ( ! qry$valid() ) {
-    msg <- c("Cannot add to query:",qry$checkResults)
-    visioneval::writeLogMessage( c(msg,deparse(obj)) )
-    stop(msg)
+  # Start by getting the specification list to add
+  if ( is.list(obj) && all(sapply(obj,function(o)"VEQuerySpec"%in%class(o))) ) {
+    # obj is already a list of VEQuerySpec objects (what we want)
+    # But we want to clone it to avoid messing with its contents
+    # make sure it is named
+    spec <- lapply(obj,function(o) VEQuerySpec$new(obj))
+    names(spec) <- sapply(spec,function(s) s$Name)
+  } else {
+    qry <- asQuery(obj) # obj is probably another VEQuery but might be a bare VEQuerySpec
+    if ( ! qry$valid() ) {
+      msg <- c("Cannot add to query:",qry$checkResults)
+      visioneval::writeLogMessage( c(msg,deparse(obj)) )
+      stop(msg)
+    }
+    spec <- qry$getlist() # Clone the spec list from obj
   }
-  # Now validate and interpret "location", "before" and "after"
+
+  # Validate and interpret "location", "before" and "after"
   currentSpec <- self$getlist() # clone existing spec list
   currentNames <- names(currentSpec)
   nameLen <- length(currentNames)
 
-  spec <- qry$getlist() # get spec list by cloning it
   if ( nameLen == 0 ) { # Already have query specifications
     newSpec <- spec
   } else {
@@ -309,13 +322,22 @@ ve.query.update <- function(obj) {
 
 asQuery <- function(obj,QueryName="Temp-Query") {
   if ( ! "VEQuery" %in% class(obj) ) {
-    # If it's not a query, assume it's a single object and clone it
-    qry.spec <- VEQuerySpec$new(obj)
-    name <- qry.spec$QuerySpec$Name
-    loc <- if ( is.null(name) ) 1 else name
-    qry <- list()
-    qry[[loc]] <- qry.spec
-    qry <- VEQuery$new(QueryName="Temp-Query",OtherQuery=self,QuerySpec=qry)
+    # check if its a list of query specs
+    if ( is.list(obj) ) {
+      if ( ! all(sapply(obj,function(o) "VEQuerySpec" %in% class(o))) ) {
+        qry.spec <- VEQuerySpec$new(obj) # Attempt to convert unknown list to a single spec
+        name <- qry.spec$QuerySpec$Name
+        loc <- if ( is.null(name) ) 1 else name
+        qry <- list()
+        qry[[loc]] <- qry.spec;
+        qry.spec <- qry
+      } else {
+        qry.spec <- obj; # Already looking at a list of query spec's
+      }
+    } else {
+      stop("Cannot interpret object as query specification:\n",deparse(obj))
+    }
+    qry <- VEQuery$new(QueryName="Temp-Query",OtherQuery=self,QuerySpec=qry.spec)
   } else {
     qry <- obj
   }
@@ -405,6 +427,7 @@ ve.query.print <- function(details=FALSE) {
   }
   if ( self$valid() ) {
     cat("Valid query with",length(private$QuerySpec),"elements\n")
+    browser()
     if ( length(private$QuerySpec) ) {
       if ( ! is.null(self$QueryResults) ) cat("Results are available.\n")
       print(self$names())
@@ -431,6 +454,7 @@ ve.query.getlist <- function(Geography=NULL) {
   ################################
   
   self$check()
+  # Deep copy the current QuerySpec
   newSpec <- lapply(private$QuerySpec,function(s) VEQuerySpec$new(s))
   if ( ! is.null(Geography) ) {
     validity <- list()
