@@ -170,10 +170,7 @@ ve.query.load <- function(FileName=NULL,QuerySpec=NULL,ModelPath=NULL,QueryDir=N
       # Load the query from FileName, commandeering the modelEnvironment
       ve.model <- visioneval::modelEnvironment() # Don't need to clear ve.model
       sys.source(self$QueryFile,envir=ve.model)
-      # The QuerySpec was saved as a standard list of lists, so rebuild
-      #   the inner lists as VEQuerySpec objects
-      QuerySpec <- lapply(ve.model$QuerySpec,function(s) VEQuerySpec$new(s))
-      self$add(QuerySpec)
+      self$add(ve.model$QuerySpec) # will interpret the list of lists as a list of VEQuerySpec
     }
   }
   return( self$check() )
@@ -193,6 +190,14 @@ ve.query.check <- function(verbose=FALSE) {
   self$checkResults <- character(0)
   query.names <- character(0)
   for ( spec in self$QuerySpec ) {
+    if ( ! "VEQuerySpec" %in% class(spec) ) {
+      self$checkResults <- c(
+        self$checkResults,
+        "QuerySpec contains an unknown type of object:",
+        deparse(spec)
+      )
+      next
+    }
     spec$check( Names=query.names ) # names list for validating functions
     query.names <- c( query.names,spec$Name )
     if ( ! spec$valid() ) {
@@ -219,11 +224,10 @@ ve.query.add <- function(obj,location=0,before=FALSE,after=TRUE) {
   if ( is.list(obj) && all(sapply(obj,function(o)"VEQuerySpec"%in%class(o))) ) {
     # obj is already a list of VEQuerySpec objects (what we want)
     # But we want to clone it to avoid messing with its contents
-    # make sure it is named
-    spec <- lapply(obj,function(o) VEQuerySpec$new(o))
-    names(spec) <- sapply(spec,function(s) if ( is.null(name <- s$Name) ) "" else name)
+    spec <- asSpecList(obj)
   } else {
-    qry <- asQuery(obj) # obj is probably another VEQuery but might be a bare VEQuerySpec
+    qry <- asQuery(obj) # Do deeper type conversions to build a query if needed
+    # NOTE: if obj is already a VEQuery, it is returned as is. It is NOT copied.
     if ( ! qry$valid() ) {
       msg <- c("Cannot add to query:",qry$checkResults)
       visioneval::writeLogMessage( c(msg,deparse(obj)) )
@@ -253,7 +257,7 @@ ve.query.add <- function(obj,location=0,before=FALSE,after=TRUE) {
     } else if ( before ) after <- FALSE # if before, then not after
 
     location <- if ( location < 1 ) {
-      1
+      if ( before ) 1 else nameLen
     } else if ( location > nameLen ) {
       nameLen
     } else {
@@ -328,21 +332,46 @@ ve.query.update <- function(obj) {
   return(self)
 }
 
+#' Convert a list of list-formatted specifications to a list of VEQuerySpec objects
+#'
+#' @param spec a list of lists where the inner lists are (probably) raw specifications. Running
+#'   a list of VEQuerySpec's through this function will simply duplicate the specifications (a deep
+#'   copy).
+#' @return a named list of VEQuerySpec objects created from the raw specifications
+#' @export
+asSpecList <- function(spec) {
+  spec.list <- lapply(spec,function(s) VEQuerySpec$new(s))
+  names(spec.list) <- sapply(spec.list,function(s) if ( is.null(name <- s$Name) ) "" else name)
+  return(spec.list)
+}
+
+#' Convert an R object of various compatible types to a VEQuery
+#'
+#' This function will convert various kinds of things into a VEQuery that can then be added to
+#'   another query or otherwise used. If \code{obj} is already a VEQuery, it is NOT copied, but
+#'   just returned as-is. That limits opportunities for infinite recursion since the $add function
+#'   is called within VEQuery$new, so we need to be cautious about creating a new VEQuery here.
+#'
+#' @param obj The object to convert to the query's specifications. Can be a VEQuery, a VEQuerySpec,
+#'   or a list of objects where each inner object is already (or is convertible to) a VEQuerySpec
+#'   (that last format is how query specifications are manipulated by VEQuery$load or VEQuery$save).
+#' @param QueryName The name to use for the returned VEQuery
+#' @return A VEQuery constructed from the obj parameter
+#' @export
 asQuery <- function(obj,QueryName="Temp-Query") {
   if ( ! "VEQuery" %in% class(obj) ) {
-    # check if its a list of query specs
+    # check if it's a query spec or a list of query specs
     if ( is.list(obj) ) {
-      if ( ! all(sapply(obj,function(o) "VEQuerySpec" %in% class(o))) ) {
-        qry.spec <- VEQuerySpec$new(obj) # Attempt to convert unknown list to a single spec
-        name <- qry.spec$QuerySpec$Name
-        loc <- if ( is.null(name) ) 1 else name
-        qry <- list()
-        qry[[loc]] <- qry.spec;
-        qry.spec <- qry
-      } else {
-        qry.spec <- obj; # Already looking at a list of query spec's
-        names(qry.spec) <- sapply(qry.spec,function(s) if ( is.null(name <- s$Name) ) "" else name)
-        # Ensure that names are consistent
+      qry.spec <- asSpecList(obj)
+      if ( ! all(sapply(qry.spec,function(s) { "VEQuerySpec" %in% class(s) && s$valid() } )) ) {
+        # Second, if it wasn't a list of specs, perhaps it is an individual spec
+        qry.spec <- list()
+        spec <- VEQuerySpec$new(obj) # Attempt to convert unknown list to a single spec
+        if ( spec$valid() ) {
+          name <- spec$QuerySpec$Name
+          loc <- if ( is.null(name) ) 1 else name
+          qry.spec[[loc]] <- spec;
+        }
       }
     } else if ( "VEQuerySpec" %in% class(obj) ) {
       # Make a bare query spec into a one-element list
@@ -353,6 +382,7 @@ asQuery <- function(obj,QueryName="Temp-Query") {
     }
     qry <- VEQuery$new(QueryName="Temp-Query",OtherQuery=self,QuerySpec=qry.spec)
   } else {
+    # obj is already another VEQuery
     qry <- obj
   }
   qry$check()
@@ -1056,7 +1086,6 @@ makeMeasure <- function(measureSpec,thisYear,Geography,QPrep_ls,measureEnv) {
   }
 
   # Compute the measure based on the measureSpec
-  browser()
   if ( "Function" %in% names(measureSpec) ) {
     measure <- eval(parse(text=measureSpec$Function), envir=measureEnv)
     names(measure) <- measureName
@@ -1125,7 +1154,8 @@ makeMeasure <- function(measureSpec,thisYear,Geography,QPrep_ls,measureEnv) {
   for ( nm in names(measure) ) {
     msr <- measure[nm]
     attributes(msr) <- list(
-      Description = measureSpec$Description
+      Description = measureSpec$Description,
+      Units = measureSpec$Units
     )
     assign(nm,msr,envir=measureEnv)
   }
@@ -1145,17 +1175,13 @@ makeMeasureDataFrame <- function(measureEnv) {
   Values_       <- sapply(Measures_, get, envir=measureEnv)
   Units_        <- unname(sapply(Measures_, function(x) attributes(get(x,envir=measureEnv))$Units))
   Description_  <- unname(sapply(Measures_, function(x) attributes(get(x,envir=measureEnv))$Description))
+  browser()
   Data_df       <- data.frame(
     Measure     = Measures_,
     thisYear    = Values_,
     Units       = Units_,
     Description = Description_
   )
-  # The following addresses a unique naming standard in original script
-  # TODO: make it obsolete
-  Data_df$Measure <- gsub("_Ma", "_", Data_df$Measure)
-  Data_df$Measure <- gsub("_$", "", Data_df$Measure)
-  Data_df$Measure <- gsub("_\\.", ".", Data_df$Measure)
   rownames(Data_df) <- NULL
   return(Data_df)
 }
@@ -1211,7 +1237,7 @@ doQuery <- function (
 
     # Gather years from the results
     Years <- results$ModelState$Years
-    catYears<-paste(Years,collapse=", ")
+    catYears<-paste(Years,collapse=",")
 
     # Confirm what we're working on
     catGeography <- Geography["Type"]

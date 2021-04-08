@@ -530,7 +530,7 @@ test_query <- function(log="warn") {
   print(qry)
   spec <- VEQuerySpec$new(spec)
   spec <- spec$update(Name="UrbanHhDvmt_loc0")
-  qry$add(spec,location=0)  # should put loc0 "after" first element: 2nd position
+  qry$add(spec,location=2,before=TRUE)  # should put loc0 "after" first element: 2nd position
   cat("loc0 goes after first element\n")
   print(qry)
 
@@ -613,7 +613,9 @@ test_query <- function(log="warn") {
       Description = "Commercial service vehicle daily vehicle miles traveled attributable to the demand of households and businesses located in the urban area"
     )
   )
-  qry$add(spec)
+  print(qry)
+  qry$add(spec,location=1,after=TRUE)
+  print(qry)
   
   testStep("Create a 'Function' query specification...")
 
@@ -632,6 +634,7 @@ test_query <- function(log="warn") {
 
   testStep("Add the Function spec to the query...")
 
+  print(qry)
   qry$add(spec)
   print(qry)
 
