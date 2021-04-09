@@ -435,8 +435,10 @@ ve.results.extract <- function(
       # Write the files (data = .csv) and a metadata file (meta = .metadata.csv)
       for ( table in dataNames ) {
         fn <- file.path(outputPath,paste0(prefix,Files[table]))
-        visioneval::writeLog(paste("Extracting",sub("\\.[^.]*$","",fn)),Level="warn")
-        utils::write.csv(Data_ls$Data[[table]],file=fn,row.names=FALSE)
+        disp.fn <- sub(paste0(self$resultsPath,"/"),"",fn,fixed=TRUE)
+        df2w <- Data_ls$Data[[table]]
+        visioneval::writeLog(paste("Extracting",sub("\\.[^.]*$","",disp.fn),paste0("(",nrow(df2w)," rows)")),Level="warn")
+        utils::write.csv(df2w,file=fn,row.names=FALSE)
         utils::write.csv(Metadata_ls[[table]],file=sub("\\.csv$",".metadata.csv",fn),row.names=FALSE)
       }
 
