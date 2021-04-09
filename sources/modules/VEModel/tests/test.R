@@ -729,7 +729,7 @@ test_rpat <- function(run=TRUE) {
     verpat$run()
   }
   testStep("Extracting JRPAT results...")
-  verpat$results$extract()
+  verpat$results()$extract()
 }
 
 # Now set it all up
