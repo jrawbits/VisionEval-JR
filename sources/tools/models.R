@@ -656,9 +656,9 @@ ve.model.extract <- function(
         data <- results[[f]]
         out.path <- file.path(self$modelPath[s],saveTo)
         if ( ! dir.exists(out.path) ) dir.create(out.path,recursive=TRUE)
-        fn <- file.path(out.path,f)
-        write.csv(data,file=fn)
-        if (!quiet) message("Write output file: ",gsub(ve.runtime,"",fn))
+        fn <- file.path(out.path, f)
+        write.csv(data, file = fn, row.names = F)
+        if (!quiet) message("Write output file: ", gsub(ve.runtime, "", fn))
       }
     )
   } else {
