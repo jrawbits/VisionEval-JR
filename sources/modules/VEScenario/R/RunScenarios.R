@@ -496,8 +496,7 @@ RunScenarios <- function(L){
                        return(output)
                      },
                      label = ScenarioName_,
-                     globals = TRUE,
-                     seed = TRUE),
+                     globals = TRUE),
                      callback = function(asyncResults){
                        # asyncResults is: list(asyncTaskName,
                        #                        taskResult,
