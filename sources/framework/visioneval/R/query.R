@@ -225,11 +225,17 @@ listDatasets <- function(Table, Group, QueryPrep_ls) {
 #' @param QueryPrep_ls a list created by calling the prepareForDatastoreQuery
 #' function which identifies the datastore location(s), listing(s), and
 #' functions for listing and read the datastore(s).
+#' @param zip_files an argument to specify whether the inventory should be saved as 
+#' a single .zip file
 #' @return a logical identifying whether the archive file has been saved.
 #' @export
 #' @import filesstrings
-documentDatastoreTables <- function(SaveArchiveName, QueryPrep_ls) {
-  GroupNames_ <- QueryPrep_ls$Listing$Datastore$Datastore$groupname
+documentDatastoreTables <- function(SaveArchiveName, QueryPrep_ls, zip_files = TRUE) {
+  
+  # Use the Dir from QueryPrep_ls as the Datastore name
+  Datastore_dir = QueryPrep_ls$Dir
+  
+  GroupNames_ <- QueryPrep_ls$Listing[[Datastore_dir]]$Datastore$groupname
   Groups_ <- GroupNames_[-grep("/", GroupNames_)]
   if (any(Groups_ == "")) {
     Groups_ <- Groups_[-(Groups_ == "")]
@@ -239,16 +245,17 @@ documentDatastoreTables <- function(SaveArchiveName, QueryPrep_ls) {
   for (Group in Groups_) {
     GroupDir <- file.path(TempDir, Group)
     dir.create(GroupDir)
-    Tables_ <- listTables(Group, QueryPrep_ls)$Datastore
+    Tables_ <- listTables(Group, QueryPrep_ls)[[Datastore_dir]]
     for (tb in Tables_) {
-      Listing_df <- listDatasets(tb, Group, QueryPrep_ls)$Datastore
+      Listing_df <- listDatasets(tb, Group, QueryPrep_ls)[[Datastore_dir]]
       write.table(Listing_df, file = file.path(GroupDir, paste0(tb, ".csv")),
                   row.names = FALSE, col.names = TRUE, sep = ",")
     }
   }
-  zip(paste0(SaveArchiveName, ".zip"), TempDir)
-  remove_dir(TempDir)
-  TRUE
+  if(zip_files){
+    zip(paste0(SaveArchiveName, ".zip"), TempDir)
+    suppressMessages( remove_dir(TempDir) )
+  }  
 }
 # #Example
 # QPrep_ls <- prepareForDatastoreQuery(
