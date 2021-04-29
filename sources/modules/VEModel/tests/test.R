@@ -721,6 +721,10 @@ test_query <- function(log="warn",multiple=FALSE) {
     # copy the jr model and its results over and over
     # TODO: add a flag to VEModel:$copy to copy or ignore any results (currently does
     # results if they exist)
+    # TODO: fiddle each model's Name and Scenario description (and build functions to
+    # allow that if necessary - don't want to have to re-run each model...). That will
+    # be easier if we create the VEModel objects, since the Name and Scenario are
+    # inscribed in the model state.
 
     testStep("Multiple query by model name")
     # Query the vector of model names (character vector says "model names" to VEQuery)
