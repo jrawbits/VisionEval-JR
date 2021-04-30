@@ -718,10 +718,8 @@ test_query <- function(log="warn",multiple=FALSE) {
     testStep("Query multiple models or scenarios...")
     # Generate several copies of jr
     testStep("Making model copies")
-    cp.1 <- jr$copy("Scen1")
-    cp.1$setModelState(list(Name="Scen1",Scenario="Scenario 1"))
-    cp.2 <- jr$copy("Scen2")
-    cp.1$setModelState(list(Name="Scen2",Scenario="Scenario 2"))
+    cp.1 <- jr$copy("Scenario1")
+    cp.2 <- jr$copy("Scenario2")
     # TODO: add a flag to VEModel:$copy to copy or ignore any results (currently does
     # results if they exist)
     # TODO: fiddle each model's Name and Scenario description (and build functions to
@@ -731,16 +729,19 @@ test_query <- function(log="warn",multiple=FALSE) {
     testStep("Multiple query by model name")
     # Query the vector of model names (character vector says "model names" to VEQuery)
     nameList <- c(jr$modelName,cp.1$modelName,cp.2$modelName)
+    names(nameList) <- nameList
     qry$run(nameList,outputFile="%queryname%_ByModelName_%timestamp%")
     
     testStep("Multiple query as a list of opened VEModel objects")
     # Make a list of VEModel objects from the names and query that
     modelList <- lapply(nameList,openModel)
+    names(modelList) <- nameList
     qry$run(modelList,outputFile="%queryname%_ByModelObject_%timestamp%")
 
     testStep("Multiple query as a list of VEResult objects")
     # Make a list of VEResults objects from the VEModel list and query that
     resultList <- lapply(modelList,function(m) m$results())
+    names(resultList) <- nameList
     qry$run(resultList,outputFile="%queryname%_ByResultObject_%timestamp%")
 
     testStep("Multiple query as a list of ResultsDir path names")
@@ -748,6 +749,7 @@ test_query <- function(log="warn",multiple=FALSE) {
     # VEResults and query that (Note difference between a character vector - list of
     # model names and a list of character strings, which are the result paths).
     pathList <- lapply(resultList,function(r) r$resultsPath)
+    names(pathList) <- nameList
     qry$run(pathList,outputFile="%queryname%_ByResultPath%timestamp%")
 
     testStep("Cleaning up model copies")
