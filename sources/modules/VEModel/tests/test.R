@@ -718,28 +718,42 @@ test_query <- function(log="warn",multiple=FALSE) {
     testStep("Query multiple models or scenarios...")
     # Generate several copies of jr
     testStep("Making model copies")
-    # copy the jr model and its results over and over
+    cp.1 <- jr$copy("Scen1")
+    cp.1$setModelState(list(Name="Scen1",Scenario="Scenario 1"))
+    cp.2 <- jr$copy("Scen2")
+    cp.1$setModelState(list(Name="Scen2",Scenario="Scenario 2"))
     # TODO: add a flag to VEModel:$copy to copy or ignore any results (currently does
     # results if they exist)
     # TODO: fiddle each model's Name and Scenario description (and build functions to
-    # allow that if necessary - don't want to have to re-run each model...). That will
-    # be easier if we create the VEModel objects, since the Name and Scenario are
-    # inscribed in the model state.
+    # allow that if necessary - don't want to have to re-run each model...). Alter and
+    # save the ModelState with update Name and Scenario. Framework setModelState()
 
     testStep("Multiple query by model name")
     # Query the vector of model names (character vector says "model names" to VEQuery)
+    nameList <- c(jr$modelName,cp.1$modelName,cp.2$modelName)
+    qry$run(nameList,outputFile="%queryname%_ByModelName_%timestamp%")
     
     testStep("Multiple query as a list of opened VEModel objects")
     # Make a list of VEModel objects from the names and query that
+    modelList <- lapply(nameList,openModel)
+    qry$run(modelList,outputFile="%queryname%_ByModelObject_%timestamp%")
 
     testStep("Multiple query as a list of VEResult objects")
     # Make a list of VEResults objects from the VEModel list and query that
+    resultList <- lapply(modelList,function(m) m$results())
+    qry$run(resultList,outputFile="%queryname%_ByResultObject_%timestamp%")
 
     testStep("Multiple query as a list of ResultsDir path names")
     # Make a list of ResultsDir path names (i.e. list of character strings) from the
-    # VEResults and query that
+    # VEResults and query that (Note difference between a character vector - list of
+    # model names and a list of character strings, which are the result paths).
+    pathList <- lapply(resultList,function(r) r$resultsPath)
+    qry$run(pathList,outputFile="%queryname%_ByResultPath%timestamp%")
 
     testStep("Cleaning up model copies")
+    unlink("models/Scen1",recursive=TRUE)
+    unlink("models/Scen2",recursive=TRUE)
+    rm( cp.1, cp.2)
   }
   testStep("Returning test model")
   return(jr)
