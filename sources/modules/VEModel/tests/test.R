@@ -720,11 +720,14 @@ test_query <- function(log="warn",multiple=FALSE) {
     testStep("Making model copies")
     cp.1 <- jr$copy("Scenario1")
     cp.2 <- jr$copy("Scenario2")
+
     # TODO: add a flag to VEModel:$copy to copy or ignore any results (currently does
-    # results if they exist)
-    # TODO: fiddle each model's Name and Scenario description (and build functions to
-    # allow that if necessary - don't want to have to re-run each model...). Alter and
-    # save the ModelState with update Name and Scenario. Framework setModelState()
+    # results if they exist; want to be able to force ignoring them.)
+
+    # TODO: fiddle each model's Name and Scenario description after the fact (and build
+    # functions to allow that if necessary - don't want to have to re-run each model...).
+    # Alter and save the ModelState with update Name and Scenario. Framework
+    # setModelState() could do the job, but it should be in the API.
 
     testStep("Multiple query by model name")
     # Query the vector of model names (character vector says "model names" to VEQuery)
