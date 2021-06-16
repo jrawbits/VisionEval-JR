@@ -17,7 +17,7 @@
 #' @param DatastoreName Pass the one relevant explict argument from initializeModel
 #' @return The RunParam_ls list of loaded parameters, properly overridden
 #' @export
-getModelParameters <- function(DotParam_ls=list(),DatastoreName) {
+getModelParameters <- function(DotParam_ls=list(),DatastoreName=NULL,LoadDatastore=FALSE) {
 
   # Access the model environment and check for RunModel condition
   ve.model <- modelEnvironment(Clear="") # clear ve.model environment (but don't destroy pre-existing RunParam_ls)
@@ -37,6 +37,7 @@ getModelParameters <- function(DotParam_ls=list(),DatastoreName) {
   if ( "Param_ls" %in% names(DotParam_ls) ) {
     DotParam_ls[ names(Param_ls) ] <- Param_ls; # Elevate parameters passed as an argument
   }
+  DotParam_ls[["LoadDatastore"]] <- LoadDatastore
 
   # We always want to keep "Region", "BaseYear" and "Years" from configuration files
   # Those cannot be defined at runtime since they change the model structure, not just

@@ -163,8 +163,7 @@ default.parameters.table = list(
   DatastoreType = "RD",
   SaveDatastore = TRUE,           # Whether to archive any existing ResultsDir
   ArchiveResultsName = "Results", # Root name for archived Results directory
-  ResultsDir = ".",               # To get framework support for VEModel, which overrides
-  StageDir = "."                  # To get framework support for VEModel, which overrides
+  ResultsDir = "."                # To get framework support for VEModel, which overrides
 )
 
 #GET DEFAULT PARAMETERS
