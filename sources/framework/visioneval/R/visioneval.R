@@ -68,72 +68,48 @@
 #' VisonEval.cnf or from run_parameters.json. See Run Parameters section.
 #' @return The ModelState_ls that was constructed, invisibly.
 #' @export
-initializeModel <-
-function(
+initializeModel <- function(
   LoadDatastore = FALSE,
   DatastoreName = NULL, # WARNING: different from "DatastoreName" loaded as a run parameter
   SimulateRun = FALSE,
   ...
 ) {
-  # Performs the following operations
-  #
-  #   Regardless of RunModel state will load an existing ModelState and check that the model has
-  #   everything it needs to run, updating ModelState as needed. Performs an in-memory "Init" first
-  #   if no ModelState file exists so the parsed elements of run_model.R are available for
-  #   inspection, but it will not save the ModelState_ls. The ModelState_ls will only be saved when
-  #   RunModel is TRUE. This function will clear the ve.model environment, load the ModelState,
-  #   parse the run_model.R script, check presence of files, check specifications, etc.
-  #   ModelState_ls remains in the ve.model environment.
-  #
-  #   If RunModel is TRUE, save the ModelState_ls if it was created from scratch. Initialize the
-  #   Datastore by loading an existing the "Datastore" (if LoadDatastore is TRUE), or by creating a
-  #   new blank Datastore. If SaveDatastore and one already exists, rename it before creating the
-  #   new one; otherwise throw an error if Datastore exists. Presumes that ModelState in ve.model is
-  #   current. Once initializeModel(RunModel=TRUE,...) completes, runModule / runScript / runStage
-  #   steps can be performed.
+  # Initialize ve.model$ModelState_ls and ve.model$RunParam_ls
+  loadModel(DotParam_ls=list(...),DatastoreName,LoadDatastore)
+  # Run the model (requires ve.model$ModelState_ls and ve.model$RunParam_ls
+  if ( modelRunning() ) runModel(SimulateRun)
+  invisible(
+    list(
+      ModelState_ls=ve.model$ModelState_ls,
+      RunParam_ls=ve.model$RunParam_ls
+    )
+  )
+}
+
+loadModel <- function(
+  DotParam_ls = list(),
+  DatastoreName = NULL,
+  LoadDatastore = FALSE
+) {
+  # IMPORTANT: Do not write/re-write a model state or log until archiving is done.
+
+  #   Load an existing ModelState and check that the model has everything it needs to run, updating
+  #   ModelState as needed. Performs an in-memory "Init" first if no ModelState file exists so the
+  #   parsed elements of run_model.R are available for inspection, but it will not save the
+  #   ModelState_ls. The ModelState_ls will be saved by the runModel function RunModel is TRUE. This
+  #   function will clear the ve.model environment, load the ModelState, parse the run_model.R
+  #   script, check presence of files, check specifications, etc. ModelState_ls remains in the
+  #   ve.model environment.
 
   #===================================================
   # ESTABLISH MODEL ENVIRONMENT AND RUNTIME PARAMETERS
   #===================================================
 
-  #### IMPORTANT: The working directory must be the place we want to write the ModelState file and
-  ####            create the Datastore. The "ResultsDir" (plus RunStep/Scenario)
-
-  RunParam_ls <- getModelParameters(DotParam_ls=list(...),DatastoreName)
+  RunParam_ls <- getModelParameters(DotParam_ls=DotParam_ls, DatastoreName, LoadDatastore)
   RunModel <- modelRunning()
-
-  # Extract parameters used to navigate the model script and model state
-
-  ModelDir <- getRunParameter("ModelDir",Param_ls=RunParam_ls)
-
-  # ModelScriptFile needs to be the absolute path to the model script
-  # It will be provided either in dots, or by the pre-existing RunParam_ls environment (e.g. if
-  # built by VEModel). Default is a fixed string, "run_model.R"
-  ModelScriptFile <- getRunParameter("ModelScriptFile",Param_ls=RunParam_ls)
-
-  # If the ModelScriptFile is relative, normalize it to ModelDir, which is either
-  # working directory or a sub-location holding the scripts.
-  if ( ! any(grepl("^([[:alpha:]]:[\\/]|[\\/])",ModelScriptFile)) ) {
-    # if relative path, normalize relative to ModelDir (which is probably ".")
-    ModelScriptFile <- normalizePath(
-      file.path(
-        ModelDir,
-        ModelScriptFile
-      ), winslash="/"
-    )
-  }
-  ModelStateFileName <- getRunParameter("ModelStateFileName",Param_ls=RunParam_ls)
 
   # TimeStamp will be placed in new ModelState (and possibly used to rename an old one)
   TimeStamp <- Sys.time()
-
-  #=========================================
-  # CONFIGURE SAVE MODEL STATE AND DATASTORE
-  #=========================================
-
-  SaveDatastore <- getRunParameter("SaveDatastore",Param_ls=RunParam_ls)
-  # If SaveDatastore is TRUE (default), the ResultsDir and any existing ModelState and Datastore
-  #  will be renamed rather than deleted and over-written.
 
   #=======================
   # START MODEL RUN LOGGER
@@ -151,27 +127,27 @@ function(
   # GET CURRENT MODEL STATE IF ANY
   #===============================
 
+  ModelStateFileName <- getRunParameter("ModelStateFileName",Param_ls=RunParam_ls)
+
   # Get status of current model state
   # Expect that getwd() contains (or will contain) the ModelState.Rda we're working on
-  currentModelStatePath <- normalizePath(ModelStateFileName,winslash="/",mustWork=FALSE)
-  if ( ! grepl("\\.Rda$",currentModelStatePath) ) {
+  ve.model$ModelStatePath <- normalizePath(ModelStateFileName,winslash="/",mustWork=FALSE)
+  if ( ! grepl("\\.Rda$",ve.model$ModelStatePath) ) {
     stop(
       writeLog("Configuration Error: ModelStateFileName name must have '.Rda' extension",Level="error"),
       call.=FALSE
     )
   }
-  currentModelStateExists <- file.exists(currentModelStatePath)
 
   #================================
   # ESTABLISH MODEL STATE IN MEMORY
   #================================
 
   # We'll start saving the model state after we have (if necessary) archived the existing one.
-  if ( ! RunModel && currentModelStateExists ) {
-    RunParam_ls <- loadModelState(currentModelStatePath)
+  if ( ! RunModel && file.exists(ve.model$ModelStatePath) ) {
+    RunParam_ls <- loadModelState(ve.model$ModelStatePath)
   } else {
-    # In all cases, initialize a fresh model state - may replace it later if loading existing
-    # datastore
+    # Initialize a fresh model state - may replace it later if loading existing datastore
     RunParam_ls <- initModelState(Save=FALSE,Param_ls=RunParam_ls)
   }
   RunParam_ls <- ve.model$RunParam_ls; # May have been modified in initModelState or loadModelState
@@ -182,15 +158,41 @@ function(
   # If not running model, we've done everything needed from initializeModel. Additional setup
   # operations (parsing model script, examining base model, loading module specifications
   # can be done externally in VEModel, for example)
-  if ( ! RunModel ) {
-    return(invisible(ve.model$ModelState_ls))
+  return(ve.model$ModelState_ls)
+}
+
+runModel <- function(
+  SimulateRun = FALSE
+) {
+
+  # Get Run Environment
+  RunModel <- modelRunning() # Get Run Status
+  RunParam_ls <- ve.model$RunParam_ls; # Must exist...
+  if ( is.null(RunParam_ls) ) {
+    stop(
+      writeLog("Model Run parameters not created: call loadModel or initializeModel",Level="error")
+    )
   }
 
-  #=========================
-  # REMAINDER RUNS THE MODEL
-  #=========================
+  #### IMPORTANT: The working directory must be the place we want to write the ModelState file and
+  ####            create the Datastore. The "ResultsDir" (plus RunStep/Scenario)
 
-  # IMPORTANT: Do not write/re-write a model state or log until archiving is done.
+  # Set up directories for model run
+  ModelDir <- getRunParameter("ModelDir",Param_ls=RunParam_ls)
+  # ModelDir may be "." or "./StageDir" (or an absolute path to the model's root directory
+  ResultsDir <- getRunParameter("ResultsDir",Param_ls=RunParam_ls)
+  # ResultsDir default is "results", but legacy sets it to "."
+  RunDirectory <- normalizePath( file.path(ModelDir,ResultsDir), winslash="/" )
+
+  owd <- setwd(RunDirectory)
+  on.exit(setwd(owd))
+
+  #   If RunModel is TRUE, save current ve.model$ModelState_ls if it was created from scratch.
+  #   Initialize the Datastore by loading an existing the "Datastore" (if LoadDatastore is TRUE), or
+  #   by creating a new blank Datastore. If SaveDatastore and one already exists, rename it before
+  #   creating the new one; otherwise throw an error if Datastore exists. Presumes that ModelState
+  #   in ve.model is current. Once initializeModel(RunModel=TRUE,...) completes, runModule /
+  #   runScript / runStage steps can be performed.
 
   #===================================================
   # DEVELOP RUN DATASTORE AND LOAD DATASTORE LOCATIONS
@@ -202,14 +204,15 @@ function(
   #   (the parameter is the path/filename for the *other* Datastore from a previous stage)
   RunDstoreName <- getRunParameter("DatastoreName",Param_ls=RunParam_ls)
   RunDstoreName <- normalizePath(RunDstoreName, winslash = "/", mustWork = FALSE)
-  RunDstoreDir <- dirname(RunDstoreName)
+  RunDstoreDir  <- dirname(RunDstoreName)
   RunDstoreFile <- basename(RunDstoreName)
 
   # Allow explicit function parameter to be overridden from RunParam_ls if defined there
-  LoadDatastore  <- getRunParameter("LoadDatastore",Default=LoadDatastore,Param_ls=RunParam_ls)
+  LoadDatastore  <- getRunParameter("LoadDatastore",Default=FALSE,Param_ls=RunParam_ls)
 
   # Set up load datastore parameters
-  if (is.null(DatastoreName) ) { # DatastoreName here is NOT the RunDstoreName
+  LoadDatastoreName <- RunParam_ls$LoadDatastoreName; # NULL if not yet defined
+  if (is.null(LoadDatastoreName) ) {
     if ( LoadDatastore ) {
       # null name means start with the current (existing) Datastore
       LoadDstoreName <- RunDstoreName
@@ -235,6 +238,14 @@ function(
 
   # Flag if we're trying to (re-)load the existing Datastore
   LoadExistingDatastore <- LoadDatastore && (RunDstoreName == LoadDstoreName) && (RunDstoreDir == LoadDstoreDir)
+
+  #=========================================
+  # CONFIGURE SAVE MODEL STATE AND DATASTORE
+  #=========================================
+
+  SaveDatastore <- getRunParameter("SaveDatastore",Param_ls=RunParam_ls)
+  # If SaveDatastore is TRUE (default), the ResultsDir and any existing ModelState and Datastore
+  #  will be renamed rather than deleted and over-written.
 
   #====================================
   #LOAD PREVIOUS DATASTORE IF REQUESTED
@@ -286,7 +297,7 @@ function(
       writeLog("Saving previous model results...",Level="warn")
       ResultsName = getRunParameter("ArchiveResultsName",Param_ls=RunParam_ls)
       OutputDir = getRunParameter("OutputDir",Param_ls=RunParam_ls)
-      failToArchive <- archiveResults( ModelDir, RunDstoreName, currentModelStatePath, OutputDir, ResultsName )
+      failToArchive <- archiveResults( ModelDir, RunDstoreName, ve.model$ModelStatePath, OutputDir, ResultsName )
       if ( length(failToArchive)>0 ) {
         writeLog(paste0("Failed to save prior results (",paste(failToArchive,collapse=","),"). Continuing anyway..."),Level="error")
       }
@@ -297,7 +308,7 @@ function(
     #   make an explicit BaseModel in a different directory.
     # Reload existing ModelSTate and Datastore to continue run
     # (e.g. after an error condition due to missing or failed input file
-    RunParam_ls <- loadModelState(currentModelStatePath)
+    RunParam_ls <- loadModelState(ve.model$ModelStatePath)
   }
 
   # ===================================================
@@ -308,7 +319,7 @@ function(
   # Now we have archived and initialized the model state so we can save the log parameters
   # After this point, Save=RunModel will always be TRUE because we already returned if not.
   saveLog()        # start saving the log for the current results
-  setModelState()  # save the in-memory model state
+  setModelState()  # save ve.model$ModelState_ls
 
   writeLog("Initializing Model. This may take a while.",Level="warn")
 
@@ -384,6 +395,24 @@ function(
   #PARSE RUN SCRIPT FOR MODULE CALLS, CHECK AND COMBINE SPECS
   #==========================================================
 
+  # ModelScriptFile needs to be the absolute path to the model script
+  # It will be provided either in dots, or by the pre-existing RunParam_ls environment (e.g. if
+  # built by VEModel). Default is a fixed string, "run_model.R"
+  ModelScriptFile <- getRunParameter("ModelScriptFile",Param_ls=RunParam_ls)
+
+  # If the ModelScriptFile is relative, normalize it to ModelDir, which is either
+  # working directory or a sub-location holding the scripts.
+  # TODO: Add ScriptDir indirection ?
+  if ( ! any(grepl("^([[:alpha:]]:[\\/]|[\\/])",ModelScriptFile)) ) {
+    # if relative path, normalize relative to ModelDir (which is probably ".")
+    ModelScriptFile <- normalizePath(
+      file.path(
+        ModelDir,
+        ModelScriptFile
+      ), winslash="/"
+    )
+  }
+
   # Parse script and make data frame of modules that are called directly
   parsedScript <- parseModelScript(ModelScriptFile)
   setModelState(list(ParsedScript=parsedScript),Save=RunModel)
@@ -405,6 +434,12 @@ function(
   # Add from previous ModelState if any (BaseModel, LoadDatastore)
   AlreadyInitialized <- character(0) # required (initialized packages) from loaded datastore
   RequiredPackages <- parsedScript$RequiredVEPackages;
+
+  #==========================
+  # GET MODEL STATE FILE NAME
+  #==========================
+
+  ModelStateFileName <- getRunParameter("ModelStateFileName",Param_ls=RunParam_ls)
 
   #===============================================
   # GET LIST OF PACKAGES FROM PREVIOUS MODEL STATE

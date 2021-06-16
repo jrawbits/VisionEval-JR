@@ -40,7 +40,8 @@ NULL
 #' mdl$log()
 #' mdl$set(show="values", src=NULL, namelist=NULL, pattern=NULL,Param_ls=NULL)
 #' mdl$save(FileName="visioneval.cnf")
-#' mdl$copy(newName=NULL,newPath=NULL)
+#' mdl$copy(newName=NULL,newPath=NULL,copyResults=TRUE)
+#' mdl$rename(Name=NULL,Scenario=NULL,Description=NULL,Save=TRUE)
 #' mdl$results(stage,Param_ls=NULL)
 #' mdl$resultspath(stage,Param_ls=NULL)
 #' mdl$query(QueryName=NULL,FileName=NULL,load=TRUE)
@@ -103,6 +104,12 @@ NULL
 #'   the name of the model being copied.}
 #'   \item{newPath}{The directory into which to put the copy of this model. Default if NULL is ve.runtime/models
 #'   directory.}
+#'   \item{copyResults}{logical: if TRUE, copy the results, otherwise only copy the model setup. If
+#'   the ResultsDir is the same as the root (classic VisionEval), results will always be copied.}
+#'   \item{Model}{A character vector with the new model identifier (name) for each stage in the model}
+#'   \item{Scenario}{A character vector with the new scenario identifier for each stage in the model}
+#'   \item{Description}{A character vector with the new description string for each stage in the model}
+#'   \item{Save}{logical; if true save new name etc back to existing ModelState}
 #'   \item{QueryName}{The name to use for the Query, which will be used to construct the output directory name when
 #'   the query is run. The query file name will be built from the QueryName if FileName is not explicitly provided.}
 #'   \item{load}{For a query, if FileName is provided and exists, then attempt to load the file. If it is FALSE, create
@@ -401,8 +408,8 @@ installStandardModel <- function( modelName, modelPath, confirm, skeleton=c("sam
   return( list(modelName=modelName,modelPath=installPath) )
 }
 
-ve.model.copy <- function(newName=NULL,newPath=NULL) {
-
+ve.model.copy <- function(newName=NULL,newPath=NULL,copyResults=TRUE) {
+  # Copy the current model to NewName (in ModelDir, unless newPath is also provided)
   if ( ! private$p.valid ) {
     visioneval::writeLog(paste0("Invalid model: ",self$status),level="error")
     return( NULL )
@@ -426,7 +433,7 @@ ve.model.copy <- function(newName=NULL,newPath=NULL) {
   newModelPath <- normalizePath(newModelPath,winslash="/",mustWork=FALSE)
 
   dir.create(newModelPath,showWarnings=FALSE)
-  model.files <- self$dir(root=TRUE) # Leave behind results and outputs
+  model.files <- self$dir(root=TRUE,results=copyResults)
   copy.subdir <- dirname(model.files)
   unique.dirs <- unique(copy.subdir)
   for ( d in unique.dirs ) {
@@ -441,6 +448,75 @@ ve.model.copy <- function(newName=NULL,newPath=NULL) {
     }
   }
   return( openModel(newModelPath) )
+}
+
+ve.model.rename <- function(Model=NULL,Scenario=NULL,Description=NULL,Save=TRUE) {
+  # Change description for a model that has already been run under another name
+  # Reports, but does not change, the underlying configuration file, so the
+  # description changes will be lost if the model is re-run...
+
+  # Need a valid model
+  if ( ! private$p.valid ) return(self)
+
+  # Prepare update list
+  upd <- list(Model=Model,Scenario=Scenario,Description=Description)
+  upd <- upd[!sapply(upd,is.null)]
+  if ( length(upd)==0 ) return(self) # Nothing to do
+
+  # Update model name in the object, if Model is in upd
+  if ( "Model" %in% names(upd) ) self$modelName <- upd$Model;
+
+  # Update self$ModelState, which is a named list of ModelStates (for each stage)
+  # Check self$stageCount and warn if any element of upd is not same length as self$ModelState
+  lens <- which(sapply(upd,length)!=self$stageCount)
+  if ( length(lens)>0 ) {
+    msg <- paste0("Replacement length does not match stage count (",self$stageCount,") for ",paste(names(upd)[lens],collapse=","))
+    visioneval::writeLog(msg,Level="error")
+    stop(msg)
+  }
+
+  # Update ModelState Model/Scenario/Description for each stage
+  for ( i in 1:self$stageCount ) {
+    # Get the model state for stage i
+    ms <- self$ModelState[[i]]
+    up <- sapply(upd,function(x)x[i])
+    ms[names(up)] <- up;
+
+    # Locate previous source for model description
+    prev.src <- (attr(ms$RunParam_ls,"source")[names(up)])[1]
+    if ( is.na(prev.src) ) {
+      stop(
+        visioneval::writeLog(paste("Program bug: No source for",names(up.src),sep=" ",collapse=","),Level="error")
+      )
+    }
+    
+    # Log a message stating the original configuration file
+    visioneval::writeLog("Overriding model description originally from:",Level="warn")
+    visioneval::writeLog(prev.src,Level="warn")
+
+    # Update RunParam_ls in ModelState
+    up.src <- visioneval::addParameterSource(up,"Manual Rename")
+    ms$RunParam_ls <- visioneval::mergeParameters( ms$RunParam_ls, up.src )
+    self$ModelState[[i]] <- ms;
+
+    # Save changes to ModelState
+    if ( Save ) {
+      up["RunParam_ls"] <- ms$RunParam_ls;
+      # locate model state to rewrite
+      msfile <- file.path(self$resultspath,visioneval::getModelStateFileName(Param_ls=ms$RunParam_ls))
+      # Update model state file if it exists (making the change "permanent")
+      # However, we're not updating the original configuration, so the change will be lost
+      #  if the model is run again.
+      if ( file.exists(msfile) ) {
+        visioneval::setModelState(up,Filename=msfile)
+        visioneval::writeLog(paste("Saving to ModelState:",msfile),Level="warn")
+      } else {
+        visioneval::writeLog("No existing model state to update",Level="warn")
+      }
+    }
+  }
+  
+  return( self ) # Will print model if running interactively
 }
 
 # Helper function:
@@ -1419,6 +1495,7 @@ VEModel <- R6::R6Class(
     initialize=ve.model.init,               # initialize a VEModel object
     valid=function() private$p.valid,         # report valid state
     run=ve.model.run,                       # run a model (or just a subset of stages)
+    rename=ve.model.rename,                 # Change model Name, Scenario, Description
     print=ve.model.print,                   # provides generic print functionality
     list=ve.model.list,                     # interrogator function (script,inputs,outputs,parameters
     dir=ve.model.dir,                       # list model elements (output, scripts, etc.)
