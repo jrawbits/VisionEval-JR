@@ -411,6 +411,28 @@ addParameterSource <- function(Param_ls,Source="Manually added") {
   return(Param_ls)
 }
 
+#ADD PARAMETER
+#=============
+#' Convenience function for adding or updating a parameter to Param_ls
+#'
+#' \code{mergeParameters} a visioneval developer function that adds an arbitrary parameter to a
+#' RunParam_ls.
+#'
+#' @param Param_ls the list whose parameters will be changed/added to
+#' @param Source a character string specifying the source for the changed/added parameters
+#' @param ... Named arguments to be added to Param_ls
+#' @return The updated Param_ls
+#' @export
+addRunParameter <- function(Param_ls=list(),Source="Interactive",...) {
+  newParams_ls <- list(...)
+  # I think ... must have names; we'll drop any items that sneak into ... without names
+  if ( !is.null(names(newParams_ls)) ) newParam_ls <- newParam_ls[!is.na(names(newParams_ls))]
+  # Add the source to the new parameter list
+  newParams_ls <- addParameterSource(newParams_ls,Source)
+  # Merge new list into the base parameter list
+  return( mergeParameters(Param_ls,newParams_ls) )
+}
+
 #MERGE PARAMETER LISTS
 #=====================
 #' Merge configuration parameter lists with priority

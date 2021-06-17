@@ -688,8 +688,7 @@ ve.model.loadModelState <- function(log="error") {
           RequiredPackages <- unique(c(RequiredPackages, AlreadyInitialized))
         }
       }
-      AllSpecs_ls <- visioneval::parseModuleCalls(parsedScript$ModuleCalls_df, AlreadyInitialized, RequiredPackages, Save=FALSE)
-      self$ModelState[[ stageIndex ]][["AllSpecs_ls"]] <- AllSpecs_ls
+      visioneval::parseModuleCalls(parsedScript$ModuleCalls_df, AlreadyInitialized, RequiredPackages, Save=FALSE)
     }
     sumspec <- summarizeSpecs(self$ModelState[[ stageIndex ]]$AllSpecs_ls)
     if ( is.null(self$specSummary) ) {
@@ -931,6 +930,30 @@ ve.model.save <- function(FileName="visioneval.cnf") {
   invisible(self$RunParam_ls)
 }
 
+ve.model.archive <- function() {
+  # TODO: Rebuild for new stage structure (re-write ResultsDir so we create and archive
+  # stage sub-directories)
+  # If SaveDatastore is true when a VEModel stage runs and we're resetting or 
+  return(NULL);
+  ResultsName = getRunParameter("ArchiveResultsName",Param_ls=self$RunParam_ls)
+  OutputDir <- getRunParameter("OutputDir",Param_ls=self$RunParam_ls) # May differ in other stages...
+  DstoreName <- getRunParameter("DatastoreName",self$RunParam_ls)
+  ModelDir <- self$modelPath
+  for ( stage in 1:self$stageCount ) {
+    ModelStatePath <- dirname(self$resultspath(stage,Param_ls=self$RunParam_ls))
+
+    # TODO: get full pathname of model state (will use
+    # dirname(ModelStatePath)) (was ve.model$ModelStatePath)
+    # TODO: construct ResultsName
+    # TODO: each stage gets archived into ModelDir/ResultsName/stagePath
+  
+    failToArchive <- archiveResults( ModelDir, DstoreName, ModelStatePath, OutputDir, file.path(stageDir,ResultsName) )
+    if ( length(failToArchive)>0 ) {
+      visioneval::writeLog(paste0("Failed to archive results (",paste(failToArchive,collapse=","),")"),Level="error")
+    }
+  }
+}
+
 # Run the modelPath (through its stages)
 # Find the runModel script
 # Work in the Results directory - need to relay locations from here to initializeModel
@@ -938,10 +961,12 @@ ve.model.save <- function(FileName="visioneval.cnf") {
 #   which provides Datastore components previously computed (and possibly the entire run_model.R
 #   script).
 ve.model.run <- function(run="save",stage=NULL,lastStage=NULL,log="warn") {
+  # TODO: rework for the new Stage architecture
   # run parameter can be
-  #      "continue" (run all steps, starting from first incomplete)
-  #   or "save" in which case we continue, but first archive the stage's ResultsDir
-  #   or "reset" in which case we restart from stage 1, but first clearing out ResultsDir
+  #      "continue" (run all steps, starting from first incomplete; "reset" is done on the first
+  #      incomplete stage)
+  #   or "save" in which case we reset, but first save the ResultsDir tree
+  #   or "reset" in which case we restart from stage 1, but first clear out ResultsDir (no save)
   #
   # stage and lastStage will run a sequence of *exterior* model stages (separate run_model.R in
   # subdirectories)
@@ -1504,6 +1529,7 @@ VEModel <- R6::R6Class(
     set=ve.model.set,                       # set or list model parameters and their sources
     save=ve.model.save,                     # save changes to the model setup that were created locally (by source)
     copy=ve.model.copy,                     # copy a self$modelPath to another path (ignore results/outputs)
+    archive=ve.model.archive,               # apply framework archive function if results exist
     results=ve.model.results,               # Create a VEResults object (if model is run); option to open a past result
     resultspath=ve.model.resultspath,       # Report the path to the model results for a stage
     query=ve.model.query                    # Create a VEQuery object (or show a list of queries).
