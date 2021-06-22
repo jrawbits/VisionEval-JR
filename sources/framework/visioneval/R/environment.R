@@ -18,7 +18,7 @@ ve.model <- new.env()
 #'
 #' @param Clear if supplied as a non-empty character string, sets the environment owner and clears
 #'   the model environment. If an empty string and no Owner, clear the environment, and if Owner
-#'   just clear the Owner.
+#'   just clear the Owner
 #' @return an R environment for "ve.model"
 #' @export
 modelEnvironment <- function(Clear=NULL) {
@@ -391,13 +391,28 @@ addParameterSource <- function(Param_ls,Source="Manually added") {
       )
     )
   ) {
+    rewrite <- FALSE
     if ( length(Param_ls)>0 ) {
-      src.df <- data.frame(Source=Source,Name=names(Param_ls))
-      row.names(src.df) <- src.df$Name
+      # Do not override any existing source for an item
+      src.df <- attr(Param_ls,"source)
+      if ( is.null(src.df) ) {
+        src.df <- data.frame(Source=Source,Name=names(Param_ls))
+        row.names(src.df) <- src.df$Name
+        rewrite <- TRUE
+      } else {
+        new.items <- names(Param_ls)[! names(Param_ls) %in% row.names(src.df) ]
+        if ( length(new.items)>0 ) {
+          addl.src.df <- data.frame(Source=Source,Name=new.items)
+          row.names(addl.src.df) <- addl.src.df$Name
+          src.df <- rbind(src.df,addl.src.df)
+          rewrite <- TRUE
+        }
+      }
     } else {
       src.df <- data.frame()
+      rewrite <- TRUE
     }
-    attr(Param_ls,"source") <- src.df
+    if (rewrite) attr(Param_ls,"source") <- src.df
   } else {
     # Invalid Param_ls
     writeLog(

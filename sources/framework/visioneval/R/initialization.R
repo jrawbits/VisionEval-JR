@@ -12,25 +12,20 @@
 #' \code{getModelParameters} a visioneval framework control function that establishes the runtime
 #' model environment during model initialization.
 #'
+#' @param Param_ls Pre-built parameter list on which to overlay model stage specifics (optional)
 #' @param DotParam_ls Function arguments to initializeModel (overridden by stored RunParams in
 #' environment; backward compatible).
-#' @param DatastoreName A string identifying the full path name of a datastore ' to load or NULL if
-#' an existing datastore in the working directory is to be ' loaded. If LoadDatastore is FALSE and
-#' DatastoreName is provided, LoadDatastore ' will be set to TRUE with a warning.
+#' @param DatastoreName A string identifying the full path name of a datastore to load or NULL if
+#' an existing datastore in the working directory is to be loaded. If LoadDatastore is FALSE and
+#' DatastoreName is provided, LoadDatastore will be set to TRUE with a warning.
 #' @param LoadDatastore A logical identifying whether an existing datastore should be loaded
 #' (default=FALSE)
 #' @return The RunParam_ls list of loaded parameters, properly overridden
 #' @export
-getModelParameters <- function(DotParam_ls=list(),DatastoreName=NULL,LoadDatastore=FALSE) {
+getModelParameters <- function(Param_ls=list(), DotParam_ls=list(),DatastoreName=NULL,LoadDatastore=FALSE) {
 
   # Access the model environment and check for RunModel condition
   ve.model <- modelEnvironment(Clear="") # clear ve.model environment (but don't destroy pre-existing RunParam_ls)
-
-  # Check for pre-existing elements in ve.model environment (e.g. from VEModel$run) and RunParam_ls found there
-  Param_ls <- addParameterSource(
-    get0( "RunParam_ls", envir=ve.model, ifnotfound=list() ),
-    "RunParam_ls in modelEnvironment()"
-  )
 
   ModelDir <- getRunParameter("ModelDir",Param_ls=Param_ls) # Default is working directory
 
@@ -38,10 +33,10 @@ getModelParameters <- function(DotParam_ls=list(),DatastoreName=NULL,LoadDatasto
   if ( is.character(DatastoreName) ) { # the function parameter, not the Run Parameter
     DotParam_ls[["LoadDatastoreName"]] <- DatastoreName
   }
-  if ( "Param_ls" %in% names(DotParam_ls) ) {
+  if ( "Param_ls" %in% names(DotParam_ls) ) {XB
     DotParam_ls[ names(Param_ls) ] <- Param_ls; # Elevate parameters passed as an argument
   }
-  DotParam_ls[["LoadDatastore"]] <- LoadDatastore
+  DotParam_ls[["LoadDatastore"]] <- LoadDatastore;
 
   # We always want to keep "Region", "BaseYear" and "Years" from configuration files
   # Those cannot be defined at runtime since they change the model structure, not just
@@ -83,9 +78,11 @@ getModelParameters <- function(DotParam_ls=list(),DatastoreName=NULL,LoadDatasto
 #' @param Save A logical (default=TRUE) indicating whether the model state file
 #'   should be written out.
 #' @param Param_ls A named list of model run parameters
+#' @param RunPath (default getwd()) is the directory in which ModelState, Datastore and log
+#'   are being stored.
 #' @return The updated RunParam_ls with ModelState parameters fleshed out
 #' @export
-initModelState <- function(Save=TRUE,Param_ls=NULL) {
+initModelState <- function(Save=TRUE,Param_ls=NULL,RunPath=NULL) {
 
   # Load model environment (should have RunParam_ls already loaded, furnishing ...)
   model.env <- modelEnvironment()
@@ -150,6 +147,10 @@ initModelState <- function(Save=TRUE,Param_ls=NULL) {
   # Establish the ModelState in model.env (and optionally the ModelStateFilePath)
   newModelState_ls$FirstCreated <- Sys.time() # Timestamp
   newModelState_ls$RunParam_ls <- Param_ls
+
+  if ( is.null(RunPath) ) RunPath <- getwd()  # Where the model results are going
+  newModelState_ls$RunPath <- RunPath
+
   model.env$ModelState_ls <- newModelState_ls
   model.env$RunParam_ls <- Param_ls; # Includes all the run Parameters, including "required"
 
