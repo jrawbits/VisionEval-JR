@@ -63,6 +63,8 @@
 #' will be set to TRUE with a warning.
 #' @param SimulateRun A logical identifying whether the model run should be
 #' simulated. see \code{runModel} for details.
+#' @param aram_ls A pre-built RunParameter structure to use as a basis for the model
+#'   runtime environment.
 #' @param ... Additional named arguments that can override run parameters from
 #' VisonEval.cnf or from run_parameters.json. See Run Parameters section.
 #' @return The ModelState_ls that was constructed, invisibly.
@@ -71,10 +73,12 @@ initializeModel <- function(
   LoadDatastore = FALSE,
   DatastoreName = NULL, # WARNING: different from "DatastoreName" loaded as a run parameter
   SimulateRun = FALSE,
+  Param_ls = NULL
   ...
 ) {
   # Initialize ve.model$ModelState_ls and ve.model$RunParam_ls
-  loadModel(DotParam_ls=list(...),DatastoreName,LoadDatastore)
+  RunParam_ls <- getModelParameters(Param_ls=Param_ls, DotParam_ls=list(...), DatastoreName, LoadDatastore)
+  loadModel(RunParam_ls) # Param_ls is placed into ve.model$RunParam_ls and builds ve.model$ModelState_ls
   # Run the model (requires ve.model$ModelState_ls and ve.model$RunParam_ls
   if ( modelRunning() ) runModel(SimulateRun)
   invisible(ve.model$ModelState_ls)
@@ -82,8 +86,7 @@ initializeModel <- function(
 
 #LOAD MODEL
 #==========
-#' Perform the load step for initializing a model.
-#'
+#' Load the model state from run parameters
 #' \code{loadModel} a visioneval framework control function that loads a VisionEval model without
 #' creating any results. This function checks that all required model elements are present in the
 #' runtime environment and either loads an existing ModelState_ls (if the model has been previously
@@ -92,22 +95,17 @@ initializeModel <- function(
 #'
 #' See \code{initializeModel} for details.
 #'
-#' @param DotParam_ls Parameters that are added to ve.model$RunParam_ls if they are not already
-#' present there (see \code{getModelParameters} for details.
-#' @param DatastoreName A string identifying the full path name of a datastore to load or NULL if an
-#' existing datastore in the working directory is to be loaded. If LoadDatastore is FALSE and
-#' DatastoreName is provided, LoadDatastore will be set to TRUE with a warning.
-#' @param LoadDatastore A logical identifying whether an existing datastore should be loaded
-#' (default=FALSE)
-#' @param BaseModelState_ls Pre-loaded model state for a BaseModel (supports VEModel) which may not
-#' have been run yet; If NULL, perform legacy LoadDatastore (Loaded model must already
-#  have been run).
+#' @param RunParam_ls is returned from \code{getModelParameters}
+#' @param parsedScript is obtained by calling \code{parseModelScript} (default=NULL, computed
+#'   within)
+#' @param BaseModelState_ls a pre-built model state from a prior call to loadModel
+#'   (default=NULL, rebuilt within)
+#' @param Message a character string to report why we're waiting...
 #' @return The ModelState_ls that was constructed, invisibly.
 #' @export
 loadModel <- function(
-  DotParam_ls = list(),
-  DatastoreName = NULL,
-  LoadDatastore = FALSE,
+  RunParam_ls,
+  parsedScript = NULL,
   BaseModelState_ls = NULL,
   Message = "Initializing Model. This may take some time..."
 ) {
@@ -121,11 +119,10 @@ loadModel <- function(
   #   script, check presence of files, check specifications, etc. ModelState_ls remains in the
   #   ve.model environment.
 
-  #===================================================
-  # ESTABLISH MODEL ENVIRONMENT AND RUNTIME PARAMETERS
-  #===================================================
+  #==========================
+  # SET FLAG IF MODEL RUNNING
+  #==========================
 
-  RunParam_ls <- getModelParameters(DotParam_ls=DotParam_ls, DatastoreName, LoadDatastore)
   RunModel <- modelRunning()
 
   # TimeStamp will be placed in new ModelState (and possibly used to rename an old one)
@@ -184,7 +181,6 @@ loadModel <- function(
 
   # Set up directories for model run
   ModelDir <- getRunParameter("ModelDir",Param_ls=RunParam_ls)
-  # TODO: Add ScriptDir indirection ?
 
   # ModelScriptFile needs to be the absolute path to the model script
   # It will be provided either in dots, or by the pre-existing RunParam_ls environment (e.g. if
@@ -204,7 +200,9 @@ loadModel <- function(
   }
 
   # Parse script and make data frame of modules that are called directly
-  parsedScript <- parseModelScript(ModelScriptFile)
+  if ( missing(parsedScript) or is.null(parsedScript) ) {
+    parsedScript <- parseModelScript(ModelScriptFile)
+  }
 
   setModelState(list(ParsedScript=parsedScript),Save=FALSE)
 
@@ -575,7 +573,7 @@ runModel <- function(
   # Now we have archived and initialized the model state so we can save the log parameters
   # After this point, Save=RunModel will always be TRUE because we already returned if not.
   saveLog()        # start saving the log for the current results
-  setModelState()  # save ve.model$ModelState_ls
+  setModelState()  # save ve.model$ModelState_ls into file system
   writeLog("Preparing Model Run...",Level="info")
 
   #=============================================
