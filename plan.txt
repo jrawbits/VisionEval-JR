@@ -1,11 +1,29 @@
 Immediate Next:
 
-If we have a BaseModel for any stage
-  It will get run before the current model
-  Its Datastore will be loaded/flattened into the stage specifying a BaseModel
-    BaseModel can specify a BaseStage within the other model (default is "last stage")
-    BaseModel implies LoadDatastore (with LoadDatastoreName set to the Datastore/ModelState for
-      the BaseModel/BaseStage
+If we have a BaseModel for a model
+  It's a model and will be sought by VEModel
+  The current model will follow the BaseModel's final stage
+    BaseModel configuration is the basis for current model
+      Overlaid by current model and stage configuration
+      Underlaid by Runtime environment configuration
+    Sequence (bottom dominates top)
+      ve.runtime
+      BaseModel
+      Current Model
+      Current Stage
+      Args from initializeModel (if present) for stage
+      Args from run_parameters.json (if present)
+    Structural Parameters
+      InputPath (full paths - but that should always be constructed)
+        Will be overridden if InputPath explicitly defined in Current Model
+      InputDir (this is probably an environment parameter - its presence triggers adding StagePath to InputPath)
+      ModelScriptPath (full path) ( == original ModelDir/ScriptsDir/ModelScript from BaseModel Final Stage)
+        Overridden if explicitly defined later
+      ParamPath ( == original ModelDir/ParamDir)
+      DatastorePath
+        It's an error if we try to run the Current Model but Base Model is not "Run Complete"
+        Base Datastore Path for first stage of Current Model
+        Else if Current Model LoadDatastore is TRUE, flatten the Base Model Datastore into 1st Stage of Current Model
 
 Setting a BaseModel should put it on the InputPath for structural files, and make its DatastorePath
 available. A BaseModel is introduced before the first stage of the current model. BaseModel attaches
