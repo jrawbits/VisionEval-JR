@@ -1,6 +1,66 @@
 Immediate Next:
 
+If we have a BaseModel for any stage
+  It will get run before the current model
+  Its Datastore will be loaded/flattened into the stage specifying a BaseModel
+    BaseModel can specify a BaseStage within the other model (default is "last stage")
+    BaseModel implies LoadDatastore (with LoadDatastoreName set to the Datastore/ModelState for
+      the BaseModel/BaseStage
+
+Setting a BaseModel should put it on the InputPath for structural files, and make its DatastorePath
+available. A BaseModel is introduced before the first stage of the current model. BaseModel attaches
+to the last stage of the base model. The local model will always set its own ModelDir and ResultsDir.
+LoadDatastore will flatten the BaseModel Datastore into the current model (often don't want that).
+Need to consider VERequiredPackages for BaseModel - anything else?
+
+ScriptDir/ModelScript is sought on InputPath only if not defined locally - first one encountered is used.
+InputDir sought up InputPath
+ParamDir is sought on InputPath only if not defined locally - first one encountered is used (will probably 
+propagate from initial stage of BaseModel).
+
 Build ModelStages list of lists
+
+  Runtime Parameters
+    Seed, DatastoreType, SaveDatastore
+    DatastoreName, ModelScriptFile, ModelStateFileName, ArchiveResultsName,
+    InputDir, ResultsDir,
+    ParamDir, RunParamFile, GeoFile, UnitsFile, DeflatorsFile, ModelParamFile,
+  Model Parameters
+    ModelDir, InputPath, SaveDatastore,
+    Model, Region, BaseYear, ModelStages (no default - search subdirectories)
+    BaseModel (external model), LoadDatastore, (Load)DatastoreName, ModelScriptFile
+  Stage environment can set specific descriptive elements only
+    Build this into the loaded ModelStages element
+    StageDir, Years, Scenario, Description, InputPath, RunDir, ModelScriptFile,
+    BaseModel ( other model stage - handled by VEModel )
+    LinkedDatastore ( other model stage - handled by VEModel
+  Runtime override can replace anything prior to a run
+    SaveDatastore
+
+  Do not merge parameter lists until runtime!
+  Load the ve.runtime RunParam_ls
+    Will underlay the model parameters when the model is opened
+  Load the model RunParam_ls when the model is openedd
+    Will underlay the stage parameters when the stage runs
+  Load the stage RunParam_ls when the stage is opened
+    ParamDir will be sought on InputPath as well (like InputDir)
+    run_parameters.json will only be used to supply missing parameters
+    Scenario and Description are always "missing"
+  When running the model, assemble all those parameters:
+    ve.runtime parameters
+    model parameters
+    stage parameters
+  Inside the framework load parameters, all that work should be done.
+    In the framework
+      if InputPath is not defined, default to <ModelDir>
+      RunDir will change working directory inside visioneval::runModel (if set)
+      ModelScriptFile is passed in ("<RunDir>/run_model.R")
+      Search InputPath for ParamDir("defs") and InputDir("inputs") and ScriptDir(".")/ModelScript("run_model.R")
+      Datastore and ModelStateFileName are 
+    The framework will use the supplied Param_ls and <InputPath>/<ParamDir>/run_parameters.json (only)
+    If Param_ls is an empty list (only), use <ModelDir>/visioneval.cnf (alternative to run_parameters.json) if that exists
+    
+    All visioneval.cnf stuff will go in 
 
   Each ModelStage contains the info needed to build the model state (RunParam_ls), run the model,
     and retrieve its results (RunPath)
