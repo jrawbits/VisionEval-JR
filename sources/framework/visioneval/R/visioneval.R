@@ -201,7 +201,7 @@ loadModel <- function(
     parsedScript <- parseModelScript(ModelScriptFile)
   }
 
-  setModelState(list(ParsedScript=parsedScript),Save=FALSE)
+  setModelState(list(ParsedScript_ls=parsedScript),Save=FALSE)
 
   #==========================================================
   # SAVE RAW MODULE CALLS INTO MODEL STATE FROM PARSED SCRIPT
