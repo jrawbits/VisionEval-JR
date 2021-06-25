@@ -107,13 +107,48 @@ initDataset <- function(Spec_ls, Group) ve.model$initDataset(Spec_ls, Group)
 #' written to. NULL if the entire dataset is to be read.
 #' @param ReadAttr A logical identifying whether to return the attributes of
 #' the stored dataset. The default value is FALSE.
+#' @param DstoreLoc Path to a directory containing Datastore and ModelState.Rda
+#' @param ModelState_ls A pre-loaded ModelState structure, possibly from another model
 #' @return A vector of the same type stored in the datastore and specified in
 #' the TYPE attribute.
 #' @export
-readFromTable <- function(Name, Table, Group, Index = NULL, ReadAttr = TRUE, ModelState_ls = NULL) {
-  # TODO: Iterate over DatastorePath if defined in current ModelState. If NA is returned
-  #       for the current path, move on to the next path.
-  ve.model$readFromTable(Name, Table, Group, Index, ReadAttr, ModelState_ls)
+readFromTable <- function(Name, Table, Group, Index = NULL, ReadAttr = TRUE, DstoreLoc=NULL, ModelState_ls = NULL) {
+
+  # ModelState_ls and DstoreLoc are mutually exclusive
+  if ( ! is.null(DstoreLoc) ) {
+    if ( is.null(ModelState_ls) ) {
+      path <- file.path(DstoreLoc,getModelStateFileName())
+      if ( file.exists(path) ) {
+        G.env <- new.env()
+        loadModelState(FileName=path,envir=G.env)
+        if ( length(G.env$ModelState_ls) > 0 ) {
+          ModelState_ls <- G.env$ModelState_ls
+        }
+      }
+    }
+    DstoreLoc <- NULL # We just turned DstoreLoc into a "ModelStateLoc"
+  }
+
+  if ( is.null(ModelState_ls) ) {
+    G <- getModelState()
+  } else {
+    G <- ModelState_ls
+  }
+  table <- ve.model$readFromTable(Name, Table, Group, Index, ReadAttr, DstoreLoc=NULL, ModelState_ls=G)
+  if ( is.na(table) ) {
+    paths <- G$DatastorePath[-1] # first one is the default for G that we just checked
+    if ( length(paths)>0 ) {     # if G$DatastorePath exiss and has anything left in it
+      # Iterate over remaining elements in G$DatastorePath looking for the Dataset
+      for ( path in paths ) {
+        table <- ve.model$readFromTable(Name, Table, Group, Index, ReadAttr, DstoreLoc=path, ModelState_ls=NULL)
+        if ( !is.na(table) ) break
+      }
+    }
+    if ( is.na(table) ) {
+      Message <- paste("Dataset", Name, "in table", Table, "in group", Group, "could not be located.")
+      stop( writeLog(Message,Level="error") )
+    }
+  return(table)
 }
 
 #' Write to a datastore table.
@@ -506,46 +541,42 @@ initDatasetRD <- function(Spec_ls, Group) {
 #' dataset is located.
 #' @param Group a string representation of the name of the datastore group the
 #' data is to be read from.
-#' @param DstoreLoc Path to alternate Datastore location (default is DatastoreName from
-#'    ModelState_ls in the working directory)
-#' @param ModelState_ls an alternative ModelState_ls (for ad hoc retrieval of
-#'    a Dataset - getwd() must contain the Datastore)
 #' @param Index A numeric vector identifying the positions the data is to be
 #' read from. NULL if the entire dataset is to be read.
 #' @param ReadAttr A logical identifying whether to return the attributes of
 #' the stored dataset. The default value is TRUE (return the attributes)
+#' @param DstoreLoc Path to a directory containing Datastore and ModelState.Rda
+#' @param ModelState_ls A pre-loaded ModelState structure, possibly from another model
 #' @return A vector of the same type stored in the datastore and specified in
 #' the TYPE attribute.
 #' @export
 readFromTableRD <- function(Name, Table, Group, Index = NULL, ReadAttr = TRUE, DstoreLoc=NULL, ModelState_ls = NULL) {
-  #Expects to find the Datastore in the working directory
-  #Load the model state file
+
+  # Load the model state file
   if ( is.null(ModelState_ls) ) {
     G <- getModelState()
   } else {
     G <- ModelState_ls
   }
-  # If DstoreLoc is NULL get the name of the datastore from the model state
-  # If DstoreLoc is not NULL, it should be the absolute path to the directory containing Datastore and ModelState_ls
-  # TODO: make sure ModelState_ls, if supplied, includes the full path to the Datastore as well
-  #   Then we don't pass DstoreLoc, we just pass the ModelState_ls and get the model results path + Datastore name
-  if ( is.null(DstoreLoc) ) DstoreLoc <- G$DatastoreName; # presume it's in the working directory
+
+  # NOTE: if called from the framework dispatcher function, DstoreLoc will always be NULL
+  if ( is.null(DstoreLoc) ) {
+    DstoreLoc <- file.path(G$ModelStatePath,G$DatastoreName)
+  }
 
   #Check that dataset exists to read from and if so get path to dataset
   DatasetExists <- checkDataset(Name, Table, Group, G$Datastore)
   if (DatasetExists) {
     FileName <- paste(Name, "Rda", sep = ".")
-    Location <- DstoreLoc; # Eventually use specific DstoreLoc for the item
+    Location <- DstoreLoc
     DatasetPath <- file.path(Location, Group, Table, FileName)
   } else {
-    # TODO: return NA - master function will try again with alternative DstoreLoc (from BaseModel)
-    Message <-
-      paste("Dataset", Name, "in table", Table, "in group", Group, "doesn't exist in",DstoreLoc)
-    writeLog(Message,Level="error")
     return(NA)
   }
   #Load the dataset
-  load(DatasetPath) # TODO: trap error on file not existing
+  if ( ! file.exists(DatasetPath) ) return(NA)
+  load(DatasetPath)
+
   #Save the attributes
   Attr_ls <- attributes(Dataset)
   #Convert NA values
@@ -923,14 +954,12 @@ initDatasetH5 <- function(Spec_ls, Group) {
 #'   dataset is located.
 #' @param Group a string representation of the name of the datastore group the
 #' data is to be read from.
-#' @param DstoreLoc Path to alternate Datastore location (default is DatastoreName from
-#'    ModelState_ls in the working directory)
-#' @param ModelState_ls an alternative ModelState_ls (for ad hoc retrieval of
-#'    a Dataset - getwd() must contain the Datastore)
 #' @param Index A numeric vector identifying the positions the data is to be
 #'   written to. NULL if the entire dataset is to be read.
 #' @param ReadAttr A logical identifying whether to return the attributes of
 #' the stored dataset. The default value is TRUE.
+#' @param DstoreLoc Path to a directory containing Datastore and ModelState.Rda
+#' @param ModelState_ls A pre-loaded ModelState structure, possibly from another model
 #' @return A vector of the same type stored in the datastore and specified in
 #'   the TYPE attribute.
 #' @export
@@ -944,7 +973,10 @@ readFromTableH5 <- function(Name, Table, Group, Index = NULL, ReadAttr = TRUE, D
     G <- ModelState_ls
   }
   #If DstoreLoc is NULL get the name of the datastore from the model state
-  if ( is.null(DstoreLoc) ) DstoreLoc <- G$DatastoreName; # presume it's in the working directory
+  # NOTE: if called from the framework dispatcher function, DstoreLoc will always be NULL
+  if ( is.null(DstoreLoc) ) {
+    DstoreLoc <- file.path(G$ModelStatePath,G$DatastoreName)
+  }
 
   #Check that dataset exists to read from
   DatasetExists <- checkDataset(Name, Table, Group, G$Datastore)
