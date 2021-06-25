@@ -146,10 +146,17 @@ initModelState <- function(Save=TRUE,Param_ls=NULL,RunPath=NULL) {
 
   # Establish the ModelState in model.env
   newModelState_ls$FirstCreated <- Sys.time() # Timestamp
-  newModelState_ls$RunParam_ls <- Param_ls
+  newModelState_ls$RunParam_ls <- Param_ls;
 
-  if ( is.null(RunPath) ) RunPath <- getwd()  # Where the model results are going
-  newModelState_ls$RunPath <- RunPath
+  # Establish RunPath and DatastorePath in parameters and ModelState_ls
+  if ( is.null(RunPath) ) RunPath <- getwd()   # Where the model results are going
+  newModelState_ls$ModelStatePath <- RunPath;
+  if ( "DatastorePath" %in% names(Param_ls) ) { # DatastorePath used for virtual linkage
+    Param_ls$DatastorePath <- c( RunPath, Param_ls$DatastorePath )
+  } else {
+    Param_ls$DatastorePath <- RunPath
+  }
+  newModelState_ls$DatastorePath <- Param_ls$DatastorePath
 
   model.env$ModelState_ls <- newModelState_ls
   model.env$RunParam_ls <- Param_ls; # Includes all the run Parameters, including "required"
@@ -1584,20 +1591,7 @@ initDatastoreGeography <- function(GroupNames = NULL) {
 loadModelParameters <- function(FlagChanges=FALSE) {
   G <- getModelState()
   RunParam_ls <- G$RunParam_ls;
-#   Commented out: Default parameters will suffice
-#   ModelParamInfo <- c("ParamDir","ModelParamFile")
-#   missingParams <- ! ModelParamInfo %in% names(RunParam_ls)
-#   if ( any(missingParams) ) {
-#     stop(
-#       writeLog(
-#         paste(
-#           "Missing parameter names:",
-#           paste(ModelParamInfo[missingParams],collapse=",")
-#         ),
-#         Level="error"
-#       )
-#     )
-#   }
+
   writeLog("Loading model parameters file.",Level="info")
   ModelParamFile <- getRunParameter("ModelParamFile",Param_ls=RunParam_ls)
   ParamFile <- findRuntimeInputFile(ModelParamFile,"ParamDir",Param_ls=RunParam_ls,StopOnError=FALSE)

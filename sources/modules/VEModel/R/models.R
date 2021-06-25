@@ -176,8 +176,119 @@ getModelRoots <- function(get.root=0,Param_ls=NULL) {
 }
 
 ## Helper function
+# Add paramters to modelParam_ls from BaseModel; do nothing if BaseModel not defined
+useBaseModel <- function(modelParam_ls) {
+
+  existingParams <- names(modelParam_ls)
+  if ( ! "BaseModel" %in% existingParams ) {
+    return(modelParam_ls)
+  }
+  baseModelName <- modelParam_ls$BaseModel
+  
+  if ( nzchar(baseModelName) ) {
+    baseStageName <- getRunParameter("BaseStage",Default="",Param_ls=modelParam_ls)
+
+    msg <- paste0("Recursively opening BaseModel '",baseModelName,"'")
+    if ( nzchar(baseStageName) ) msg <- paste(msg,paste0("at Stage '",baseStageName,"'))
+    visioneval::writeLog(msg,Level="warn")
+    
+    baseModel <- openModel(baseModelName) # Amounts to a recursive call to initialize
+    if ( ! baseModel$valid() ) {
+      stop( visioneval::writeLog("BaseModel is not valid!",Level="error") )
+    }
+    if ( ! nzchar(baseStageName) ) {
+      baseStageName <- tail(names(baseModel$modelStages),1)
+    }
+    baseParam_ls <- baseModel$modelStages[[baseStageName]]$RunParam_ls
+    if ( is.na(baseParam_ls) || is.nulL(baseParam_ls) ) {
+      stop (
+        visioneval::writeLog(
+          paste0("Missing Parameters from BaseModel/BaseStage ",baseModelName,"/",baseStageName),
+          Level="error"
+        )
+      )
+    }
+
+    # Only keep the following parameters from the BaseModel/BaseStage which define locations to search
+    #  for elements of this model: inputs, defs, run_model.R plus queries and possible datastore path
+    keepBase <- which(
+      names(baseParam_ls) %in% c(
+        "InputPath","ModelScriptPath","ParamPath","QueryPath",
+        "RunDstore","DatastorePath" # Used to link to BaseModel Datastore (or copy it)
+        )
+    )
+    baseParam_ls <- baseParam_ls[keepBase]
+  } else return(
+
+  # Rebuild model default path parameters (copying from base model as available)
+
+  # If DatastorePath is defined in modelParam_ls, do not transfer it from the BaseModel parameters
+  # DatastorePath is a vector paths to Datastores in the BaseModel's stages
+  # Define it in the model (possibly to an empty string) if not linking to the BaseModel results
+  if ( ! "DatastorePath" %in% existingParams ) {
+    modelParam_ls$DatastorePath <- baseParam_ls$DatastorePath; # Link BaseModel results
+    modelParam_ls$LoadDstore <- baseParam_ls$RunDstore;        # Supports LoadDatastore
+  }
+  
+  # If ParamDir defined in modelParam_ls: set ParamPath if ModelDir/ParamDir exists
+  if ( "ParamDir" %in% existingParams ) {
+    paramPath <- file.path(modelPath,modelParam_ls$ParamDir)
+    if ( dir.exists(paramPath) ) modelParam_ls$ParamPath <- paramPath
+  } else {
+    modelParam_ls$ParamPath <- baseParam_ls$ParamPath; # Use ParamDir("defs") from BaseModel
+  }
+
+  # If InputPath defined in modelParam_ls (even to an empty string), ignore BaseModel
+  # Note that ModelDir/InputDir will get added to the path if it exists anyway (no need to define InputPath for that).
+  # Individual stage InputPaths will likewise be added to the model's overall InputPath
+  if ( ! "InputPath" %in% names(modelParam_ls) ) {
+    modelParam_ls$InputPath <- baseParam_ls$InputPath
+  }
+
+  # If ScriptDir defined in modelParam_ls (even to "." or ""), or ModelScript defined here, ignore BaseModel
+  # Otherwise use BaseModel script
+  if ( any(c("ScriptsDir","ModelScript") %in% existingParams) ) {
+    modelScriptPath <- file.path(
+      modelParam_ls$ModelDir, # Must be defined in modelParam_ls
+      # Consider default values for ScriptsDir and ModelScript
+      visioneval::getRunParameter("ScriptsDir",Param_ls=modelParam_ls),
+      visioneval::getRunParameter("ModelScript",Param_ls=modelParam_ls)
+    )
+  } else {
+    # WARNING: Be careful if BaseModel is horizontally staged (different ModelScript for each stage)
+    # You'll only get the script from the BaseStage!!
+    # Just define ScriptsDir <- "." (the system default) to avoid that.
+    modelScriptPath <- baseParam_ls$ModelScriptPath
+  }
+
+  if ( "QueryPath" %in% existingParams && "QueryPath" %in% names(baseParam_ls) ) {
+    modelParam_ls$QueryPath <- c( modelParam_ls$QueryPath, baseParam_ls$QueryPath )
+  } else {
+    modelParam_ls$QueryPath <- baseParam_ls$QueryPath; # May still not exist
+  }
+
+  return(modelParam_ls)
+}
+
+## Helper function
+# Cull the InputPath parameter (only those containing InputDir, no duplicates)
+cullInputPath <- function(InputPath,InputDir) {
+  # Remove any element of InputPath that is "" or "."
+  InputPath <- InputPath[ nzchar(InputPath) & InputPath != "." ]
+
+  # Normalize remaining InputPath elements, if any, and remove duplicates
+  InputPath <- unique(normalizePath(InputPath,winslash="/",mustWork=FALSE))
+
+  # Remove any element of InputPath that is not an existing directory
+  InputDir <- InputDir[1] # backstop in case InputDir accidentally set to a vector
+  InputPath <- InputPath[dir.exists( file.path(InputPath,InputDir) )]
+
+  return(InputPath)
+}
+
+## Helper function
 # Locate modelDir within "ModelRoots"
-# TODO: return the model description/run settings
+# Param_ls is the set of global runtime parameters (may be an empty list)
 findModel <- function( modelDir, Param_ls ) {
 
   model_ls <- list() # List of valid model stage structures
@@ -191,7 +302,7 @@ findModel <- function( modelDir, Param_ls ) {
   # if modelPath is not an absolute path, search for it amongst the "roots"
   modelPath <- NA
   if ( ! isAbsolutePath(modelDir) ) {
-    roots<-getModelRoots()
+    roots<-getModelRoots(Param_ls=Param_ls)
     possiblePaths <- file.path(roots,modelDir)
     existing <- dir.exists(possiblePaths)
     if ( ! any(existing) ) {
@@ -220,74 +331,55 @@ findModel <- function( modelDir, Param_ls ) {
   modelParam_ls <- visioneval::loadConfiguration(ParamDir=modelPath,override=getSetup())
 
   # Set up ModelDir and ResultsDir
-  modelParam_ls[["ModelDir"]] <- modelPath;
-  if ( ! "ResultsDir" %in% modelParam_ls ) {
-    modelParam_ls[["ResultsDir"]] <- getRunParameter("ResultsDir",Param_ls=modelParam_ls)
+  modelParam_ls$ModelDir <- modelPath;
+  if ( ! "ResultsDir" %in% names(modelParam_ls) ) {
+    # Load default parameter or get from larger runtime environment
+    modelParam_ls$ResultsDir <- getRunParameter("ResultsDir",Param_ls)
   }
 
-  # Check for BaseModel and BaseStage
-  baseModelName <- getRunParameter("BaseModel",Default="",Param_ls=modelParam_ls)
-  if ( nzchar(baseModelName) ) {
-    baseModel <- openModel(baseModelName)
-    baseStageName <- getRunParameter("BaseStage",Default="",Param_ls=modelParam_ls)
-    if ( nzchar(baseStageName) ) {
-      baseStageName <- tail(names(baseModel$modelStages),1)
-    }
-    baseParam_ls <- baseModel$modelStages[[baseStageName]]
-    if ( is.na(baseParam_ls) || is.nulL(baseParam_ls) ) {
-      visioneval::writeLog(
-        paste0("Invalid BaseModel/BaseStage ",baseModelName,"/",baseStageName),
-        Level="error"
-      )
-      stop()
-    }
+  # Check for BaseModel and BaseStage in model parameters
+  # If present, load key parameters from the BaseModel
+  modelParam_ls <- useBaseModel(modelParam_ls)
 
-    # Only keep the following parameters from the BaseModel/BaseStage
-    # TODO: How to handle cascading Queries from BaseModel? Copy to current model QueryDir? Reference in place?
-    keepBase <- which(
-      names(baseParam_ls) %in% c(
-        "InputPath","ModelScriptPath","ParamPath","QueryPath",
-        "RunDstore","DatastorePath" # Used to link to BaseModel Datastore (or copy it)
-        )
-    )
-    baseParam_ls <- baseParam_ls[keepBase]
-  } else baseParam_ls <- list()
+  # Process InputPath (culling directories for those actually exist)
+  if ( ! "InputPath" %in% names(modelParam_ls) ) {
+    modelParam_ls$InputPath <- modelParam_ls$ModelDir
+  } else {
+    modelParam_ls$InputPath <- c( modelParam_ls$ModelDir, modelParam_ls$InputPath )
+  }
+  modelParam_ls$InputPath <- cullInputPath(
+    InputPath=modelParam_ls$InputPath,
+    InputDir=getRunParameter("InputDir",Param_ls=modelParam_ls)
+  )
 
-  # Rebuild model default path parameters
-  # TODO: if DatastorePath is defined here, remove from BaseModel
-  # TODO: If ParamDir defined in modelParam_ls, remove ParamPath; set ParamPath if ModelDir/ParamDir exists
-  # TODO: If InputPath defined in modelParam_ls, use it
-  #       Remove any element of InputPath that is "" or "."
-  #       Normalize remaining InputPath elements, if any
-  #       Add ModelDir/InputDir to InputPath
-  #       Make InputPath unique (provided it doesn't change the order!)
-  #       Remove any element of InputPath that is not an existing directory
-  # TODO: If ScriptDir defined here (even to "." or ""), or ModelScript defined here
-  #       Construct ModelScriptPath as ModelDir/ScriptsDir/ModelScript
-  #       If that file does not exist, reduce to ModelDir/ScriptsDir (and augment in stages)
-  # TODO: If ParamPath defined and exists, read run_parameters.json from ParamPath
-  #       If it exists, underlay the parameters below modelParam_ls
-  #       If not defined, look into the individual stages
-
+  # Locate model stages
   if ( ! "ModelStages" %in% names(modelParam_ls) ) {
     # TODO: Build default ModelStages
+    #       First stage will be ModelDir itself (screened out later if it is incomplete)
     #       Get list of directories within ModelDir
-    #       Remove "structural" directories:
+    #       Remove "structural" directories from consideration
     #          QueryDir, InputDir, ParamDir, ResultsDir, Any directory matching the archive template
-    #       End up with a list of directories (named after directory base name)
+    #       End up with a list of directories (each element named after directory base name)
     #       Single element within each modelStage: $StageDir
-  } else modelStages <- modelParam_ls$ModelStages;
+  } else modelStages <- modelParam_ls$ModelStages
 
+  ;
   # TODO: Loop through modelStages list examining ModelDir/StageDir
     # stageParam_ls builds on modelParam_ls plus baseParam_ls
     # Read config for the stage if present (and OVERLAY/replace baseParam_ls and modelParam_ls elements)
     #   OTHERWISE (exclusive) if ParamDir/ParamFile exists, read from there and underlay
     # Set Scenario and Description defaults if not defined
     # If ParamDir exists in StageDir and ParamPath undefined, set ParamPath
-    # Re-Set ModelScriptPath if ModelScript defined
-    #   Look for ModelScript in StageDir
-    #     If not found, look in ModelScriptPath/ModelScript if path is defined
-    #   FAIL if not located in either place
+
+    # Get ModelScript name (defined here or default from modelParam_ls)
+    # If ScriptsDir defined here
+    #   Look for ModelScript in ModelDir/StageDir/ScriptsDir
+    # If ScriptsDir not defined here or ModelScriptPath not found yet
+    #   Look for ModelScript in ModelDir/ScriptsDir
+    # If none of that finds a file, and if ModelScriptPath is defined and file exists
+    #   Use existing ModelScriptPath (probably points back at the BaseModel)
+    # Invalid Stage if no ModelScriptPath is found
+
     # If InputPath is defined, APPEND its normalized elements to existing InputPath
     #   and verify that all path components exist (error if not)
     # Else

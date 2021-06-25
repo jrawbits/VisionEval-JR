@@ -225,32 +225,36 @@ loadModel <- function(
   RunDstore$Name <- getRunParameter("DatastoreName",Param_ls=RunParam_ls)
   RunDstore$Name <- normalizePath(RunDstore$Name, winslash = "/", mustWork = FALSE)
   RunDstore$Dir  <- dirname(RunDstore$Name)
-  RunDstore$File <- basename(RunDstore$Name)
-  setModelState(list(RunDstore=RunDstore),Save=FALSE)
+  RunParam_ls$RunDstore <- RunDstore; # for use if this model becomes a VEModel BaseModel
+  setModelState(list(RunDstore=RunDstore),Save=FALSE) # for use in this model run
 
   # Allow explicit function parameter to be overridden from RunParam_ls if defined there
   # May have been changed from function parameter by earlier call to getModelParameters
   LoadDatastore  <- getRunParameter("LoadDatastore",Default=FALSE,Param_ls=RunParam_ls)
 
   # Set up load datastore parameters
-  LoadDstore <- list()
-  LoadDatastoreName <- getRunParameter("LoadDatastoreName",Default=NA,Param_ls=RunParam_ls)
-  if (is.na(LoadDatastoreName) ) {
-    if ( LoadDatastore ) {
-      # null name means start with the current (existing) Datastore
-      LoadDstore$Name <- RunDstore$Name
-      LoadDstore$Dir <- RunDstore$Dir
-    } else { # Nothing to load
-      LoadDatastore <- FALSE
-    }
-  } else {
-    LoadDstore$Name <- normalizePath(LoadDatastoreName, winslash = "/", mustWork = FALSE)
-    LoadDstore$Dir <- dirname(LoadDstore$Name)
-    if ( ! LoadDatastore ) {
-      writeLog(
-        paste("LoadDatastore is FALSE; Ignoring LoadDatastoreName:",LoadDstore$Name,sep="\n"),
-        Level="error"
-      )
+  # Might have relayed LoadDstore from the RunDstore element of BaseModel
+  LoadDstore <- getRunParameter("LoadDstore",Default=list(),Param_ls=RunParam_ls)
+  if ( ! ( is.list(LoadDstore) && all(c("Name","Dir") %in% LoadDstore) ) ) {
+    LoadDstore <- list()
+    LoadDatastoreName <- getRunParameter("LoadDatastoreName",Default=NA,Param_ls=RunParam_ls)
+    if (is.na(LoadDatastoreName) ) {
+      if ( LoadDatastore ) {
+        # null name means start with the current (existing) Datastore
+        LoadDstore$Name <- RunDstore$Name
+        LoadDstore$Dir <- RunDstore$Dir
+      } else { # Nothing to load
+        LoadDatastore <- FALSE
+      }
+    } else {
+      LoadDstore$Name <- normalizePath(LoadDatastoreName, winslash = "/", mustWork = FALSE)
+      LoadDstore$Dir <- dirname(LoadDstore$Name)
+      if ( ! LoadDatastore ) {
+        writeLog(
+          paste("LoadDatastore is FALSE; Ignoring LoadDatastoreName:",LoadDstore$Name,sep="\n"),
+          Level="error"
+        )
+      }
     }
   }
   setModelState(list(LoadDstore=LoadDstore),save=FALSE)
