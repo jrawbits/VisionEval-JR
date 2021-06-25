@@ -354,22 +354,59 @@ findModel <- function( modelDir, Param_ls ) {
 
   # Locate model stages
   if ( ! "ModelStages" %in% names(modelParam_ls) ) {
-    # TODO: Build default ModelStages
-    #       First stage will be ModelDir itself (screened out later if it is incomplete)
-    #       Get list of directories within ModelDir
-    #       Remove "structural" directories from consideration
-    #          QueryDir, InputDir, ParamDir, ResultsDir, Any directory matching the archive template
-    #       End up with a list of directories (each element named after directory base name)
-    #       Single element within each modelStage: $StageDir
-  } else modelStages <- modelParam_ls$ModelStages
+    stages <- list.dirs(modelPath,full.names=FALSE,recursive=FALSE)
+    structuralDirs <- c(
+      getRunParameter("QueryDir",Param_ls=modelParam_ls),
+      getRunParameter("InputDir",Param_ls=modelParam_ls),
+      getRunParameter("ParamDir",Param_ls=modelParam_ls),
+      getRunParameter("ResultsDir",Param_ls=modelParam_ls)
+    )
+    stages <- stages[ ! stages %in% structuralDirs ]
+    stages <- stages[ grep(paste0("^",getRunParameter("ArchiveResultsName",Param_ls=modelParam_ls)),stages,invert=TRUE) ]
+    stages <- c(".",stages) # Add model root directory
+    visioneval::writeLog(paste0("Stage directories:\n",paste(stages,collapse=","),"\n"),Level="info")
+    modelStages <- lapply(stages,
+      function(stage) {
+        list(
+          StageName=stage,
+          StagePath=normalizePath(stage,winslash="/")
+        )
+      }
+    )
+    names(modelStages) <- sub("^\\.$","ModelDir",stages)
+  } else {
+    modelStages <- modelParam_ls$ModelStages
+  }
 
-  ;
-  # TODO: Loop through modelStages list examining ModelDir/StageDir
-    # stageParam_ls builds on modelParam_ls plus baseParam_ls
-    # Read config for the stage if present (and OVERLAY/replace baseParam_ls and modelParam_ls elements)
+  # Loop through modelStages list examining ModelDir/StageDir
+  for ( stage in modelStages ) {
+    # TODO: construct complete set of run parameters for having a model run
+    # Load ParamDir parameters (overlay visioneval.cnf, underlay run_parameters.json)
+    # If ParamDir exists in StageDir underlay run_parameters.json
+    #   If ParamPath undefined, set ParamPath for this model, otherwise also use inherited
+    # Use ScriptsDir and ModelScript and ModelScriptPath to locate model script
+    # Add StageDir to InputPath or append stageParam_ls$InputPath to InputPath (and cull)
+    # Set up the RunDstore function
+    # We'll pass all that to loadModel (bypassing getModelParameters in initializeModel)
+    #   Will load an existing model state if not resetting
+    #   Otherwise will build the model state from these parameters
+    # Set up complete set of parameters required to run each model stage
+    #   Model           # Overall model name
+    #   Scenario        # Defaults to StagePath
+    #   Description
+    #   Region
+    #   BaseYear
+    #   InputPath
+    #   ParamPath
+    #   ModelScriptPath
+    #   DatastoreName
+    #   LoadDatastore
+    #   LoadDatastoreName
+    # Save in modelStage$RunParam_ls
+
+    # stageParam_ls builds on modelParam_ls
+    # Read config for the stage if present (and OVERLAY/replace modelParam_ls elements)
     #   OTHERWISE (exclusive) if ParamDir/ParamFile exists, read from there and underlay
-    # Set Scenario and Description defaults if not defined
-    # If ParamDir exists in StageDir and ParamPath undefined, set ParamPath
 
     # Get ModelScript name (defined here or default from modelParam_ls)
     # If ScriptsDir defined here
@@ -393,6 +430,9 @@ findModel <- function( modelDir, Param_ls ) {
     # If any verification fails, set modelStage_ls$Runnable to FALSE
     #   Otherwise, set modelStage$Runnable to TRUE
   # After the loop, remove any modelStage elements that are not Runnable
+
+  # TODO: Process each modelStage for its "StartFrom" parameter, which is the name of a stage
+  #       Replace with (or add a new parameter is) the ModelState structure with that name
 
   return( model_ls )
 }
@@ -660,11 +700,14 @@ summarizeSpecs <- function(AllSpecs_ls) {
 }
 
 # Helper function:
-#  Open an existing ModelState file, or create a stripped-down one in memory
-#    The role of the in-memory version is to have the parsed model script
-#    And to identify the model input data elements and files
-#  Will eventually support interrogating the model script and structures (e.g. inputs and
-#  outputs) without actually running the model.
+#  TODO: findModel will build the RunParam_ls for each stage
+#    So could perhaps be reduced to visioneval::loadModel(modelStage$RunParam_ls)
+#    Key function here is to create an in-memory copy of each stage's ModelState_ls
+#      either by loading, or by intializing
+#    Also need to handle the StartFrom earlier model stage (where to find the
+#      model state that goes into DatastorePath, as well as the model state to
+#      interrogate for VERequiredPackages).
+#  Resulting structure can be explored for model inputs and outputs, script, etc.
 ve.model.loadModelState <- function(log="error") {
   # Load all ModelStates for each model stage, using initializeModel with RunModel=FALSE
   # If ModelState exists from a prior run, load that rather than rebuild
