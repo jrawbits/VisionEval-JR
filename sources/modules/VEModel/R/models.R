@@ -200,7 +200,7 @@ useBaseModel <- function(modelParam_ls) {
       baseStageName <- tail(names(baseModel$modelStages),1)
     }
     baseParam_ls <- baseModel$modelStages[[baseStageName]]$RunParam_ls
-    if ( is.na(baseParam_ls) || is.nulL(baseParam_ls) ) {
+    if ( is.na(baseParam_ls) || is.null(baseParam_ls) ) {
       stop (
         visioneval::writeLog(
           paste0("Missing Parameters from BaseModel/BaseStage ",baseModelName,"/",baseStageName),
@@ -399,7 +399,9 @@ findModel <- function( modelDir, Param_ls ) {
     #   InputPath
     #   ParamPath
     #   ModelScriptPath
+    #   DatastorePath
     #   DatastoreName
+    #   StartFrom       # Defaults to empty list - model state from prior stage
     #   LoadDatastore
     #   LoadDatastoreName
     # Save in modelStage$RunParam_ls
@@ -472,7 +474,7 @@ installStandardModel <- function( modelName, modelPath, confirm, skeleton=c("sam
   #   If modelPath does not exist, but dirname(modelPath) exists, create new directory and put the model there
   #   If dirname(modelPath) also does not exist, tell user dirname(modelPath) does not exist and
   #   they have to try again
-  
+
   visioneval::initLog(Save=FALSE,Threshold=log)
   
   model <- findStandardModel( modelName )
@@ -1057,7 +1059,7 @@ ve.model.save <- function(FileName="visioneval.cnf") {
 ve.model.archive <- function() {
   # TODO: Rebuild for new stage structure (re-write ResultsDir so we create and archive
   # stage sub-directories)
-  # If SaveDatastore is true when a VEModel stage runs and we're resetting or 
+  # Will require the model state to be loaded
   return(NULL);
   ResultsName = getRunParameter("ArchiveResultsName",Param_ls=self$RunParam_ls)
   OutputDir <- getRunParameter("OutputDir",Param_ls=self$RunParam_ls) # May differ in other stages...
