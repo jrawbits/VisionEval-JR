@@ -134,10 +134,13 @@ readFromTable <- function(Name, Table, Group, Index = NULL, ReadAttr = TRUE, Dst
   } else {
     G <- ModelState_ls
   }
+
+  # Attempt to read the Table from current Datastore
   table <- ve.model$readFromTable(Name, Table, Group, Index, ReadAttr, DstoreLoc=NULL, ModelState_ls=G)
   if ( is.na(table) ) {
+    # Failed to find - try upstream Datastore locations
     paths <- G$DatastorePath[-1] # first one is the default for G that we just checked
-    if ( length(paths)>0 ) {     # if G$DatastorePath exiss and has anything left in it
+    if ( length(paths)>0 ) {     # if G$DatastorePath exists and has additional locations
       # Iterate over remaining elements in G$DatastorePath looking for the Dataset
       for ( path in paths ) {
         table <- ve.model$readFromTable(Name, Table, Group, Index, ReadAttr, DstoreLoc=path, ModelState_ls=NULL)
@@ -148,6 +151,7 @@ readFromTable <- function(Name, Table, Group, Index = NULL, ReadAttr = TRUE, Dst
       Message <- paste("Dataset", Name, "in table", Table, "in group", Group, "could not be located.")
       stop( writeLog(Message,Level="error") )
     }
+  }
   return(table)
 }
 
@@ -347,6 +351,7 @@ listDatastoreRD <- function(DataListing_ls = NULL, ModelStateFile = NULL) {
 #' model state file.
 #' @import stats utils
 initDatastoreRD <- function(AppendGroups = NULL) {
+  G <- getModelState()
   DatastoreName <- G$DatastoreName;
   # If 'AppendGroups' is NULL initialize a new datastore
   if (is.null(AppendGroups)) {
