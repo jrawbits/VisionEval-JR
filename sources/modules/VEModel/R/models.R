@@ -176,7 +176,7 @@ getModelRoots <- function(get.root=0,Param_ls=NULL) {
 }
 
 ## Helper function
-# Add paramters to modelParam_ls from BaseModel; do nothing if BaseModel not defined
+# Add parameters to modelParam_ls from BaseModel; do nothing if BaseModel not defined
 useBaseModel <- function(modelParam_ls) {
 
   existingParams <- names(modelParam_ls)
@@ -368,8 +368,9 @@ findModel <- function( modelDir, Param_ls ) {
     modelStages <- lapply(stages,
       function(stage) {
         list(
-          StageName=stage,
-          StagePath=normalizePath(stage,winslash="/")
+          Name=stage,
+          Dir=stage,
+          Path=normalizePath(stage,winslash="/")
         )
       }
     )
@@ -377,6 +378,18 @@ findModel <- function( modelDir, Param_ls ) {
   } else {
     modelStages <- modelParam_ls$ModelStages
   }
+
+  # What needs to be in modelStages structure:
+  #   modelStage$Name - Name for "Scenario" run parameter, and also for modelStates list item
+  #     At a minimum, to locate sub-directory and visioneval.cnf (containing additional parameters)
+  #   modelStage$Dir - StageDir
+  #   modelStage$Path - Absolute path to stage
+  #   modelStage$StartFrom - modelStage$Name of some earlier modelStage within this Model
+  #     RunParam_ls from that stage is used 
+  #   modelStage$InputPath - elements prefixed to inherited InputPath
+  #   modelStage$Description - becomes the Scenario element in Model State (or load from config)
+  #   modelStage$RunParam_ls - build the model state from that during Load
+  #   modelStage$ModelState_ls - after the stage has been run (create, or load from ModelDir/ResultsDir/StageDir)
 
   # Loop through modelStages list examining ModelDir/StageDir
   for ( stage in modelStages ) {
@@ -408,7 +421,8 @@ findModel <- function( modelDir, Param_ls ) {
 
     # stageParam_ls builds on modelParam_ls
     # Read config for the stage if present (and OVERLAY/replace modelParam_ls elements)
-    #   OTHERWISE (exclusive) if ParamDir/ParamFile exists, read from there and underlay
+    #   OTHERWISE (exclusive) if ModelDir/StageDir/ParamDir/ParamFile exists,
+    #   read from there and underlay
 
     # Get ModelScript name (defined here or default from modelParam_ls)
     # If ScriptsDir defined here
@@ -434,7 +448,7 @@ findModel <- function( modelDir, Param_ls ) {
   # After the loop, remove any modelStage elements that are not Runnable
 
   # TODO: Process each modelStage for its "StartFrom" parameter, which is the name of a stage
-  #       Replace with (or add a new parameter is) the ModelState structure with that name
+  #       Replace with (or add a new parameter as) the ModelState structure with that name
 
   return( model_ls )
 }
