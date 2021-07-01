@@ -146,7 +146,7 @@ archiveResults <- function(RunParam_ls,RunDir=getwd(),SaveDatastore=NULL) {
 
   ModelStatePath <- file.path(RunDir,ModelStateName)
 
-  if ( !exists(ModelStatePath) ) {
+  if ( ! file.exists(ModelStatePath) ) {
     writeLog("No previous model state or information to save.",Level="warn")
     return(invisible(character(0)))
   }
