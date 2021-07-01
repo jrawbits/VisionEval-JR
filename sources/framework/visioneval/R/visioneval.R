@@ -148,7 +148,7 @@ getModelParameters <- function(Param_ls=list(), DotParam_ls=list(),DatastoreName
     RunParam_ls <- loadConfiguration(ParamPath=ParamPath,keep=RunParam_ls)
     ParamPath <- dirname(ParamPath) # It will include run_parameters.json
   } else {
-    ParamPath <- file.path(ModelDir,ParamDir)
+    ParamPath <- file.path(ModelDir,getRunParameter("ParamDir",Default="defs",Param_ls=RunParam_ls))
   }
   # Make sure ParamPath is set (location for Geo.csv, Units.csv, Deflators.csv)
   if ( ! "ParamPath" %in% names(RunParam_ls) ) {
