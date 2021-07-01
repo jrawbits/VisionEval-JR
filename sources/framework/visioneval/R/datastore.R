@@ -587,7 +587,7 @@ readFromTableRD <- function(Name, Table, Group, Index = NULL, ReadAttr = TRUE, D
   if ( is.null(DstoreLoc) ) {
     DstoreLoc <- file.path(G$ModelStatePath,G$DatastoreName)
   } else {
-    # Recover model state from DstoreLoc if different from current G
+    # TODO: Reconcile ModelState location and DstoreLoc
   }
 
   #Check that dataset exists to read from and if so get path to dataset
