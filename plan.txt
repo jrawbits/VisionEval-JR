@@ -1,5 +1,54 @@
 Immediate Next:
 
+Classic model is now running. Make sure that LoadDatastore works:
+  Classic run of two separate model stages (Population / Vehicles)
+  Using LoadDatastore / DatastoreName passed via InitializeModel
+
+Change the archiveDatastore function to flatten Datastores (Flag to just do top level)
+  Implement by iterating through the the Datastsore paths (from oldest to newest)
+    Which is how the ReadFromTable function should work.
+  So we read the Table from back up the path and then write it (replacing anything already there)
+    Will need to create Tables and Groups in the target
+    Will need to protest if a Datastore is already present at the outset (target should be fresh)
+    That's slower because it does a lot of work on each Dataset
+  But by doing that, we can allow the Datastores (in principle) to have different types
+    Then we could do a flag that says "newDstoreType" (RD or H5 or...)
+  We would need target functions to do the writing (different from those in ve.model)
+    And we would need to make sure we create Groups and Tables if they do not exist in the target
+  So the source will use ve.model elements.
+
+  Change the archiveResults function so it can take the relevant archival parameters
+    as ... parameters (don't need a RunParam_ls).
+  Traverse the Datastore Path and copy everything into place
+  Keep the DatastoreListing (on disk in the target, and in the archived ModelState) up to date
+    so we can interrogate the resulting Datastore using VEResults
+  Later, copying a Datastore can do just the top level, but the default is just to
+    use the archiveDatastore function to make the copy (with a consistent ModelState)
+  When we archive, do we want to add a line to the log file? That would be cool!
+  This function can be the general purpose "copy a Datastore/Model Run" function
+
+Get VEModel running
+  Initially, don't look for stages - just create the ModelDir as first stage
+    So it will run a simple, classic model
+  Skip initializeModel if ModelState is present and a runtime flag is set ("InitComplete")
+    New style model run from VEModel does not need initializeModel in the run_model.R script
+    Probably need some back-stopping in RunModule and RunScript to ensure the ModelState and
+      Datastore are ready for action.
+  Load, Save and Run operations are disaggregated into VEModel
+    Save/archiveResults does the same step as inside initalizeModel (after Load, before Run)
+    Load visits the stages and expands a ModelState from the configurated RunParam_ls
+      Parses all the specifications
+    Run will build the Datastore and process the run_model.R script
+
+Expand VEModel to run stages
+  "StartFrom" stage directive
+    Could create "StartFrom" and "EndAt" run arguments to use stage names/positions
+  Need a "stages" command for VEModel to list and explore the stages
+    Option on "print" to list out all stages (otherwise just their names)
+    Separate commend to enumerate the stages and their relationship
+      Stage directory, Run Status, StartFrom, Load/Linked
+  VEModel sets up parameters from configuration - finding model stages
+
 Runtime Setup (in VEModel)
   Locate run parameters as follows:
     ve.runtime (loaded from visioneval.cnf in that directory) (ve.env$RunParam_ls)

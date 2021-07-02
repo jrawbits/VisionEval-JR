@@ -415,13 +415,6 @@ loadModel <- function(
       LoadEnv$ModelState_ls <- startFrom$ModelState_ls
     }
 
-    # Copy over the required packages part of the base (or loaded) model state
-    # That's all we need so we can parse the current module calls successfully
-    if ( "RequiredVEPackages" %in% names(LoadEnv$ModelState_ls) ) {
-      AlreadyInitialized <- LoadEnv$ModelState_ls$RequiredVEPackages
-      RequiredPackages <- unique(c(RequiredPackages, LoadEnv$ModelState_ls$RequiredVEPackages))
-    }
-
     # Save Datastore Directory structure for checking at runtime
     LoadDstore$Datastore <- LoadEnv$ModelState_ls$Datastore
     LoadDstore$Years <- LoadEnv$ModelState_ls$Years
@@ -528,6 +521,15 @@ loadModel <- function(
   # Add from previous ModelState if any (StartFrom, LoadDatastoreName)
   AlreadyInitialized <- character(0) # required (initialized packages) from loaded datastore
   RequiredPackages <- parsedScript$RequiredVEPackages;
+
+  if ( LoadDatastore ) {
+    # Copy over the required packages part of the loaded model state
+    # That's all we need so we can parse the current module calls successfully
+    if ( "RequiredVEPackages" %in% names(LoadEnv$ModelState_ls) ) {
+      AlreadyInitialized <- LoadEnv$ModelState_ls$RequiredVEPackages
+      RequiredPackages <- unique(c(RequiredPackages, LoadEnv$ModelState_ls$RequiredVEPackages))
+    }
+  }
 
   #======================================================
   # EXTRACT INPUT/OUTPUT SPECIFICATIONS FROM MODULE CALLS
@@ -656,6 +658,7 @@ runModel <- function(
     # Grab LoadDstore parameters from the ModelState
     LoadDstore <- ve.model$ModelState_ls$LoadDstore
     RunDstore <- ve.model$ModelState_ls$RunDstore;
+    browser()
 
     # Remove existing Datastore if we're not re-using it
     if ( file.exists(RunDstore$Name) ) {
@@ -674,7 +677,8 @@ runModel <- function(
     loadDatastoreCopy <- tempfile(tmpdir=getwd(),pattern="Datastore_")
     dir.create(loadDatastoreCopy)
     file.copy(LoadDstore$Name, loadDatastoreCopy, recursive = TRUE)
-    file.rename(file.path(loadDatastoreCopy,basename(LoadDstore$Dir)),RunDstore$Name)
+    print(dir(loadDatastoreCopy))
+    file.rename(file.path(loadDatastoreCopy,basename(LoadDstore$Name)),RunDstore$Name)
     unlink(loadDatastoreCopy,recursive=TRUE)
     writeLog(paste("Copied previous datastore from:",LoadDstore$Name),Level="info")
     writeLog(paste("Copied datastore            to:",RunDstore$Name),Level="info")
