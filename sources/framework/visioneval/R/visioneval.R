@@ -658,7 +658,6 @@ runModel <- function(
     # Grab LoadDstore parameters from the ModelState
     LoadDstore <- ve.model$ModelState_ls$LoadDstore
     RunDstore <- ve.model$ModelState_ls$RunDstore;
-    browser()
 
     # Remove existing Datastore if we're not re-using it
     if ( file.exists(RunDstore$Name) ) {
