@@ -1,8 +1,18 @@
 Immediate Next:
 
-Classic model is now running. Make sure that LoadDatastore works:
-  Classic run of two separate model stages (Population / Vehicles)
-  Using LoadDatastore / DatastoreName passed via InitializeModel
+Finish changing the Datastore access functions to allow an arbitrary ModelState and RunPath
+to be passed to them (rather than forcing reliance on the global one).
+
+Basic staging with LoadDatastore is working at the framework level.
+Change how the Loaded Datastore is copied:
+  Rather than just do a blunt file copy, have an option to use "flatten"
+  Walk through the DatastorePath from tail to front, load each Group/Table/Name
+    Then write back into the target Datastore (which may have a different type)
+DONE: Adjusted the datastore access function wrappers to look into an optional other
+  environment (and we have the "assign" function to drop in suitable functions)
+
+Add a framework function to copy a Datastore (optionally flattening, and optionally
+  changing to a different DatastoreType)
 
 Change the archiveDatastore function to flatten Datastores (Flag to just do top level)
   Implement by iterating through the the Datastsore paths (from oldest to newest)
