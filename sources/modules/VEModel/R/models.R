@@ -382,14 +382,17 @@ findModel <- function( modelDir, Param_ls ) {
   # What needs to be in modelStages structure:
   #   modelStage$Name - Name for "Scenario" run parameter, and also for modelStates list item
   #     At a minimum, to locate sub-directory and visioneval.cnf (containing additional parameters)
-  #   modelStage$Dir - StageDir
-  #   modelStage$Path - Absolute path to stage
+  #   modelStage$Dir - StageDir (basename within ModelDir for defs/inputs, and within ResultsDir or
+  #     ResultsDir/OutputDir for outputs)
+  #   modelStage$Path - Absolute path to stage (== ModelDir/StageDir)
   #   modelStage$StartFrom - modelStage$Name of some earlier modelStage within this Model
-  #     RunParam_ls from that stage is used 
-  #   modelStage$InputPath - elements prefixed to inherited InputPath
+  #     RunParam_ls from that stage is used
+  #   modelStage$InputPath - elements prefixed to inherited InputPath for this stage.
+  #     Default is modelState$Path IFF InputDir exists there.
   #   modelStage$Description - becomes the Scenario element in Model State (or load from config)
-  #   modelStage$RunParam_ls - build the model state from that during Load
+  #   modelStage$RunParam_ls - collected elements for stage (must be complete)
   #   modelStage$ModelState_ls - after the stage has been run (create, or load from ModelDir/ResultsDir/StageDir)
+  #     Use ModelState_ls to contruct ModelState_ls$ModelStateList (pre-loaded ModelStates for DatastorePath)
 
   # Loop through modelStages list examining ModelDir/StageDir
   for ( stage in modelStages ) {
