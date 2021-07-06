@@ -127,7 +127,9 @@ initDataset <- function(Spec_ls, Group, envir=NULL) {
 #' @export
 readFromTable <- function(Name, Table, Group, Index = NULL, ReadAttr = TRUE, DstoreLoc=NULL, ModelState_ls = NULL, envir=NULL) {
 
-  if ( is.null(envir) ) envir <- ve.model
+  if ( is.null(envir) ) { # envir holds the assigned Datastore functions
+    envir <- ve.model
+  }
 
   # ModelState_ls and DstoreLoc are mutually exclusive
   if ( ! is.null(DstoreLoc) ) {
@@ -151,23 +153,47 @@ readFromTable <- function(Name, Table, Group, Index = NULL, ReadAttr = TRUE, Dst
   }
 
   # Attempt to read the Table from current Datastore
-  table <- envir$readFromTable(Name, Table, Group, Index, ReadAttr, DstoreLoc=NULL, ModelState_ls=G)
+  table <- envir$readFromTable(Name, Table, Group, Index, ReadAttr, ModelState_ls=G)
   writeLog(
     paste(class(table),"(",length(table),") returned from readFromTable(",Name,",",Table,",",Group,")"),
     Level="info"
   )
-  if ( length(table)==1 && is.null(attributes(table)) ) {
+  if ( length(table)==1 && is.null(attributes(table)) && length(G$DatastorePath)>1 ) {
     # table might legitimately be NA of length 1. Attributes are non-null if it is "for real"
     # Failed to find - try upstream Datastore locations
-    paths <- G$DatastorePath[-1] # first one is the default for G that we just checked
-
-    if ( length(paths)>0 ) {     # if G$DatastorePath exists and has additional locations
+    # DatastorePath holds absolute path to Datastore
+    if ( ! "ModelStateList" %in% names(G) ) { # Cache the model states for faster access
       writeLog(c("Datastore Paths:",paths),Level="info")
-      # Iterate over remaining elements in G$DatastorePath looking for the Dataset
-      for ( path in paths ) {
-        table <- envir$readFromTable(Name, Table, Group, Index, ReadAttr, DstoreLoc=path, ModelState_ls=NULL)
-        if ( ! is.null(attributes(table)) ) break
+      paths <- G$DatastorePath; # use if model state list not loaded - re-opens model state each time
+      modelStates <- lapply(paths,
+        function(dstore) {
+          path <- file.path(dstore,getModelStateFileName())
+          if ( file.exists(path) ) {
+            G.env <- new.env()
+            loadModelState(FileName=path,envir=G.env)
+            ms <- if ( length(G.env$ModelState_ls) > 0 ) {
+              G.env$ModelState_ls
+            } else NULL
+            rm(G.env)
+          }
+          return(ms)
+        }
+      )
+      if ( any(bad <- sapply(modelStates,is.null)) ) {
+        stop( writeLog(
+          c("Could not open ModelState for paths:",paths[bad]),
+          Level="error"
+        ))
       }
+      setModelState(list(ModelStateList=modelStates))
+    } else {
+      writeLog("Using cached DatastorePath/ModelStates",Level="info")
+    }
+    paths <- G$ModelStateList[-1]
+    # Iterate over additional elements in G$DatastorePath/ModelStateList looking for the Dataset
+    for ( path in paths ) {
+      table <- envir$readFromTable(Name, Table, Group, Index, ReadAttr, ModelState_ls=path)
+      if ( ! is.null(attributes(table)) ) break
     }
     if ( is.null(attributes(table)) ) {
       Message <- paste("Dataset", Name, "in table", Table, "in group", Group, "could not be located.")
@@ -407,7 +433,8 @@ listDatastoreRD <- function(DataListing_ls = NULL, ModelStateFile = NULL, ModelS
 #' @import stats utils
 initDatastoreRD <- function(AppendGroups = NULL, ModelState_ls=getModelState()) {
   G <- ModelState_ls
-  owd <- setwd(ModelState_ls$RunPath)
+  browser()
+  owd <- setwd(ModelState_ls$ModelStatePath)
   on.exit(setwd(owd))
 
   DatastoreName <- G$DatastoreName;
@@ -514,7 +541,8 @@ initDatastoreRD <- function(AppendGroups = NULL, ModelState_ls=getModelState()) 
 #' @export
 initTableRD <- function(Table, Group, Length, ModelState_ls=getModelState()) {
   G <- ModelState_ls
-  owd <- setwd(ModelState_ls$RunPath)
+  browser()
+  owd <- setwd(ModelState_ls$ModelStatePath)
   on.exit(setwd(owd))
 
   DatastoreName <- G$DatastoreName;
@@ -1711,7 +1739,7 @@ copyDatastore <- function( ToDir, ModelState_ls, Flatten=TRUE, DatastoreType=NUL
   success <- FALSE
   if ( ! Flatten ) {
     if ( ! convertDatastoreType ) {
-      success <- file.copy(file.path(ModelState_ls$RunPath,ModelState_ls$DatastoreName),ToDir,recursive=TRUE,copy.date=TRUE)
+      success <- file.copy(file.path(ModelState_ls$ModelStatePath,ModelState_ls$DatastoreName),ToDir,recursive=TRUE,copy.date=TRUE)
     }
     if ( ! success ) {
       paths <- ModelState_ls$DatastorePath[1] # Only copy proximate Datastore

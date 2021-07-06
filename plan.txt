@@ -1,41 +1,29 @@
 Immediate Next:
 
-Finish changing the Datastore access functions to allow an arbitrary ModelState and RunPath
-to be passed to them (rather than forcing reliance on the global one).
-
-Basic staging with LoadDatastore is working at the framework level.
-Change how the Loaded Datastore is copied:
-  Rather than just do a blunt file copy, have an option to use "flatten"
-  Walk through the DatastorePath from tail to front, load each Group/Table/Name
-    Then write back into the target Datastore (which may have a different type)
-DONE: Adjusted the datastore access function wrappers to look into an optional other
-  environment (and we have the "assign" function to drop in suitable functions)
-
-Add a framework function to copy a Datastore (optionally flattening, and optionally
+TODO: Add a framework function to copy a Datastore (optionally flattening, and optionally
   changing to a different DatastoreType)
 
-Change the archiveDatastore function to flatten Datastores (Flag to just do top level)
-  Implement by iterating through the the Datastsore paths (from oldest to newest)
-    Which is how the ReadFromTable function should work.
-  So we read the Table from back up the path and then write it (replacing anything already there)
-    Will need to create Tables and Groups in the target
-    Will need to protest if a Datastore is already present at the outset (target should be fresh)
-    That's slower because it does a lot of work on each Dataset
-  But by doing that, we can allow the Datastores (in principle) to have different types
-    Then we could do a flag that says "newDstoreType" (RD or H5 or...)
-  We would need target functions to do the writing (different from those in ve.model)
-    And we would need to make sure we create Groups and Tables if they do not exist in the target
-  So the source will use ve.model elements.
+Create a copyDatastore function that
+  Takes a flag to flatten (otherwise just copy the most recent level)
+  Takes a flag for the new Datastore type
+  Check/create the To directory
+    Must be empty/will be emptied
+  Opens the model state for the From directory and saves a copy in the To directory
+  Set the ToType for the Datastore (defaults to the From type)
+  Create the Datastore in the appropriate Totype
+    initDatastore
+  Iterate through each element of the reversed DatastorePath
+  For each path (if flattening; otherwise just the first path element)
+    open the DatastoreListing.Rda (must be there - could use ModelState?)
+    create Groups and Tables if they don't exist
+    locate each Dataset - read it out of From, write it to To
+  If flattening, set DatastorePath to To directory
+    Otherwise keep original Datastore Path
+  Source uses ve.model functions
+  Target uses functions appropriate to the target type (put them in a new environment)
 
-  Change the archiveResults function so it can take the relevant archival parameters
-    as ... parameters (don't need a RunParam_ls).
-  Traverse the Datastore Path and copy everything into place
-  Keep the DatastoreListing (on disk in the target, and in the archived ModelState) up to date
-    so we can interrogate the resulting Datastore using VEResults
-  Later, copying a Datastore can do just the top level, but the default is just to
-    use the archiveDatastore function to make the copy (with a consistent ModelState)
-  When we archive, do we want to add a line to the log file? That would be cool!
-  This function can be the general purpose "copy a Datastore/Model Run" function
+Use copyDatastore to implement archiveDatastore (which has flags to flatten, change type)
+  archive also copies logs and outputs
 
 Get VEModel running
   Initially, don't look for stages - just create the ModelDir as first stage
