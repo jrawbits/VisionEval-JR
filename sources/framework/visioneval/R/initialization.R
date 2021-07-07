@@ -127,7 +127,7 @@ initModelState <- function(Save=TRUE,Param_ls=NULL,RunPath=NULL) {
   newModelState_ls$DatastorePath <- Param_ls$DatastorePath
 
   model.env$ModelState_ls <- newModelState_ls
-  model.env$RunParam_ls <- Param_ls; # Includes all the run Parameters, including "required"
+  model.env$RunParam_ls <- Param_ls # Includes all the run Parameters, including "required"
 
   # Note that the ModelState is saved in the working directory
   # Model is expected to run in the directory that will receive its output.

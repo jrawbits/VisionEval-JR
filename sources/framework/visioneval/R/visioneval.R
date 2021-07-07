@@ -133,7 +133,7 @@ getModelParameters <- function(Param_ls=list(), DotParam_ls=list(),DatastoreName
   paramNames <- names(Param_ls)
   Param_ls <- Param_ls[ paramNames[ ! paramNames %in% safeList ] ]
   if ( length(Param_ls) > 0 ) {
-    DotParam_ls[ names(Param_ls) ] <- Param_ls; # Elevate remaining parameters passed as an argument
+    DotParam_ls[ names(Param_ls) ] <- Param_ls # Elevate remaining parameters passed as an argument
   }
 
   # Merge DotParam and configuration file with "safe" parameters from runtime
@@ -259,7 +259,7 @@ loadModel <- function(
     # Initialize a fresh model state - may replace it later if loading existing datastore
     RunParam_ls <- initModelState(Save=FALSE,Param_ls=RunParam_ls)
   }
-  RunParam_ls <- ve.model$RunParam_ls; # May have been modified in initModelState or loadModelState
+  RunParam_ls <- ve.model$RunParam_ls # May have been modified in initModelState or loadModelState
 
   #===================================
   #PUT LOG STATUS INTO NEW MODEL STATE
@@ -332,7 +332,7 @@ loadModel <- function(
   RunDstore$Name <- getRunParameter("DatastoreName",Param_ls=RunParam_ls)
   RunDstore$Name <- normalizePath(RunDstore$Name, winslash = "/", mustWork = FALSE)
   RunDstore$Dir  <- dirname(RunDstore$Name)
-  RunParam_ls$RunDstore <- RunDstore; # for use if this model becomes a VEModel BaseModel
+  RunParam_ls$RunDstore <- RunDstore # for use if this model becomes a VEModel BaseModel
   setModelState(list(RunDstore=RunDstore),Save=FALSE) # for use in this model run
 
   # Allow explicit function parameter to be overridden from RunParam_ls if defined there
@@ -589,7 +589,7 @@ runModel <- function(
       writeLog("Called runModel but model is not 'Running'!",Level="error")
     )
   }
-  RunParam_ls <- ve.model$ModelState_ls$RunParam_ls; # Both ModelState_ls and RunParam_ls must exist...
+  RunParam_ls <- ve.model$ModelState_ls$RunParam_ls # Both ModelState_ls and RunParam_ls must exist...
   if ( is.null(RunParam_ls) ) {
     stop(
       writeLog("Model State or Run parameters not created: call loadModel or initializeModel",Level="error")
@@ -719,7 +719,7 @@ runModel <- function(
   #CAPTURE RunParam_ls
   #===================
   setModelState(list(RunParam_ls=RunParam_ls),Save=RunModel)
-  ve.model$RunParam_ls <- RunParam_ls; # Save the run parameters explicitly as well
+  ve.model$RunParam_ls <- RunParam_ls # Save the run parameters explicitly as well
 
   #==================
   #SIMULATE MODEL RUN
