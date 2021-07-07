@@ -416,8 +416,7 @@ loadModel <- function(
     }
 
     # Save Datastore Directory structure for checking at runtime
-    LoadDstore$Datastore <- LoadEnv$ModelState_ls$Datastore
-    LoadDstore$Years <- LoadEnv$ModelState_ls$Years
+    LoadDstore$ModelState_ls <- LoadEnv$ModelState_ls
   }
 
   # Save the LoadDstore structure for use when model runs
@@ -630,14 +629,7 @@ runModel <- function(
   #=============================================
   #ESTABLISH THE DATASTORE INTERACTION FUNCTIONS
   #=============================================
-  #
-  # TODO: this would be a good place to update the Datastore path
-  # TODO: if LoadDatastore is TRUE
-  #         Use current ModelState path ONLY
-  # TODO: if LoadDatastore is FALSE
-  #         Add current ModelState path to inherited Datastore Pathfrom "StartFrom" parameter
-  #
-  assignDatastoreFunctions(ve.model$ModelState_ls$DatastoreType)
+  assignDatastoreFunctions()
 
   #==================================
   # LOAD OTHER DATASTORE IF SPECIFIED
@@ -664,9 +656,7 @@ runModel <- function(
       unlink(RunDstore$Name,recursive=TRUE)
     }
     # Copy the loaded file/directory Datastore hierarchy
-    # TODO: use new "flattenDatastore" function to do this work
-    # TODO: flatten function returns the accumulated Datastore listing
-    
+
     # TODO: Like this
     # DatastoreListing <- flattenDatastore(LoadDstore$Dir,RunDstore$Name)
     # setModelState(list(Datastore=DatastoreListing),Save=RunModel)
@@ -675,8 +665,15 @@ runModel <- function(
     #  and DatastoreListing from the Datastore path in the other model state)
     loadDatastoreCopy <- tempfile(tmpdir=getwd(),pattern="Datastore_")
     dir.create(loadDatastoreCopy)
-    file.copy(LoadDstore$Name, loadDatastoreCopy, recursive = TRUE)
-    print(dir(loadDatastoreCopy))
+    
+    # file.copy(LoadDstore$Name, loadDatastoreCopy, recursive = TRUE)
+    copyDatastore(
+      ToDir=loadDatastoreCopy,
+      ModelState_ls=LoadDstore$ModelState_ls,
+      Flatten=TRUE,
+      DatastoreType=ve.model$ModelState_ls$DatastoreType, # Convert if necessary
+      SaveModelState=FALSE # We'll use the new model state we're constructing here
+    )
     file.rename(file.path(loadDatastoreCopy,basename(LoadDstore$Name)),RunDstore$Name)
     unlink(loadDatastoreCopy,recursive=TRUE)
     writeLog(paste("Copied previous datastore from:",LoadDstore$Name),Level="info")
@@ -684,7 +681,7 @@ runModel <- function(
 
     # Copy datastore inventory for loaded datastore into current ModelState
     # The Datastore listing needs to be ready before we update the Year groups
-    setModelState(list(Datastore=LoadDstore$Datastore),Save=RunModel)
+    setModelState(list(Datastore=LoadDstore$ModelState_ls$Datastore),Save=RunModel)
 
     #=================================================
     # HANDLE USE CASE WHERE SOME YEARS ALREADY DEFINED
@@ -700,7 +697,7 @@ runModel <- function(
     # Handles model stages where the new stage adds one or more Years
     #  instead of (or in addition to) adding module calls.
     RunYears_ <- ve.model$ModelState_ls$Years
-    LoadYears_ <- LoadDstore$Years
+    LoadYears_ <- LoadDstore$ModelState_ls$Years
     if (!all(RunYears_ == LoadYears_)) {
       NewYears_ <- RunYears_[!(RunYears_ %in% LoadYears_)]
       # NOTE: initDatastore and initDatastoreGeography are performed separately
