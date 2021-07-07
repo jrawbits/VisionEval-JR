@@ -1,7 +1,11 @@
 Immediate Next:
 
-TODO: Add a framework function to copy a Datastore (optionally flattening, and optionally
-  changing to a different DatastoreType)
+TODO: Add and test a framework function to copy a Datastore (optionally flattening, and optionally
+    changing to a different DatastoreType).
+  Should use copyDatastore to implement LoadDatastore.
+  Also make sure we can copy a Datastore "standalone".
+
+New API for reading/writing tables
 
 Create a copyDatastore function that
   Takes a flag to flatten (otherwise just copy the most recent level)

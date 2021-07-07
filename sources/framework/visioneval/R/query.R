@@ -283,7 +283,8 @@ documentDatastoreTables <- function(SaveArchiveName, QueryPrep_ls) {
 #' @export
 readDatastoreTables <- function(Tables_ls, Group, QueryPrep_ls) {
   #Select datastore read function
-  readFromTable <- assignDatastoreFunctions(QueryPrep_ls$DstoreType,FunctionName="readFromTable")
+  # TODO: new API let's us assign functions to an arbitrary environment
+  readFromTable <- assignDatastoreFunctions(QueryPrep_ls$DstoreType,FunctionName="readFromTable",envir=new.env())
   #Extract the datastore listings
   MS_ls <- QueryPrep_ls$Listing;
   #Datastore locations

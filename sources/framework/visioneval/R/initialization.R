@@ -350,14 +350,15 @@ loadModelState <- function(FileName=getModelStateFileName(),envir=NULL) {
 #' Note that it just becomes a call to readModelState if any
 #' parameters are passed (see \code{readModelState}).
 #'
+#' @param envir An R environment with assigned Datastore functions and a ModelState_ls
 #' @param ... If there are any parameters, this quietly becomes a call to
 #' readModelState(...) which can subset, read a different file, load
 #' into an environment, etc.
 #' @return The model state list
 #' @export
-getModelState <- function(...) {
-  if ( ! missing(...) ) return(readModelState(...))
-  envir <- modelEnvironment()
+getModelState <- function(envir=NULL,...) {
+  if ( ! missing(...) ) return(readModelState(envir=envir,...))
+  if ( is.null(envir) ) envir <- modelEnvironment()
   if ( ! "ModelState_ls" %in% ls(envir) ) stop("getModelState: ModelState is not initialized.")
   return(envir$ModelState_ls)
 }
@@ -378,15 +379,17 @@ getModelState <- function(...) {
 #' @param ChangeState_ls A named list of components to change in ModelState_ls.
 #'   If empty, just Save (and if Save==FALSE, do nothing)
 #' @param FileName A string identifying the name of the file in which to save
-#' the ModelState_ls list. The default name is 'ModelState.Rda'.
+#'   the ModelState_ls list. The default name is 'ModelState.Rda'.
 #' @param Save A boolean (default TRUE) saying whether to save the
-#' ModelState to its file (otherwise only ModelState_ls in ve.model environment is updated)
+#' ModelState to its file (otherwise only ModelState_ls in ve.model
+#'   environment is updated)
+#' @param envir An R environment with assigned Datastore functions and a ModelState_ls
+#'   (see assignDatastoreFunctions)
 #' @return always TRUE
 #' @export
-setModelState <- function(ChangeState_ls=list(), FileName = NULL, Save=TRUE) {
+setModelState <- function(ChangeState_ls=list(), FileName = NULL, Save=TRUE, envir=modelEnvironment()) {
   # Get current ModelState
-  ve.model=modelEnvironment()
-  currentModelState_ls <- readModelState(FileName=FileName)
+  currentModelState_ls <- readModelState(FileName=FileName,envir=envir)
 
   # Make requested changes, if any
   # (pass an empty list just to Save existing ModelState_Ls)
@@ -394,12 +397,12 @@ setModelState <- function(ChangeState_ls=list(), FileName = NULL, Save=TRUE) {
     # Replace names in currentModelState_ls with corresponding names in ChangeState_ls
     currentModelState_ls[ names(ChangeState_ls) ] <- ChangeState_ls
     currentModelState_ls$LastChanged <- Sys.time()
-    ve.model$ModelState_ls <- currentModelState_ls
+    envir$ModelState_ls <- currentModelState_ls
   }
 
   if ( Save ) {
-    if ( is.null(FileName) ) FileName <- getModelStateFileName()
-    result <- try(save("ModelState_ls",envir=ve.model,file=FileName))
+    if ( is.null(FileName) ) FileName <- file.path(envir$ModelState_ls$ModelStatePath,getModelStateFileName())
+    result <- try(save("ModelState_ls",envir=envir,file=FileName))
     if ( class(result) == 'try-error' ) {
       Msg <- paste('Could not write ModelState:', FileName)
       writeLog(Msg,Level="error")
@@ -1679,8 +1682,7 @@ loadModelParameters <- function(FlagChanges=FALSE) {
     for (i in 1:nrow(Param_df)) {
       name <- Param_df$NAME[i]
       item <- try (
-        # readFromTable stops if name not found
-        # we'll turn that into a warning
+        # readFromTable stops if name not found; we'll turn that into a warning
         readFromTable(name,Table="Model",Group="Global"),
         silent = TRUE
       )

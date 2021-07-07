@@ -389,30 +389,40 @@ findModel <- function( modelDir, Param_ls ) {
   #     RunParam_ls from that stage is used
   #   modelStage$InputPath - elements prefixed to inherited InputPath for this stage.
   #     Default is modelState$Path IFF InputDir exists there.
-  #   modelStage$Description - becomes the Scenario element in Model State (or load from config)
   #   modelStage$RunParam_ls - collected elements for stage (must be complete)
   #   modelStage$ModelState_ls - after the stage has been run (create, or load from ModelDir/ResultsDir/StageDir)
   #     Use ModelState_ls to contruct ModelState_ls$ModelStateList (pre-loaded ModelStates for DatastorePath)l
 
   # Loop through modelStages list examining ModelDir/StageDir
   for ( stage in modelStages ) {
-    # Look for various stage elements in stage$Path
-    # If stage$Path/visioneval.cnf exists, overlay visioneval.cnf (replacing inherited)
-    # If stage$Path/ParamDir exists, underlay run_parameters.json (addiing anything there not present here)
+    # Build modelState$RunParam_ls
+
+    # stageParam_ls obtained from:
+    #   INIT from stage$Path/visioneval.cnf, if it exists, else list()
+    #   UNDERLAY ModelDir/StageDir/ParamDir/ParamFile, if it exists
+
     # If startFrom is defined:
+    #   Access its modelStages[[startFrom]]$runParam_ls (use startFrom Stage Name to find)
     #   Pick up parameters needed from base stage
-    #     ParamPath (If it has been defined, don't change it)
-    #     DatastorePath (to earlier ModelState and Datastore elements)
-    #     InputPath (we'll add the local InputPath below
-    #     ModelScript File (we'll replace if redefined here)
-    # If ParamPath undefined (from BaseModel, or earlier stage), set ParamPath for this stage
-    # Use ScriptsDir and ModelScript and ModelScriptPath to locate model script
-    # Add ModelDir/StageDir to InputPath or append stageParam_ls$InputPath to InputPath (and cull)
-    #   Only include if 
-    # Set up the RunDstore function
-    # We'll pass all that to loadModel (bypassing getModelParameters in initializeModel)
-    #   Will load an existing model state if not resetting
-    #   Otherwise will build the model state from these parameters
+    #     ParamPath (overlay from startFrom)
+    #     DatastorePath (overlay from startFrom)
+    #     InputPath (overlay from startFrom)
+
+    # If ParamPath undefined (from BaseModel, or earlier stage)
+    #   OVERLAY ParamPath to ModelDir/StageDir/ParamDir, if it exists
+
+    # Look up ModelDir/StageDir/ScriptsDir/ModelScript
+    #   If not found, do nothing, otherwise OVERLAY
+    
+    # If defined, append stageParam_ls$InputPath to InputPath
+    # If not defined, append ModelDir/StageDir to InputPath if 
+    #   Cull the InputPath for existing directories
+
+    # If loadDatastore is defined for this state
+    #   If LoadDatastoreName is NOT set, set to top element of startFrom$DatastorePath
+    #   Then empty DatastorePath if it has anything in it
+    # Always prepend ModelDir/ResultsDir/StageDir to DatastorePath
+
     # Set up complete set of parameters required to run each model stage
     #   Model           # Overall model name
     #   Scenario        # Defaults to StagePath
@@ -424,24 +434,10 @@ findModel <- function( modelDir, Param_ls ) {
     #   ModelScriptPath
     #   DatastorePath
     #   DatastoreName
-    #   StartFrom       # Defaults to empty list - model state from prior stage
-    #   LoadDatastore
-    #   LoadDatastoreName
+    #   StartFrom       # Defaults to empty list - key elements of Model State from prior stage
+    #   LoadDatastore         # May get this from the runtime environment
+    #   LoadDatastoreName     # Full path to Datastore to load
     # Save in modelStage$RunParam_ls
-
-    # stageParam_ls builds on modelParam_ls
-    # Read config for the stage if present (and OVERLAY/replace modelParam_ls elements)
-    #   OTHERWISE (exclusive) if ModelDir/StageDir/ParamDir/ParamFile exists,
-    #   read from there and underlay
-
-    # Get ModelScript name (defined here or default from modelParam_ls)
-    # If ScriptsDir defined here
-    #   Look for ModelScript in ModelDir/StageDir/ScriptsDir
-    # If ScriptsDir not defined here or ModelScriptPath not found yet
-    #   Look for ModelScript in ModelDir/ScriptsDir
-    # If none of that finds a file, and if ModelScriptPath is defined and file exists
-    #   Use existing ModelScriptPath (probably points back at the BaseModel)
-    # Invalid Stage if no ModelScriptPath is found
 
     # If InputPath is defined, APPEND its normalized elements to existing InputPath
     #   and verify that all path components exist (error if not)
