@@ -164,7 +164,7 @@ readFromTable <- function(Name, Table, Group, Index = NULL, ReadAttr = TRUE, Dst
     # DatastorePath holds absolute path to Datastore
     if ( ! "ModelStateList" %in% names(G) ) { # Cache the model states for faster access
       writeLog(c("Datastore Paths:",paths),Level="info")
-      paths <- G$DatastorePath; # use if model state list not loaded - re-opens model state each time
+      paths <- G$DatastorePath # use if model state list not loaded - re-opens model state each time
       modelStates <- lapply(paths,
         function(dstore) {
           path <- file.path(dstore,getModelStateFileName())
@@ -433,7 +433,6 @@ listDatastoreRD <- function(DataListing_ls = NULL, ModelStateFile = NULL, ModelS
 #' @import stats utils
 initDatastoreRD <- function(AppendGroups = NULL, ModelState_ls=getModelState()) {
   G <- ModelState_ls
-  browser()
   owd <- setwd(ModelState_ls$ModelStatePath)
   on.exit(setwd(owd))
 
@@ -541,7 +540,6 @@ initDatastoreRD <- function(AppendGroups = NULL, ModelState_ls=getModelState()) 
 #' @export
 initTableRD <- function(Table, Group, Length, ModelState_ls=getModelState()) {
   G <- ModelState_ls
-  browser()
   owd <- setwd(ModelState_ls$ModelStatePath)
   on.exit(setwd(owd))
 

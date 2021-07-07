@@ -287,7 +287,7 @@ readDatastoreTables <- function(Tables_ls, Group, QueryPrep_ls) {
   #Extract the datastore listings
   MS_ls <- QueryPrep_ls$Listing;
   #Datastore locations
-  DstoreLocs_ <- QueryPrep_ls$Dir; # Can be a vector...
+  DstoreLocs_ <- QueryPrep_ls$Dir # Can be a vector...
   #Get data from table
   Tb <- names(Tables_ls)
   Out_ls <- list()

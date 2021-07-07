@@ -630,7 +630,7 @@ ve.select.parse <- function(select) {
       if ( is.na(name[1]) || ! nzchar(name[1]) ) group <- NULL else group=name[1]
       build <- union( build, self$find(Name=field,Group=group,Table=table,as.object=FALSE) )
     }
-    select <- build; # should be a vector of integers
+    select <- build # should be a vector of integers
   }
   
   # if select is a numeric vector, validate its range and return it
@@ -670,7 +670,7 @@ ve.select.find <- function(pattern=NULL,Group=NULL,Table=NULL,Name=NULL,as.objec
     if ( !is.null(pattern ) ) {
       fld <- grepl(pattern,Name,ignore.case=TRUE)     # RegEx search for name
     } else if ( !is.null(searchName) ) {
-      fld <- Name %in% searchName;                    # Exact name match
+      fld <- Name %in% searchName                     # Exact name match
     } else {
       fld <- rep(TRUE,nrow(self$results$modelIndex))  # Start with all selected
     }

@@ -40,7 +40,7 @@ setup <- function(ve.runtime=NULL) {
   } else {
     ve.env <- as.environment("ve.env")
   }
-  ve.env$ve.runtime <- ve.runtime; # override default from package load (working directory)
+  ve.env$ve.runtime <- ve.runtime # override default from package load (working directory)
   setwd(ve.env$ve.runtime)
 
   if ( ! dir.exists("models") ) dir.create("models")
