@@ -197,7 +197,7 @@ useBaseModel <- function(modelParam_ls) {
       stop( visioneval::writeLog("BaseModel is not valid!",Level="error") )
     }
     if ( ! nzchar(baseStageName) ) {
-      baseStageName <- tail(names(baseModel$modelStages),1)
+      baseStageName <- utils::tail(names(baseModel$modelStages),1)
     }
     baseParam_ls <- baseModel$modelStages[[baseStageName]]$RunParam_ls
     if ( is.na(baseParam_ls) || is.null(baseParam_ls) ) {

@@ -357,7 +357,7 @@ listDatastoreRD <- function(DataListing_ls = NULL, ModelStateFile = NULL, envir=
   }
 
   #Update model state and datastore listing
-  setModelState(list(Datastore = NewDatastore_df))
+  setModelState(list(Datastore = NewDatastore_df),envir=envir)
   DatastoreListing_ls <- as.list(NewDatastore_df)
   save(DatastoreListing_ls, file = file.path(listingPath))
   invisible(DatastoreListing_ls)
@@ -413,7 +413,7 @@ initDatastoreRD <- function(AppendGroups = NULL, envir=modelEnvironment()) {
         attributes = NA,
         stringsAsFactors = FALSE)
     Datastore_df$attributes <- as.list(Datastore_df$attributes)
-    setModelState(list(Datastore = Datastore_df))
+    setModelState(list(Datastore = Datastore_df),envir=envir)
     #Create global group which stores data that is constant for all geography and
     #all years
     dir.create(file.path(dsPath, "Global"))
@@ -819,7 +819,7 @@ listDatastoreH5 <- function(envir=modelEnvironment()) {
   H5Fclose(H5File)
   AttrToWrite_ <- c("group", "name", "groupname", "attributes")
   dsListing <- DS_df[, AttrToWrite_]
-  setModelState(list(Datastore = dsListing))
+  setModelState(list(Datastore = dsListing),envir=envir)
   invisible(dsListing)
 }
 
@@ -1675,8 +1675,7 @@ inputsToDatastore <- function(Inputs_ls, ModuleSpec_ls, ModuleName) {
 #' 
 #' @param ToDir a file path in which to create the Datastore copy (named
 #'   ModelState_ls$DatastoreName)
-#' @param ModelState_ls Describing the location and contents of the "From" Datastore (default is
-#'   \code{getModelState()})
+#' @param envir Environment containing ModelState_ls
 #' @param Flatten a logical indicating whether to merge all Datasets from the DatastorePath
 #'   (default is TRUE)
 #' @param DatastoreType is one of "RD" or "H5"
@@ -1685,17 +1684,20 @@ inputsToDatastore <- function(Inputs_ls, ModuleSpec_ls, ModuleName) {
 #'   Flatten is TRUE or DatastoreType is not the same as ModelState_ls$DatastoreType
 #' @return A logical indicating successful completion.
 #' @export
-copyDatastore <- function( ToDir, ModelState_ls=getModelState(), Flatten=TRUE, DatastoreType=NULL, SaveModelState=NULL) {
+copyDatastore <- function( ToDir, envir=modelEnvironment(), Flatten=TRUE, DatastoreType=NULL, SaveModelState=NULL) {
 
   if ( ! dir.exists(ToDir) ) {
     Msg <- c("Target directory does not exist for copyDatastore:",ToDir)
     Msg <- writeLog(Msg,Level="error")
     stop(Msg)
   }
-  if ( ! is.list(ModelState_ls) ) ModelState_ls <- getModelState()
+
+  ModelState_ls <- getModelState(envir)
+  
   if ( is.null(DatastoreType) ) DatastoreType <- ModelState_ls$DatastoreType
   convertDatastoreType <- DatastoreType != ModelState_ls$DatastoreType
   if ( is.null(SaveModelState) ) SaveModelState <- Flatten || convertDatastoreType
+
   AllowedDstoreTypes_ <- getAllowedDstoreTypes()
   if ( ! DatastoreType %in% AllowedDstoreTypes_ ) {
     Msg <- paste0("Unknown 'DatastoreType': ", DatastoreType)
@@ -1724,16 +1726,10 @@ copyDatastore <- function( ToDir, ModelState_ls=getModelState(), Flatten=TRUE, D
     assignDatastoreFunctions(envir=readFuncs)
     assignDatastoreFunctions(DatastoreType,envir=writeFuncs)
 
-    # TODO: the datastore access functions should have ModelState_ls passed to them, rather than
-    #   using getModelState().
-    # TODO: iterate over the source Datastore groups, tables, names and copy each element
-    #   loading it, then saving it using the alternate read/write functions
-
     initDatastore(envir=writeFuncs)
 
     for ( path in paths ) {
-      # 'path' will be a Datastore
-      # Load the Datastore listing and iterate through its elements
+      # Bind together the list of all available datasets (DatastoreListing for each)
       
 #      for ( dsElement in datastoreListing ) {
         # If it's a Group, check existence and create
@@ -1741,6 +1737,7 @@ copyDatastore <- function( ToDir, ModelState_ls=getModelState(), Flatten=TRUE, D
         # If it's a Name/Dataset, read it into an environment, then write it back out again
 #      }
     }
+    stop("Working on copyDatastore")
   }
 
   # TODO: Need to pass the datastore listing back for

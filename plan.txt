@@ -1,9 +1,13 @@
 Immediate Next:
 
-TODO: Add and test a framework function to copy a Datastore (optionally flattening, and optionally
-    changing to a different DatastoreType).
-  Should use copyDatastore to implement LoadDatastore.
-  Also make sure we can copy a Datastore "standalone".
+Complete the "copyDatastore" function (flattening). We need to iterate through a
+list of ModelStates, opening their Datastore listing, visiting all their elements
+and creating them if they do not exist.
+
+Rethink how to keep the DatastorePath - probably a list of ModelStates (which have
+enough information from their ModelStatePath and their DatastoreName, not to mention
+their existing Datastore component, to find all the elements). Can we just use the
+listDatastore function (with parameters) to build that?
 
 New API for reading/writing tables
 
