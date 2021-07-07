@@ -640,6 +640,7 @@ runModel <- function(
   writeLog("Preparing Data Store...",Level="info")
 
   LoadDatastore  <- getRunParameter("LoadDatastore",Default=FALSE,Param_ls=RunParam_ls)
+  browser()
   if ( ! LoadDatastore ) {
     # not loading, so make a new Datastore
     initDatastore() # Deletes any existing Datastore
@@ -651,27 +652,22 @@ runModel <- function(
     LoadDstore <- ve.model$ModelState_ls$LoadDstore
     RunDstore <- ve.model$ModelState_ls$RunDstore;
 
+    loadEnv <- new.env()
+    loadEnv$ModelState_ls <- LoadDstore$ModelState_ls
+
     # Remove existing Datastore if we're not re-using it
     if ( file.exists(RunDstore$Name) ) {
       unlink(RunDstore$Name,recursive=TRUE)
     }
     # Copy the loaded file/directory Datastore hierarchy
 
-    # TODO: Like this
-    # DatastoreListing <- flattenDatastore(LoadDstore$Dir,RunDstore$Name)
-    # setModelState(list(Datastore=DatastoreListing),Save=RunModel)
-
-    # The following steps will be done in the flattening (except we accumulate results
-    #  and DatastoreListing from the Datastore path in the other model state)
     loadDatastoreCopy <- tempfile(tmpdir=getwd(),pattern="Datastore_")
     dir.create(loadDatastoreCopy)
     
-    # file.copy(LoadDstore$Name, loadDatastoreCopy, recursive = TRUE)
     copyDatastore(
       ToDir=loadDatastoreCopy,
-      ModelState_ls=LoadDstore$ModelState_ls,
+      envir=loadEnv, # Source Datastore, by way of its ModelState
       Flatten=TRUE,
-      DatastoreType=ve.model$ModelState_ls$DatastoreType, # Convert if necessary
       SaveModelState=FALSE # We'll use the new model state we're constructing here
     )
     file.rename(file.path(loadDatastoreCopy,basename(LoadDstore$Name)),RunDstore$Name)
@@ -681,7 +677,7 @@ runModel <- function(
 
     # Copy datastore inventory for loaded datastore into current ModelState
     # The Datastore listing needs to be ready before we update the Year groups
-    setModelState(list(Datastore=LoadDstore$ModelState_ls$Datastore),Save=RunModel)
+    listDatastore()
 
     #=================================================
     # HANDLE USE CASE WHERE SOME YEARS ALREADY DEFINED
