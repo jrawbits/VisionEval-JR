@@ -1,37 +1,14 @@
 Immediate Next:
 
-Complete the "copyDatastore" function (flattening). We need to iterate through a
-list of ModelStates, opening their Datastore listing, visiting all their elements
-and creating them if they do not exist.
-
-Rethink how to keep the DatastorePath - probably a list of ModelStates (which have
-enough information from their ModelStatePath and their DatastoreName, not to mention
-their existing Datastore component, to find all the elements). Can we just use the
-listDatastore function (with parameters) to build that?
+The DatastorePath works like VEResults - we open the associated ModelState and use that to
+index into the Datastore itself.
 
 New API for reading/writing tables
 
-Create a copyDatastore function that
-  Takes a flag to flatten (otherwise just copy the most recent level)
-  Takes a flag for the new Datastore type
-  Check/create the To directory
-    Must be empty/will be emptied
-  Opens the model state for the From directory and saves a copy in the To directory
-  Set the ToType for the Datastore (defaults to the From type)
-  Create the Datastore in the appropriate Totype
-    initDatastore
-  Iterate through each element of the reversed DatastorePath
-  For each path (if flattening; otherwise just the first path element)
-    open the DatastoreListing.Rda (must be there - could use ModelState?)
-    create Groups and Tables if they don't exist
-    locate each Dataset - read it out of From, write it to To
-  If flattening, set DatastorePath to To directory
-    Otherwise keep original Datastore Path
-  Source uses ve.model functions
-  Target uses functions appropriate to the target type (put them in a new environment)
+Use copyDatastore to implement LoadDatastore and also archiveDatastore (which has flags to flatten,
+change type) archive also copies logs and outputs (and doesn't flatten interior stages).
 
-Use copyDatastore to implement archiveDatastore (which has flags to flatten, change type)
-  archive also copies logs and outputs
+Check that it all works with classica LoadDatastore models.
 
 Get VEModel running
   Initially, don't look for stages - just create the ModelDir as first stage

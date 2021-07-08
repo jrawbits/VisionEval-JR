@@ -485,17 +485,15 @@ readModelState <- function(Names_ = "All", FileName=NULL, envir=NULL) {
 #'
 #' @return A character vector of the model run years.
 #' @export
-getYears <- function() {
-  BaseYear <- unlist(readModelState("BaseYear"))
-  Years <- unlist(readModelState("Years"))
+getYears <- function(envir=modelEnvironment()) {
+  BaseYear <- readModelState(envir=envir)$BaseYear
+  Years <- readModelState(envir=envir)$Years
   if (BaseYear %in% Years) {
     c(BaseYear, Years[!Years %in% BaseYear])
   } else {
     Years
   }
 }
-
-# TODO: somewhere north of here, something is not closed properly...
 
 #RETRIEVE DEFAULT UNITS
 #======================
@@ -512,8 +510,8 @@ getYears <- function() {
 #' @return A string vector identifying the default units for the complex data
 #' type(s) or NA if any of the type(s) are not defined.
 #' @export
-getUnits <- function(Type_) {
-  Units_df <- getModelState()$Units
+getUnits <- function(Type_,envir=modelEnvironment()) {
+  Units_df <- getModelState(envir=envir)$Units
   Units_ <- Units_df$Units
   names(Units_) <- Units_df$Type
   Result_ <- Units_[Type_]

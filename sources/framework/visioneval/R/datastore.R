@@ -423,7 +423,7 @@ initDatastoreRD <- function(AppendGroups = NULL, envir=modelEnvironment()) {
       envir=envir
     )
     #Create groups for years
-    Years <- getYears()
+    Years <- getYears(envir=envir)
     for (year in Years) {
       YearGroup <- year
       dir.create(file.path(dsPath, YearGroup))
@@ -455,7 +455,7 @@ initDatastoreRD <- function(AppendGroups = NULL, envir=modelEnvironment()) {
           )
         }
       } else {
-        #Error if groups listed in 'AppendGroups' are present in datastore
+        #Error if any ups listed in 'AppendGroups' are present in datastore
         DupGrp <- AppendGroups[AppendGroups %in% DstoreGroups_]
         stop(paste(
           "The following groups listed in the 'AppendGroups' argument are",
@@ -867,7 +867,7 @@ initDatastoreH5 <- function(AppendGroups = NULL, envir=modelEnvironment()) {
     #all years
     h5createGroup(H5File, "Global")
     #Create groups for years
-    for (year in as.character(G$Years)) {
+    for ( year in as.character(getYears(envir=envir)) ) {
       YearGroup <- year
       h5createGroup(H5File, YearGroup)
     }
@@ -935,7 +935,7 @@ initDatastoreH5 <- function(AppendGroups = NULL, envir=modelEnvironment()) {
 #'   missing Group as it creates the Table.
 #' @export
 #' @import rhdf5
-initTableH5 <- function(Table, Group, Length,envir=envir) {
+initTableH5 <- function(Table, Group, Length, envir=envir) {
   G <- getModelState(envir=envir)
   dsPath <- file.path(G$ModelStatePath,G$DatastoreName)
   NewTable <- paste(Group, Table, sep = "/")
@@ -1660,6 +1660,11 @@ inputsToDatastore <- function(Inputs_ls, ModuleSpec_ls, ModuleName) {
 #' \code{copyDatastore} a visioneval framework datastore function that copies the
 #' Datastore associated with a ModelState_ls to another location.
 #'
+#' Use cases for this functionn are: (1) standalone copying of a Datastore (copies associated
+#'   ModelState and updates Datastore listing); (2) archiveDatastore (copies ModelState for item
+#'   being archived); (3) loadDatastore from BaseModel (uses ModelState whose Datastore is being
+#''  updated).
+#'
 #' This function supports "flattening" the Datastore and also changing the Datastore type (from RD
 #' to H5 or vice versa). Linked and Loaded Datastores in BaseModel and prior model stages must be
 #' the same DatastoreType, so type conversion helps link a base model run using one DatastoreType to
@@ -1679,12 +1684,9 @@ inputsToDatastore <- function(Inputs_ls, ModuleSpec_ls, ModuleName) {
 #' @param Flatten a logical indicating whether to merge all Datasets from the DatastorePath
 #'   (default is TRUE)
 #' @param DatastoreType is one of "RD" or "H5"
-#' @param SaveModelState will create an updated ModelState_ls reflecting the revised
-#'   DatastoreType and DatastorePath; if not supplied, will save an updated ModelState if
-#'   Flatten is TRUE or DatastoreType is not the same as ModelState_ls$DatastoreType
 #' @return A logical indicating successful completion.
 #' @export
-copyDatastore <- function( ToDir, envir=modelEnvironment(), Flatten=TRUE, DatastoreType=NULL, SaveModelState=NULL) {
+copyDatastore <- function( ToDir, Flatten=TRUE, DatastoreType=NULL, envir=modelEnvironment() ) {
 
   if ( ! dir.exists(ToDir) ) {
     Msg <- c("Target directory does not exist for copyDatastore:",ToDir)
@@ -1696,7 +1698,6 @@ copyDatastore <- function( ToDir, envir=modelEnvironment(), Flatten=TRUE, Datast
   
   if ( is.null(DatastoreType) ) DatastoreType <- ModelState_ls$DatastoreType
   convertDatastoreType <- DatastoreType != ModelState_ls$DatastoreType
-  if ( is.null(SaveModelState) ) SaveModelState <- Flatten || convertDatastoreType
 
   AllowedDstoreTypes_ <- getAllowedDstoreTypes()
   if ( ! DatastoreType %in% AllowedDstoreTypes_ ) {
@@ -1712,34 +1713,79 @@ copyDatastore <- function( ToDir, envir=modelEnvironment(), Flatten=TRUE, Datast
       success <- file.copy(file.path(ModelState_ls$ModelStatePath,ModelState_ls$DatastoreName),ToDir,recursive=TRUE,copy.date=TRUE)
     }
     if ( ! success ) {
-      paths <- ModelState_ls$DatastorePath[1] # Only copy proximate Datastore
+      paths <- ModelState_ls$DatastorePath[1] # Only copy proximate Datastore (why this would work but not file.copy is mysteriaus...
     }
   } else {
     paths <- rev(ModelState_ls$DatastorePath) # Copy all the elements from back up the path
   }
 
   if ( length(paths) > 0 ) { # if we did file.copy above, length(paths) will be zero - already done
-    readFuncs <- new.env()
-    readFuncs$ModelState_ls <- ModelState_ls
-    writeFuncs <- new.env()
-    writeFuncs$ModelState_ls <- ModelState_ls  # TODO: figure out what the model state is for writing...
-    assignDatastoreFunctions(envir=readFuncs)
-    assignDatastoreFunctions(DatastoreType,envir=writeFuncs)
 
-    initDatastore(envir=writeFuncs)
+    # Construct target ModelState_ls:
+    #   Same as ModelState being copied, but ModelStatePath is updated and Datastore listing removed
+    toModelState_ls <- ModelState_ls[ ! names(ModelState_ls) %in% "Datastore" ]
+    toModelState_ls$ModelStatePath <- ToDir
+    toModelState_ls$DatastoreType <- DatastoreType
+
+    # Set up model state environment for writing the target Datastore
+    writeDS <- new.env()
+    writeDS$ModelState_ls <- toModelState_ls
+    assignDatastoreFunctions(envir=writeDS)
+    initDatastore(envir=writeDS) # Create a bare Datastore that we will write into
 
     for ( path in paths ) {
-      # Bind together the list of all available datasets (DatastoreListing for each)
+      # Open ModelState$Datastore from the source path
+      readDS <- new.env()
+      ms <- readModelState( file.path(path,getModelStateFileName()), envir=readDS )
+      assignDatastoreFunctions(envir=readDS)
+      ds <- ms$Datastore
       
-#      for ( dsElement in datastoreListing ) {
-        # If it's a Group, check existence and create
-        # If it's a Table, check existence within Group and create
-        # If it's a Name/Dataset, read it into an environment, then write it back out again
-#      }
-    }
-    stop("Working on copyDatastore")
-  }
+      gtn <- strsplit(ds$groupname,"/") # May need to revise if groupname starts with /
+      groups <- unique(sapply(gtn,function(x)x[1]))
 
-  # TODO: Need to pass the datastore listing back for
-  # return(copyiedDatastoreListing)
+      # Check that all groups exist in target and create if missing
+      # Identify existing groups in the datastore
+      SourceGroups_ <- local({
+        # "group" is of the form "/Group/Table"
+        DstoreGroups_ls <- strsplit(ds$group, "/")
+        ToKeep_ <- unlist(lapply(DstoreGroups_ls, function(x) length(x) == 2))
+        DstoreGroups_ls <- DstoreGroups_ls[ToKeep_]
+        SourceGroups_ <- unique(unlist(lapply(DstoreGroups_ls, function(x) x[2])))
+      })
+      TargetGroups_ <- local({
+        DstoreGroups_ls <- strsplit(writeDS$ModelState_ls$Datastore$group, "/")
+        ToKeep_ <- unlist(lapply(DstoreGroups_ls, function(x) length(x) == 2))
+        DstoreGroups_ls <- DstoreGroups_ls[ToKeep_]
+        TargetGroups_ <- unique(unlist(lapply(DstoreGroups_ls, function(x) x[2])))
+      })
+      # Add any groups from Source that are not in Target
+      appendGroups_ <- setdiff(SourceGroups_,TargetGroups_)
+      if ( length(appendGroups_) > 0 ) initDatastore(appendGroups_,envir=writeDS)
+        
+      # Copy the datasets
+      indices <- which(sapply(gtn,length,simplify=TRUE)==3) # Get Dataset entries
+      for ( i in indices ) {
+        item <- gtn[[i]]
+        names(item) <- c("Group","Table","Name")
+        Attr_ <- ds$attributes[[i]]
+
+        # Read from source Datastore
+        dataset <- readFromTable(item["Name"],item["Table"],item["Group"],envir=readDS)
+
+        # Check that table exists in target and create if necessary
+        TableName <- file.path(item["Table", item["Group"])
+        if ( ! TableName %in% writeDS$ModelState_ls$Datastore$groupname ) { # in target?
+          TableEntry <- which(ds$groupname == TableName)                    # check source
+          Length <- ds$attributes[TableEntry[1]]$LENGTH                     # Get Length parameter
+          browser(expr=Length==Attr_$LENGTH) # TODO: is the LENGTH attribute already in Attr_ for the Dataset?
+          initTable(item["Table"], item["Group"], Length, envir=writeDS)    # Initialize the Table
+        }
+
+        # Write to target Datastore
+        writeToTable(dataset,attributes(dataset),item["Group"],envir=writeDS)
+      }
+    }
+    success <- TRUE
+  }
+  return(success)
 }
