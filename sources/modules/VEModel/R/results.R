@@ -50,12 +50,11 @@ attributeGet <- function(variable, attr_name){
 
 ve.results.index <- function() {
   # Load model state from self$resultsPath
-  ve.model <- new.env()
   FileName=normalizePath( file.path(
     self$resultsPath, # Should already include ResultsDir
-    visioneval::getModelStateFileName(Param_ls=private$RunParam_ls)
+    visioneval::getModelStateFileName()
   ), winslash="/", mustWork=FALSE)
-  ms <- self$ModelState <- try(visioneval::readModelState(FileName=FileName))
+  ms <- self$ModelState <- try(visioneval::readModelState(FileName=FileName,envir=new.env()))
   if ( ! is.list(ms) ) {
     ms <- self$ModelState <- NULL
     visioneval::writeLog(Level="error",paste("Cannot load ModelState from:",FileName))
@@ -64,6 +63,8 @@ ve.results.index <- function() {
   if ( is.null(private$RunParam_ls) && is.list( ms ) ) {
     private$RunParam_ls <-ms$RunParam_ls
   }
+
+  # TODO: use explicit file paths rather than changing working directory?
   owd <- setwd(self$resultsPath)
   on.exit(setwd(owd))
 
