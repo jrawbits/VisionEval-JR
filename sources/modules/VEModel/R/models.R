@@ -386,7 +386,7 @@ findModel <- function( modelDir, Param_ls ) {
   #     ResultsDir/OutputDir for outputs)
   #   modelStage$Path - Absolute path to stage (== ModelDir/StageDir)
   #   modelStage$StartFrom - modelStage$Name of some earlier modelStage within this Model
-  #     RunParam_ls from that stage is used
+  #     RunParam_ls from that stage is built upon
   #   modelStage$InputPath - elements prefixed to inherited InputPath for this stage.
   #     Default is modelState$Path IFF InputDir exists there.
   #   modelStage$RunParam_ls - collected elements for stage (must be complete)
@@ -395,6 +395,7 @@ findModel <- function( modelDir, Param_ls ) {
 
   # Loop through modelStages list examining ModelDir/StageDir
   for ( stage in modelStages ) {
+    cat("Model Stage:",stage$Name,"\n")
     # Build modelState$RunParam_ls
 
     # stageParam_ls obtained from:
@@ -421,7 +422,7 @@ findModel <- function( modelDir, Param_ls ) {
     # If loadDatastore is defined for this state
     #   If LoadDatastoreName is NOT set, set to top element of startFrom$DatastorePath
     #   Then empty DatastorePath if it has anything in it
-    # Always prepend ModelDir/ResultsDir/StageDir to DatastorePath
+    # Always prepend ModelDir/ResultsDir/StageDir to top of DatastorePath
 
     # Set up complete set of parameters required to run each model stage
     #   Model           # Overall model name
@@ -436,7 +437,7 @@ findModel <- function( modelDir, Param_ls ) {
     #   DatastoreName
     #   StartFrom       # Defaults to empty list - key elements of Model State from prior stage
     #   LoadDatastore         # May get this from the runtime environment
-    #   LoadDatastoreName     # Full path to Datastore to load
+    #   LoadDatastoreName     # Full path to Datastore to load (may come from BaseModel stage)
     # Save in modelStage$RunParam_ls
 
     # If InputPath is defined, APPEND its normalized elements to existing InputPath
@@ -871,7 +872,7 @@ ve.model.loadModelState <- function(log="error") {
 # Initialize a VEModel from modelPath
 # modelPath may be a full path, and will be expanded into known model directories
 #  if it is a relative path.
-ve.model.init <- function(modelPath=NULL,log="error") {
+ve.model.init <- function(modelPath, log="error") {
   # Load system model configuration
   visioneval::initLog(Save=FALSE,Threshold=log)
 
@@ -881,6 +882,9 @@ ve.model.init <- function(modelPath=NULL,log="error") {
   # Identify the run_model.R root location(s)
   # Also, update self$RunParam_ls with model-specific configuration
   model_ls <- findModel(modelPath,self$RunParam_ls)
+  self$modelName <- model_ls$modelName
+  self$modelPath <- model_ls$modelPath
+
   # TODO: Copy the elements of "model" into this model's key parameters such as modelPath, modelStages
   #       each ModelStage element contains a RunParam_ls that will build the Stage
   #       Will add to it a ModelStage run status and the ModelState_ls
@@ -1646,10 +1650,7 @@ VEModel <- R6::R6Class(
     # Public Data
     modelName=NULL,
     modelPath=NULL,
-    stagePaths=NULL,
-    stageScripts=NULL,
-    stageCount=NULL,
-    ModelState=NULL,
+    modelStages=NULL,
     RunParam_ls=NULL,
     specSummary=NULL,                       # List of inputs, gets and sets from master module spec list  
     runStatus=NULL,
@@ -1679,10 +1680,10 @@ VEModel <- R6::R6Class(
     }),
   private = list(
     # Private Members
+    p.loaded=FALSE,                         # Are modelStages loaded?
     p.valid=FALSE,                          # R6 error: "All items in public, private and active must have unique names"
     runError=NULL,
     lastResults=list(),                     # Cache previous results object
-    index=NULL,
     # Private Methods
     loadModelState=ve.model.loadModelState  # Function to load a model state file
   )

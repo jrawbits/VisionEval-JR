@@ -172,7 +172,7 @@ archiveResults <- function(RunParam_ls,RunDir=getwd(),SaveDatastore=NULL) {
   ModelDir <- getRunParameter("ModelDir",Param_ls=RunParam_ls)
   ResultsName <- getRunParameter("ArchiveResultsName",Param_ls=RunParam_ls)
 
-  If ( RunDir != ModelDir ) {
+  if ( RunDir != ModelDir ) {
     # RunDir is a sub-directory
     owd <- setwd(ModelDir)
     on.exit(setwd(owd))
