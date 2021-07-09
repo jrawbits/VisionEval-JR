@@ -145,8 +145,13 @@ initModelState <- function(Save=TRUE,Param_ls=NULL,RunPath=NULL) {
 #===============
 #' Move an existing set of results into a different time-stamped directory
 #'
+#' If RunDir is the same as RunParam_ls$ModelDir, then pick out the ModelState.Rda, Datastore and
+#' Log Files to move into a newly created archive directory. If RunDir is different (probably the
+#' absolute path to some Results directory), we can just rename the directory.
+#'
 #' @param RunParam_ls Run parameters describing which Results to archive and where to put them
-#' @param RunDir Directory in which to seek previous ModelState, Datastore and Log
+#' @param RunDir Directory containing results to archive (could be ModelDir/ResultsDir or just
+#' ModelDir)
 #' @param SaveDatastore If provided, replaces SaveDatastore in RunParam_ls
 #' @return a vector of artifacts that were found and copy attempted but failed (or character(0)
 #' if everything succeeded)
@@ -160,15 +165,37 @@ archiveResults <- function(RunParam_ls,RunDir=getwd(),SaveDatastore=NULL) {
   # Do nothing if SaveDatastore is FALSE
   if ( ! SaveDatastore ) return(invisible(character(0)))
 
-  # Save the previous results directory if present and requested
-  # visioneval::archiveResults handles the current directory...
+  writeLog("Saving previous model results...",Level="warn")
 
   # Copy the Datastore plus the ModelState plus any log file from RunDirectory
   # to new location based on run timestamp in ModelState
   ModelDir <- getRunParameter("ModelDir",Param_ls=RunParam_ls)
   ResultsName <- getRunParameter("ArchiveResultsName",Param_ls=RunParam_ls)
-  ModelStateName <- getRunParameter("ModelStateFile",Param_ls=RunParam_ls)
 
+  If ( RunDir != ModelDir ) {
+    # RunDir is a sub-directory
+    owd <- setwd(ModelDir)
+    on.exit(setwd(owd))
+      
+    TimeStamp <- Sys.time()
+    writeLog(paste("Archive TimeStamp Sys.time():",TimeStamp),Level="trace")
+
+    ArchiveDirectory <- normalizePath(
+      file.path(
+        ModelDir,
+        fileTimeStamp(TimeStamp,Prefix=ResultsName)
+      ), winslash="/",mustWork=FALSE
+    )
+    if ( ! dir.create(ArchiveDirectory) ) return(ArchiveDirectory) # error condition
+
+    file.rename(RunDir,ArchiveDirectory)
+
+    return(character(0))
+  }
+
+  # Remainder is for a single-stage classic model storing its results in the ModelDir
+
+  ModelStateName <- getRunParameter("ModelStateFile",Param_ls=RunParam_ls)
   ModelStatePath <- file.path(RunDir,ModelStateName)
 
   if ( ! file.exists(ModelStatePath) ) {
@@ -177,7 +204,6 @@ archiveResults <- function(RunParam_ls,RunDir=getwd(),SaveDatastore=NULL) {
   }
 
   # Use Datastore name, output directory and log name from previous model state
-  writeLog("Saving previous model results...",Level="warn")
 
   ModelState_ls <- readModelState(FileName=ModelStatePath,envir=new.env())
   OutputDir <- getRunParameter("OutputDir",Param_ls=ModelState_ls$RunParam_ls)
@@ -1474,11 +1500,12 @@ checkGeography <- function(Geo_df) {
 #' case initialization of geography is only needed for new year groups for the
 #' model run. The default value is NULL, which is the case when a datastore
 #' is not being loaded.
+#' @param envir An environment in which to seek the model state
 #' @return The function returns TRUE if the geographic tables and datasets are
 #'   sucessfully written to the datastore.
 #' @export
-initDatastoreGeography <- function(GroupNames = NULL) {
-  G <- getModelState()
+initDatastoreGeography <- function(GroupNames = NULL, envir=modelEnvironment()) {
+  G <- getModelState(envir=envir)
   #Make lists of zone specifications
   Mareas_ <- unique(G$Geo_df$Marea)
   MareaSpec_ls <- list(MODULE = "visioneval",
@@ -1527,14 +1554,14 @@ initDatastoreGeography <- function(GroupNames = NULL) {
   #Initialize geography tables and zone datasets
   if (is.null(GroupNames)) GroupNames <- c("Global", G$Years)
   for (GroupName in GroupNames) {
-    initTable(Table = "Region", Group = GroupName, Length = 1)
-    initTable(Table = "Azone", Group = GroupName, Length = length(Azones_))
-    initTable(Table = "Marea", Group = GroupName, Length = length(Mareas_))
+    initTable(Table = "Region", Group = GroupName, Length = 1,envir=envir)
+    initTable(Table = "Azone", Group = GroupName, Length = length(Azones_),envir=envir)
+    initTable(Table = "Marea", Group = GroupName, Length = length(Mareas_),envir=envir)
     if(G$BzoneSpecified) {
-      initTable(Table = "Bzone", Group = GroupName, Length = length(Bzones_))
+      initTable(Table = "Bzone", Group = GroupName, Length = length(Bzones_),envir=envir)
     }
     if(G$CzoneSpecified) {
-      initTable(Table = "Czone", Group = GroupName, Length = length(Czones_))
+      initTable(Table = "Czone", Group = GroupName, Length = length(Czones_),envir=envir)
     }
   }
 
@@ -1542,57 +1569,57 @@ initDatastoreGeography <- function(GroupNames = NULL) {
   for (GroupName in GroupNames) {
     if (!G$BzoneSpecified & !G$CzoneSpecified) {
       #Write to Azone table
-      writeToTable(G$Geo_df$Azone, AzoneSpec_ls, Group = GroupName, Index = NULL)
+      writeToTable(G$Geo_df$Azone, AzoneSpec_ls, Group = GroupName, Index = NULL, envir=envir)
       MareaSpec_ls$TABLE = "Azone"
-      writeToTable(G$Geo_df$Marea, MareaSpec_ls, Group = GroupName, Index = NULL)
+      writeToTable(G$Geo_df$Marea, MareaSpec_ls, Group = GroupName, Index = NULL, envir=envir)
       #Write to Marea table
       MareaSpec_ls$TABLE = "Marea"
-      writeToTable(Mareas_, MareaSpec_ls, Group = GroupName, Index = NULL)
+      writeToTable(Mareas_, MareaSpec_ls, Group = GroupName, Index = NULL, envir=envir)
     }
     if (G$BzoneSpecified & !G$CzoneSpecified) {
       #Write to Bzone table
-      writeToTable(G$Geo_df$Bzone, BzoneSpec_ls, Group = GroupName, Index = NULL)
+      writeToTable(G$Geo_df$Bzone, BzoneSpec_ls, Group = GroupName, Index = NULL, envir=envir)
       AzoneSpec_ls$TABLE = "Bzone"
-      writeToTable(G$Geo_df$Azone, AzoneSpec_ls, Group = GroupName, Index = NULL)
+      writeToTable(G$Geo_df$Azone, AzoneSpec_ls, Group = GroupName, Index = NULL, envir=envir)
       MareaSpec_ls$TABLE = "Bzone"
-      writeToTable(G$Geo_df$Marea, MareaSpec_ls, Group = GroupName, Index = NULL)
+      writeToTable(G$Geo_df$Marea, MareaSpec_ls, Group = GroupName, Index = NULL, envir=envir)
       #Write to Azone table
       AzoneGeo_df <- G$Geo_df[!duplicated(G$Geo_df$Azone),]
       AzoneSpec_ls$TABLE = "Azone"
-      writeToTable(AzoneGeo_df$Azone, AzoneSpec_ls, Group = GroupName, Index = NULL)
+      writeToTable(AzoneGeo_df$Azone, AzoneSpec_ls, Group = GroupName, Index = NULL, envir=envir)
       MareaSpec_ls$TABLE = "Azone"
-      writeToTable(AzoneGeo_df$Marea, MareaSpec_ls, Group = GroupName, Index = NULL)
+      writeToTable(AzoneGeo_df$Marea, MareaSpec_ls, Group = GroupName, Index = NULL, envir=envir)
       rm(AzoneGeo_df)
       #Write to Marea table
       MareaSpec_ls$TABLE = "Marea"
-      writeToTable(Mareas_, MareaSpec_ls, Group = GroupName, Index = NULL)
+      writeToTable(Mareas_, MareaSpec_ls, Group = GroupName, Index = NULL, envir=envir)
     }
     if (G$CzoneSpecified) {
       #Write to Czone table
-      writeToTable(G$Geo_df$Czone, CzoneSpec_ls, Group = GroupName, Index = NULL)
+      writeToTable(G$Geo_df$Czone, CzoneSpec_ls, Group = GroupName, Index = NULL, envir=envir)
       BzoneSpec_ls$TABLE = "Czone"
-      writeToTable(G$Geo_df$Bzone, BzoneSpec_ls, Group = GroupName, Index = NULL)
+      writeToTable(G$Geo_df$Bzone, BzoneSpec_ls, Group = GroupName, Index = NULL, envir=envir)
       AzoneSpec_ls$TABLE = "Czone"
-      writeToTable(G$Geo_df$Azone, AzoneSpec_ls, Group = GroupName, Index = NULL)
+      writeToTable(G$Geo_df$Azone, AzoneSpec_ls, Group = GroupName, Index = NULL, envir=envir)
       MareaSpec_ls$TABLE = "Czone"
-      writeToTable(G$Geo_df$Marea, MareaSpec_ls, Group = GroupName, Index = NULL)
+      writeToTable(G$Geo_df$Marea, MareaSpec_ls, Group = GroupName, Index = NULL, envir=envir)
       #Write to Bzone table
       BzoneGeo_df <- G$Geo_df[!duplicated(G$Geo_df$Bzone), c("Azone", "Bzone")]
       BzoneSpec_ls$TABLE = "Bzone"
-      writeToTable(BzoneGeo_df$Bzone, BzoneSpec_ls, Group = GroupName, Index = NULL)
+      writeToTable(BzoneGeo_df$Bzone, BzoneSpec_ls, Group = GroupName, Index = NULL, envir=envir)
       AzoneSpec_ls$TABLE = "Bzone"
-      writeToTable(BzoneGeo_df$Azone, AzoneSpec_ls, Group = GroupName, Index = NULL)
+      writeToTable(BzoneGeo_df$Azone, AzoneSpec_ls, Group = GroupName, Index = NULL, envir=envir)
       rm(BzoneGeo_df)
       #Write to Azone table
       AzoneGeo_df <- G$Geo_df[!duplicated(G$Geo_df$Azone),]
       AzoneSpec_ls$TABLE = "Azone"
-      writeToTable(AzoneGeo_df$Azone, AzoneSpec_ls, Group = GroupName, Index = NULL)
+      writeToTable(AzoneGeo_df$Azone, AzoneSpec_ls, Group = GroupName, Index = NULL, envir=envir)
       MareaSpec_ls$TABLE = "Azone"
-      writeToTable(AzoneGeo_df$Marea, MareaSpec_ls, Group = GroupName, Index = NULL)
+      writeToTable(AzoneGeo_df$Marea, MareaSpec_ls, Group = GroupName, Index = NULL, envir=envir)
       rm(AzoneGeo_df)
       #Write to Marea table
       MareaSpec_ls$TABLE = "Marea"
-      writeToTable(Mareas_, MareaSpec_ls, Group = GroupName, Index = NULL)
+      writeToTable(Mareas_, MareaSpec_ls, Group = GroupName, Index = NULL, envir=envir)
     }
   }
   #Write to log that complete
@@ -1623,8 +1650,8 @@ initDatastoreGeography <- function(GroupNames = NULL) {
 #' not write to the Datastore but instead return FALSE if they are different in some
 #' way.
 #' @export
-loadModelParameters <- function(FlagChanges=FALSE) {
-  G <- getModelState()
+loadModelParameters <- function(FlagChanges=FALSE,envir=modelEnvironment) {
+  G <- getModelState(envir=envir)
   RunParam_ls <- G$RunParam_ls;
 
   writeLog("Loading model parameters file.",Level="info")

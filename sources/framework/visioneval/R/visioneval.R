@@ -161,7 +161,7 @@ getModelParameters <- function(Param_ls=list(), DotParam_ls=list(),DatastoreName
   # If ResultsDir is not present in RunParam_ls, set it to the current directory (classic version)
   if ( ! "ResultsDir" %in% names(RunParam_ls) ) RunParam_ls[["ResultsDir"]] <- "."
 
-  # Construct the full parameters for loading and running the model
+  # Construct the full parameters for loading and running the model (everything on this list)
   #   Model               # Default: basename(ModelDir)
   #   Scenario            # Default: basename(ModelDir)
   #   Description         # Default: Scenario
@@ -340,7 +340,7 @@ loadModel <- function(
   LoadDatastore  <- getRunParameter("LoadDatastore",Default=FALSE,Param_ls=RunParam_ls)
 
   # Set up load datastore parameters
-  # Might have relayed LoadDstore from the RunDstore element of BaseModel
+  # TODO: Might have relayed LoadDstore from the RunDstore element of BaseModel
   LoadDstore <- getRunParameter("LoadDstore",Default=list(),Param_ls=RunParam_ls)
   if ( ! ( is.list(LoadDstore) && all(c("Name","Dir") %in% LoadDstore) ) ) {
     LoadDstore <- list()
@@ -379,15 +379,12 @@ loadModel <- function(
   #       Then load it with the datastore name in the archive directory as if it were
   #       coming from another model. Doing such a restart implies changing the Model Script.
   #       The changed script can be set at runtime alongside LoadDatastoreName and LoadDatastore
-  #       just as a runtime parameter...
-  # TODO: previous model state will be the one from the "StartFrom" earlier model stage
-  # TODO: If StartFrom requested, access its model state for needed information
-  # TODO: alternatively, it is the model state for the LoadDatastoreName
-  # TODO: Difference is just how we link/access the previous Datastore at Runtime
-  #       Either by path or by coping/flattening
+  #       just by providing an alternate ModelScript runtime parameter (e.g. run_model_restart.R)
 
   # Load the previous model state, if available
   # TODO: Handle StartFrom model state (build on its InputPath and DatastorePath)
+  # The difference is whether we copy/flatten the Datastore or just add the DatastorePath
+  #   from the earlier Datastore.
   if ( LoadDatastore ) {
     # In the file system, use the currently configured ModelStateFile
     #  if it's not right, that other model needs to be re-run in
@@ -640,7 +637,6 @@ runModel <- function(
   writeLog("Preparing Data Store...",Level="info")
 
   LoadDatastore  <- getRunParameter("LoadDatastore",Default=FALSE,Param_ls=RunParam_ls)
-  browser()
   if ( ! LoadDatastore ) {
     # not loading, so make a new Datastore
     initDatastore() # Deletes any existing Datastore
@@ -667,8 +663,7 @@ runModel <- function(
     copyDatastore(
       ToDir=loadDatastoreCopy,
       envir=loadEnv, # Source Datastore, by way of its ModelState
-      Flatten=TRUE,
-      SaveModelState=FALSE # We'll use the new model state we're constructing here
+      Flatten=TRUE
     )
     file.rename(file.path(loadDatastoreCopy,basename(LoadDstore$Name)),RunDstore$Name)
     unlink(loadDatastoreCopy,recursive=TRUE)
