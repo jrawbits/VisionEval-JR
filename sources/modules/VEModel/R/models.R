@@ -1080,28 +1080,17 @@ ve.model.save <- function(FileName="visioneval.cnf") {
   invisible(self$RunParam_ls)
 }
 
-ve.model.archive <- function() {
-  # TODO: Rebuild for new stage structure (re-write ResultsDir so we create and archive
-  # stage sub-directories)
-  # Will require the model state to be loaded
-  return(NULL);
-  ResultsName = visioneval::getRunParameter("ArchiveResultsName",Param_ls=self$RunParam_ls)
-  OutputDir <- visioneval::getRunParameter("OutputDir",Param_ls=self$RunParam_ls) # May differ in other stages...
-  DstoreName <- visioneval::getRunParameter("DatastoreName",self$RunParam_ls)
-  ModelDir <- self$modelPath
-  for ( stage in 1:self$stageCount ) {
-    ModelStatePath <- dirname(self$resultspath(stage,Param_ls=self$RunParam_ls))
-
-    # TODO: get full pathname of model state (will use
-    # dirname(ModelStatePath)) (was ve.model$ModelStatePath)
-    # TODO: construct ResultsName
-    # TODO: each stage gets archived into ModelDir/ResultsName/stagePath
-  
-    failToArchive <- archiveResults( ModelDir, DstoreName, ModelStatePath, OutputDir, file.path(stageDir,ResultsName) )
-    if ( length(failToArchive)>0 ) {
-      visioneval::writeLog(paste0("Failed to archive results (",paste(failToArchive,collapse=","),")"),Level="error")
-    }
+ve.model.archive <- function(SaveDatastore=TRUE) {
+  failToArchive <- archiveResults(
+    RunParam_ls=self$RunParam_ls,
+    RunDir=file.path(self$modelPath,visioneval::getRunParameter("ResultsDir",Param_ls=self$RunParam_ls)),
+    SaveDatastore=SaveDatastore
+  )
+  if ( length(failToArchive)>0 ) {
+    visioneval::writeLog(paste0("Failed to archive results (",paste(failToArchive,collapse=","),")"),Level="error")
+    return(FALSE)
   }
+  return(TRUE)
 }
 
 # Run the modelPath (through its stages)
