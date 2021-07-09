@@ -106,7 +106,8 @@ initDataset <- function(Spec_ls, Group, envir=modelEnvironment()) {
 
 #' Read from datastore table.
 #'
-#' This function reads a dataset from a datastore table.
+#' \code{readFromTable} reads a dataset from a datastore table, dispatching through
+#' the ModelState environment to linked Datastores from other model stages.
 #'
 #' @param Name A string identifying the name of the dataset to be read from.
 #' @param Table A string identifying the complete name of the table where the
@@ -118,7 +119,6 @@ initDataset <- function(Spec_ls, Group, envir=modelEnvironment()) {
 #' @param ReadAttr A logical identifying whether to return the attributes of
 #' the stored dataset. The default value is FALSE.
 #' @param envir An R environment with assigned Datastore functions and a ModelState_ls
-#'   (see assignDatastoreFunctions)
 #' @return A vector of the same type stored in the datastore and specified in
 #' the TYPE attribute.
 #' @export
@@ -136,10 +136,10 @@ readFromTable <- function(Name, Table, Group, Index = NULL, ReadAttr = TRUE, env
     # table might legitimately be NA of length 1. Attributes are non-null if it is "for real"
     # If failed to find, then try upstream Datastore locations
     # DatastorePath holds absolute path to Datastore
-    if ( ! "ModelStateList" %in% names(G) ) { # Cache the model states for faster access
+    if ( is.null(envir$ModelStateList) ) { # Check for ModelState cache from earlier stages
+      paths <- G$DatastorePath[-1]     # By definition, first DatastorePath is for the current stage
       writeLog(c("Datastore Paths:",paths),Level="info")
-      paths <- G$DatastorePath # use if model state list not loaded - re-opens model state each time
-      dsPaths <- lapply(paths, # Note: model states as environments
+      dsPaths <- lapply(paths, # Create environments that describe the source Datastore/ModelState
         function(dstore) {
           path <- file.path(dstore,getModelStateFileName())
           if ( file.exists(path) ) {
@@ -158,15 +158,14 @@ readFromTable <- function(Name, Table, Group, Index = NULL, ReadAttr = TRUE, env
           Level="error"
         ))
       }
-      setModelState(list(ModelStateList=dsPaths[-1]),envir=envir)
+      envir$ModelStateList <- dsPaths
     } else {
       writeLog("Using cached DatastorePath/ModelStates",Level="info")
-      ModelStateList <- G$ModelStateList
     }
-    # Iterate over additional elements in G$DatastorePath/ModelStateList looking for the Dataset
-    # As coded, expects the current Datastore type - no need to require that if we pass an environment instead of ModelState
-    for ( path in dsPaths ) {
-      table <- path$readFromTable(Name, Table, Group, Index, ReadAttr, envir=path)
+    # Iterate over additional ModelStates in prior model stages
+    for ( ms.env in envir$ModelStateList ) {
+      # Note that we readFromTable via the ModelState (so we don't recurse into the paths)
+      table <- ms.env$readFromTable(Name, Table, Group, Index, ReadAttr, envir=ms.env)
       if ( ! is.null(attributes(table)) ) break
     }
     if ( is.null(attributes(table)) ) {
@@ -509,7 +508,8 @@ initTableRD <- function(Table, Group, Length, envir=modelEnvironment()) {
 
   #Create a directory for the table
   # TODO: warn (lightly) if Table exists and do not update anything
-  dir.create(file.path(dsPath, Group, Table))
+  result <- dir.create(file.path(dsPath, Group, Table))
+  browser(expr=!result)
   #Update the datastore listing and model state
   listDatastoreRD(
     list(group = paste0("/", Group), name = Table,
@@ -715,7 +715,8 @@ writeToTableRD <- function(Data_, Spec_ls, Group, Index = NULL, envir=modelEnvir
     # Add to Datastore listing
     GroupName <- paste(Group, Spec_ls$TABLE, sep = "/")
     Length <-
-      G$Datastore$attributes[G$Datastore$groupname == GroupName][[1]]$LENGTH
+      try(G$Datastore$attributes[G$Datastore$groupname == GroupName][[1]]$LENGTH)
+    browser(expr=!is.numeric(Length))
     Dataset <-
       switch(Types()[[Spec_ls$TYPE]]$mode,
              character = character(Length),
@@ -1680,10 +1681,12 @@ inputsToDatastore <- function(Inputs_ls, ModuleSpec_ls, ModuleName) {
 #' 
 #' @param ToDir a file path in which to create the Datastore copy (named
 #'   ModelState_ls$DatastoreName)
-#' @param envir Environment containing ModelState_ls
+#' @param envir Environment containing ModelState_ls (and implicitly, a Datastore)
 #' @param Flatten a logical indicating whether to merge all Datasets from the DatastorePath
-#'   (default is TRUE)
-#' @param DatastoreType is one of "RD" or "H5"
+#'   (default is TRUE). If Flatten is c(TRUE,TRUE), force use of Flatten machinery even if not
+#'   necessary.
+#' @param DatastoreType is one of "RD" or "H5". If it is not the same as what is in the source
+#'   ModelState, convert the Datastore by flattening it into the requested DatastoreType.
 #' @return A logical indicating successful completion.
 #' @export
 copyDatastore <- function( ToDir, Flatten=TRUE, DatastoreType=NULL, envir=modelEnvironment() ) {
@@ -1708,9 +1711,14 @@ copyDatastore <- function( ToDir, Flatten=TRUE, DatastoreType=NULL, envir=modelE
 
   paths <- character(0)
   success <- FALSE
+  Flatten <- Flatten[1] && ( length(ModelState_ls$DatastorePath) > 1 || isTRUE(Flatten[2]) )
+  # Always use Flatten machinery if source model is internally staged, or if Flatten is c(TRUE,TRUE)
+
+  # Don't flatten if already flat
   if ( ! Flatten ) {
     if ( ! convertDatastoreType ) {
       success <- file.copy(file.path(ModelState_ls$ModelStatePath,ModelState_ls$DatastoreName),ToDir,recursive=TRUE,copy.date=TRUE)
+      writeLog(paste0("Copying Flat Datastore ",ifelse(success,"Succeeded","Failed"),"."),Level="warn")
     }
     if ( ! success ) {
       paths <- ModelState_ls$DatastorePath[1] # Only copy proximate Datastore (why this would work but not file.copy is mysteriaus...
@@ -1720,48 +1728,37 @@ copyDatastore <- function( ToDir, Flatten=TRUE, DatastoreType=NULL, envir=modelE
   }
 
   if ( length(paths) > 0 ) { # if we did file.copy above, length(paths) will be zero - already done
+    writeLog("Flattening and/or Converting Datastore takes time...",Level="warn")
 
     # Construct target ModelState_ls:
     #   Same as ModelState being copied, but ModelStatePath is updated and Datastore listing removed
     toModelState_ls <- ModelState_ls[ ! names(ModelState_ls) %in% "Datastore" ]
     toModelState_ls$ModelStatePath <- ToDir
-    toModelState_ls$DatastoreType <- DatastoreType
+    toModelState_ls$DatastoreType <- DatastoreType # May differ from ModelState_ls$DatastoreType if converting
 
     # Set up model state environment for writing the target Datastore
     writeDS <- new.env()
     writeDS$ModelState_ls <- toModelState_ls
     assignDatastoreFunctions(envir=writeDS)
-    initDatastore(envir=writeDS) # Create a bare Datastore that we will write into
+    
+    # Create the required basic elements: Datastore structure and geography from the source
+    # Do this rather than copying to ensure that the DatastoreListing is correct
+    initDatastore(envir=writeDS)          # Create core datastore structure
+    initDatastoreGeography(envir=writeDS) # Create basic geography tables
 
     for ( path in paths ) {
+
       # Open ModelState$Datastore from the source path
       readDS <- new.env()
-      ms <- readModelState( file.path(path,getModelStateFileName()), envir=readDS )
+      ms <- readModelState( FileName=file.path(path,getModelStateFileName()), envir=readDS )
       assignDatastoreFunctions(envir=readDS)
       ds <- ms$Datastore
       
       gtn <- strsplit(ds$groupname,"/") # May need to revise if groupname starts with /
-      groups <- unique(sapply(gtn,function(x)x[1]))
 
-      # Check that all groups exist in target and create if missing
-      # Identify existing groups in the datastore
-      SourceGroups_ <- local({
-        # "group" is of the form "/Group/Table"
-        DstoreGroups_ls <- strsplit(ds$group, "/")
-        ToKeep_ <- unlist(lapply(DstoreGroups_ls, function(x) length(x) == 2))
-        DstoreGroups_ls <- DstoreGroups_ls[ToKeep_]
-        SourceGroups_ <- unique(unlist(lapply(DstoreGroups_ls, function(x) x[2])))
-      })
-      TargetGroups_ <- local({
-        DstoreGroups_ls <- strsplit(writeDS$ModelState_ls$Datastore$group, "/")
-        ToKeep_ <- unlist(lapply(DstoreGroups_ls, function(x) length(x) == 2))
-        DstoreGroups_ls <- DstoreGroups_ls[ToKeep_]
-        TargetGroups_ <- unique(unlist(lapply(DstoreGroups_ls, function(x) x[2])))
-      })
-      # Add any groups from Source that are not in Target
-      appendGroups_ <- setdiff(SourceGroups_,TargetGroups_)
-      if ( length(appendGroups_) > 0 ) initDatastore(appendGroups_,envir=writeDS)
-        
+      # Since target model state began from original, all groups should be present...
+      # Otherwise may need to add Years with initDatastore(AppendGroups)
+
       # Copy the datasets
       indices <- which(sapply(gtn,length,simplify=TRUE)==3) # Get Dataset entries
       for ( i in indices ) {
@@ -1773,11 +1770,11 @@ copyDatastore <- function( ToDir, Flatten=TRUE, DatastoreType=NULL, envir=modelE
         dataset <- readFromTable(item["Name"],item["Table"],item["Group"],envir=readDS)
 
         # Check that table exists in target and create if necessary
-        TableName <- file.path(item["Table", item["Group"])
+        TableName <- file.path(item["Group"], item["Table"])
         if ( ! TableName %in% writeDS$ModelState_ls$Datastore$groupname ) { # in target?
-          TableEntry <- which(ds$groupname == TableName)                    # check source
-          Length <- ds$attributes[TableEntry[1]]$LENGTH                     # Get Length parameter
-          browser(expr=Length==Attr_$LENGTH) # TODO: is the LENGTH attribute already in Attr_ for the Dataset?
+          TableEntry <- which(ds$groupname == TableName)[1]                 # check source
+          Length <- ds$attributes[[TableEntry]]$LENGTH                      # Get Length parameter
+          browser(expr=is.null(Length))
           initTable(item["Table"], item["Group"], Length, envir=writeDS)    # Initialize the Table
         }
 
@@ -1787,5 +1784,6 @@ copyDatastore <- function( ToDir, Flatten=TRUE, DatastoreType=NULL, envir=modelE
     }
     success <- TRUE
   }
+    
   return(success)
 }
