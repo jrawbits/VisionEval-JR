@@ -95,6 +95,64 @@ initializeModel <- function(
   invisible(ve.model$ModelState_ls)
 }
 
+#LOAD PARAM FILE (run_parameters.json)
+#=====================================
+#' Load classic run_parameters.json file
+#'
+#' \code{loadParamFile} a visioneval control function that reads ParamFile (run_parameters.json)
+#' and adds it to the Param_ls parameter.
+#'
+#' @param Param_ls run parameters list to which run_parameters.json will be added (existing values
+#' in Param_ls take precedence.
+#' @return Param_ls with missing parameters added from Paramfile
+#' @export
+loadParamFile <- function(Param_ls=NULL,ModelDir=NULL) {
+  if ( ! is.list(Param_ls) ) {
+    stop( writeLog("Must supply Param_ls (with $ModelDir) to loadParamFile",Level="error") )
+  }
+  ParamFile <- getRunParameter("ParamFile",Param_ls)
+  ParamPath <- findRuntimeInputFile(ParamFile,"ParamDir",Param_ls=Param_ls,StopOnError=FALSE)
+  if ( ! is.na(ParamPath) ) {
+    Param_ls <- loadConfiguration(ParamPath=ParamPath,keep=Param_ls)
+    ParamPath <- dirname(ParamPath)
+  } else {
+    if ( is.null(ModelDir) ) ModelDir <- getRunParameter("ModelDir",Param_ls)
+    ParamPath <- file.path(ModelDir,getRunParameter("ParamDir",Default="defs",Param_ls=Param_ls))
+    if ( ! dir.exists(ParamPath) ) ParamPath <- NULL
+    # The path may exist, but may not have ParamFile within it
+  }
+  # Make sure RunParam_ls$ParamPath exists (location for Geo.csv, Units.csv, Deflators.csv)
+  if ( ! is.null(ParamPath) && ! "ParamPath" %in% names(Param_ls) ) {
+    Param_ls <- mergeParameters(
+      Param_ls,
+      addParamPath_ls <- addParameterSource(list(ParamPath=ParamPath),"loadParamFile()")
+    )
+  }
+  # It will later be an error if ParamPath is not present in Param_ls
+  # Error will be trapped when ModelState_ls is constructed seeking GeoFile, UnitsFile, DeflatorsFile
+  return(Param_ls)
+}
+
+requiredParameters <- c(
+  "ModelDir",
+  "Model", "Scenario", "Description", "Region",
+  "BaseYear", "Years",
+  "DatastoreName", "DatastoreType", "Seed",
+  "InputPath","ParamPath","ModelScriptPath","DatastorePath"
+)
+
+#VERIFY MODEL PARAMETERS
+#=======================
+#' Check that a set of run parameters is sufficient to launch a model
+#'
+#' @param Param_ls The set of parameters to be checked
+#' @return A character vector of parmeters that are missing or invalid (empty of everything is
+#' present)
+#' @export
+verifyModelParameters <- function(Param_ls) {
+  return ( requiredParameters[ ! requiredParameters %in% names(Param_ls) ] )
+}
+
 #GET MODEL RUN PARAMETERS
 #==========================
 #' Initialize model run parameters.
@@ -143,37 +201,16 @@ getModelParameters <- function(Param_ls=list(), DotParam_ls=list(),DatastoreName
   # Look for defs along InputPath, and run_parameters.json.
   # New style model will already have loaded those from visioneval.cnf in the model root
   # We'll keep the "safe" runtime parameters (see above)
-  ParamPath <- findRuntimeInputFile("run_parameters.json","ParamDir",Param_ls=RunParam_ls,StopOnError=FALSE)
-  if ( ! is.na(ParamPath) ) {
-    RunParam_ls <- loadConfiguration(ParamPath=ParamPath,keep=RunParam_ls)
-    ParamPath <- dirname(ParamPath) # It will include run_parameters.json
-  } else {
-    ParamPath <- file.path(ModelDir,getRunParameter("ParamDir",Default="defs",Param_ls=RunParam_ls))
-  }
-  # Make sure ParamPath is set (location for Geo.csv, Units.csv, Deflators.csv)
-  if ( ! "ParamPath" %in% names(RunParam_ls) ) {
-    RunParam_ls <- mergeParameters(
-      RunParam_ls,
-      addParamPath_ls <- addParameterSource(list(ParamPath=ParamPath),"initializeModel(...)")
-    )
-  }
+  RunParam_ls <- loadParamFile(Param_ls=RunParam_ls)
 
   # If ResultsDir is not present in RunParam_ls, set it to the current directory (classic version)
   if ( ! "ResultsDir" %in% names(RunParam_ls) ) RunParam_ls[["ResultsDir"]] <- "."
 
-  # Construct the full parameters for loading and running the model (everything on this list)
-  #   Model               # Default: basename(ModelDir)
-  #   Scenario            # Default: basename(ModelDir)
-  #   Description         # Default: Scenario
-  #   Region              # No default - must be defined (probably in ParamFile
-  #   BaseYear            # No default
-  #   InputPath           # Default: ModelDir
-  #   ParamPath           # basename(ParamPath) # above it provides ParamDir/ParamFile
-  #   ModelScriptPath     # Default: ModelDir/ModelScript
-  #   DatastorePath       # Default: ModelDir
-  #   DatastoreName       # Default: "Datastore"
-  #   LoadDatastore       # Default: FALSE
-  #   LoadDatastoreName   # Default: NULL
+  if ( length( missingParams <- verifyModelParameters(stage$RunParam_ls) ) > 0 ) {
+    stop(
+      writeLog(paste("Missing Model Parameters:",paste(missingParams,collapse=",")),Level="error")
+    )
+  }
 
   return(RunParam_ls)
 }
@@ -291,7 +328,7 @@ loadModel <- function(
           ModelScriptFile
         ), winslash="/"
       )
-    }
+    } else ModelScriptPath <- ModelScriptFile # Absolute Path
     if ( ! file.exists(ModelScriptPath) ) {
       stop(
         writeLog(
@@ -300,7 +337,6 @@ loadModel <- function(
         )
       )
     }
-
   }
 
   # Parse script and make data frame of modules that are called directly
