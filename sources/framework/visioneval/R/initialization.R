@@ -345,8 +345,7 @@ archiveResults <- function(RunParam_ls,RunDir=getwd(),SaveDatastore=NULL) {
 #'
 #' @param FileName A string identifying the name of the file that contains
 #' the ModelState_ls list. The default is the ModelStateFile in getwd().
-#' @param envir An environment into which to load ModelState.Rda
-#' (default ve.model)
+#' @param envir An environment into which to load ModelState.Rda (default ve.model)
 #' @return The RunParam_ls from the saved model state (or an empty list if not found)
 #' @export
 loadModelState <- function(FileName=getModelStateFileName(),envir=NULL) {
@@ -509,6 +508,7 @@ readModelState <- function(Names_ = "All", FileName=NULL, envir=NULL) {
 #' important because some modules calculate future year values by pivoting off
 #' of base year values so the base year must be run first.
 #'
+#' @param envir An environment into which to load ModelState.Rda (default ve.model)
 #' @return A character vector of the model run years.
 #' @export
 getYears <- function(envir=modelEnvironment()) {
@@ -533,6 +533,7 @@ getYears <- function(envir=modelEnvironment()) {
 #' units are the units used to store the complex data type in the datastore.
 #'
 #' @param Type_ A string vector identifying the complex data type(s).
+#' @param envir An environment into which to load ModelState.Rda (default ve.model)
 #' @return A string vector identifying the default units for the complex data
 #' type(s) or NA if any of the type(s) are not defined.
 #' @export
@@ -1645,6 +1646,7 @@ initDatastoreGeography <- function(GroupNames = NULL, envir=modelEnvironment()) 
 #'
 #' @param FlagChanges logical (default=FALSE); if TRUE, inspect the model parameters
 #'   and see if what is in the Datastore is consistent.
+#' @param envir An environment into which to load ModelState.Rda (default ve.model)
 #' @return The function returns TRUE if the model parameters file exists and
 #' its values are sucessfully written to the datastore. If FlagChanges, do
 #' not write to the Datastore but instead return FALSE if they are different in some

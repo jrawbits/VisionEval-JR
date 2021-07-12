@@ -1661,7 +1661,7 @@ inputsToDatastore <- function(Inputs_ls, ModuleSpec_ls, ModuleName) {
 #' multiple Datastore listings (e.g. from different places in a DatastorePath)
 #'
 #' @param baseListing The datastore listing to be augmented
-#' @param newListing The listing with elements that will override or augment the base
+#' @param addListing The listing with elements that will override or augment the base
 #' @return a new datastore listing with updated elements
 #' @export
 mergeDatastoreListings <- function(baseListing, addListing) {
