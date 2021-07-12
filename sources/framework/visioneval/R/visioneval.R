@@ -104,13 +104,14 @@ initializeModel <- function(
 #'
 #' @param Param_ls run parameters list to which run_parameters.json will be added (existing values
 #' in Param_ls take precedence.
+#' @param ModelDir alternative model directory (absolute path)
 #' @return Param_ls with missing parameters added from Paramfile
 #' @export
 loadParamFile <- function(Param_ls=NULL,ModelDir=NULL) {
   if ( ! is.list(Param_ls) ) {
     stop( writeLog("Must supply Param_ls (with $ModelDir) to loadParamFile",Level="error") )
   }
-  ParamFile <- getRunParameter("ParamFile",Param_ls)
+  ParamFile <- getRunParameter("RunParamFile",Param_ls)
   ParamPath <- findRuntimeInputFile(ParamFile,"ParamDir",Param_ls=Param_ls,StopOnError=FALSE)
   if ( ! is.na(ParamPath) ) {
     Param_ls <- loadConfiguration(ParamPath=ParamPath,keep=Param_ls)
@@ -134,7 +135,6 @@ loadParamFile <- function(Param_ls=NULL,ModelDir=NULL) {
 }
 
 requiredParameters <- c(
-  "ModelDir",
   "Model", "Scenario", "Description", "Region",
   "BaseYear", "Years",
   "DatastoreName", "DatastoreType", "Seed",
@@ -150,7 +150,7 @@ requiredParameters <- c(
 #' present)
 #' @export
 verifyModelParameters <- function(Param_ls) {
-  return ( requiredParameters[ ! requiredParameters %in% names(Param_ls) ] )
+  missingParams <- requiredParameters[ ! requiredParameters %in% names(Param_ls) ]
 }
 
 #GET MODEL RUN PARAMETERS
@@ -177,6 +177,9 @@ getModelParameters <- function(Param_ls=list(), DotParam_ls=list(),DatastoreName
   ve.model <- modelEnvironment(Clear="") # clear ve.model environment (but don't destroy pre-existing RunParam_ls)
 
   ModelDir <- getRunParameter("ModelDir",Default=".",Param_ls=Param_ls) # Default is working directory
+  if ( ! "ModelDir" %in% names(Param_ls) ) {
+    Param_ls$ModelDir <- normalizePath(ModelDir,winslash="/",mustWork=FALSE)
+  }
 
   # Propagate explicit arguments into DotParam_ls
   if ( is.character(DatastoreName) ) { # the function parameter, not the Run Parameter
@@ -185,6 +188,7 @@ getModelParameters <- function(Param_ls=list(), DotParam_ls=list(),DatastoreName
   if ( ! "LoadDatastore" %in% names(DotParam_ls) ) {
     DotParam_ls[["LoadDatastore"]] <- LoadDatastore;
   }
+  
 
   # Always keep "Region", "BaseYear" and "Years" from configuration files (not manual override)
   safeList <- c("Region","BaseYear","Years")
@@ -203,10 +207,23 @@ getModelParameters <- function(Param_ls=list(), DotParam_ls=list(),DatastoreName
   # We'll keep the "safe" runtime parameters (see above)
   RunParam_ls <- loadParamFile(Param_ls=RunParam_ls)
 
+  # Clean up some names
+  
+  if ( ! "ModelScriptPath" %in% names(RunParam_ls) ) {
+    if ( "ModelScriptFile" %in% names(RunParam_ls) ) {
+      RunParam_ls$ModelScriptPath <- normalizePath(file.path(RunParam_ls$ModelDir,RunParam_ls$ModelScriptFile),winslash="/",mustWork=FALSE)
+    }
+  }
+
   # If ResultsDir is not present in RunParam_ls, set it to the current directory (classic version)
   if ( ! "ResultsDir" %in% names(RunParam_ls) ) RunParam_ls[["ResultsDir"]] <- "."
 
-  if ( length( missingParams <- verifyModelParameters(stage$RunParam_ls) ) > 0 ) {
+  # Set up default InputPath nd DatastorePath
+  if ( ! "InputPath" %in% RunParam_ls ) RunParam_ls$InputPath <- RunParam_ls$ModelDir
+  if ( ! "DatastorePath" %in% RunParam_ls ) RunParam_ls$DatastorePath <- RunParam_ls$ResultsDir
+
+  # Check for any other missing parameters
+  if ( length( missingParams <- verifyModelParameters(RunParam_ls) ) > 0 ) {
     stop(
       writeLog(paste("Missing Model Parameters:",paste(missingParams,collapse=",")),Level="error")
     )
@@ -315,28 +332,13 @@ loadModel <- function(
   # It will be provided either in dots, or by the pre-existing RunParam_ls environment (e.g. if
   # built by VEModel). Default is a fixed string, "run_model.R"
   ModelScriptPath <- getRunParameter("ModelScriptPath",Default=NA,Param_ls=RunParam_ls)
-  if ( ! is.character(ModelScriptPath) || ! file.exists(ModelScriptPath) ) {
-    ModelScript <- getRunParameter("ModelScript",Param_ls=RunParam_ls)
-    ModelScriptFile <- getRunParameter("ModelScriptFile",Default=ModelScript,Param_ls=RunParam_ls)
-    # If the ModelScriptFile is relative, normalize it to ModelDir, which is either
-    # working directory or a sub-location holding the scripts.
-    if ( ! any(grepl("^([[:alpha:]]:[\\/]|[\\/])",ModelScriptFile)) ) {
-      # if relative path, normalize relative to RunPath
-      ModelScriptPath <- normalizePath(
-        file.path(
-          ModelDir,
-          ModelScriptFile
-        ), winslash="/"
+  if ( ! file.exists(ModelScriptPath) ) {
+    stop(
+      writeLog(
+        paste("Unable to locate ModelScript:",ModelScriptPath,sep="\n"),
+        Level="error"
       )
-    } else ModelScriptPath <- ModelScriptFile # Absolute Path
-    if ( ! file.exists(ModelScriptPath) ) {
-      stop(
-        writeLog(
-          paste("Unable to locate ModelScript:",ModelScriptPath,sep="\n"),
-          Level="error"
-        )
-      )
-    }
+    )
   }
 
   # Parse script and make data frame of modules that are called directly

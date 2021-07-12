@@ -385,7 +385,7 @@ loadModelState <- function(FileName=getModelStateFileName(),envir=NULL) {
 getModelState <- function(envir=NULL,...) {
   if ( ! missing(...) ) return(readModelState(envir=envir,...))
   if ( is.null(envir) ) envir <- modelEnvironment()
-  if ( ! "ModelState_ls" %in% ls(envir) ) stop("getModelState: ModelState is not initialized.")
+  if ( ! "ModelState_ls" %in% ls(envir=envir) ) stop("getModelState: ModelState is not initialized.")
   return(envir$ModelState_ls)
 }
 
@@ -1650,7 +1650,7 @@ initDatastoreGeography <- function(GroupNames = NULL, envir=modelEnvironment()) 
 #' not write to the Datastore but instead return FALSE if they are different in some
 #' way.
 #' @export
-loadModelParameters <- function(FlagChanges=FALSE,envir=modelEnvironment) {
+loadModelParameters <- function(FlagChanges=FALSE,envir=modelEnvironment()) {
   G <- getModelState(envir=envir)
   RunParam_ls <- G$RunParam_ls;
 

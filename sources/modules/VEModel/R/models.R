@@ -356,7 +356,6 @@ findModel <- function( modelDir, Param_ls ) {
     InputDir=visioneval::getRunParameter("InputDir",Param_ls=modelParam_ls)
   )
 
-  browser()
   # Locate model stages
   if ( ! "ModelStages" %in% names(modelParam_ls) ) {
     stages <- list.dirs(modelPath,full.names=FALSE,recursive=FALSE)
@@ -375,7 +374,7 @@ findModel <- function( modelDir, Param_ls ) {
         list(
           Name=sub("^\\.$","ModelDir",stage),      # Will only change root directory
           Dir=stage,                               # Relative to modelPath
-          Path=normalizePath(file.path(modelParam_ls$modelDir,stage),winslash="/")
+          Path=normalizePath(file.path(modelParam_ls$ModelDir,stage),winslash="/")
         )
       }
     )
@@ -480,7 +479,7 @@ findModel <- function( modelDir, Param_ls ) {
     # Prepend ModelDir/ResultsDir/StageDir onto front of DatastorePath
     stageDatastorePath <- file.path(
       modelParam_ls$ModelDir,
-      visioneval::getRunParameter("ResultsDir",Param_ls=stageParam_ls)
+      visioneval::getRunParameter("ResultsDir",Param_ls=stageParam_ls),
       stage$Dir
     )
     stageDatastorePath <- normalizePath(stageDatastorePath,winslash="/",mustWork=FALSE)
@@ -506,7 +505,7 @@ findModel <- function( modelDir, Param_ls ) {
     # Check if stage can run (enough parameters to run visioneval::loadModel and visioneval::runModel)
     missingParameters <- visioneval::verifyModelParameters(stage$RunParam_ls)
     stage$Runnable <- length(missingParameters) == 0
-    if ( ! stage$$Runnable ) {
+    if ( ! stage$Runnable ) {
       visioneval::writeLog(
         c(
           paste("Candidate stage",stage$Name,"is not Runnable"),
