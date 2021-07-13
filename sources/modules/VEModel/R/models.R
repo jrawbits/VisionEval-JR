@@ -142,6 +142,10 @@ confirmDialog <- function(msg) {
   return(conf)
 }
 
+################################################################################
+#                             Model Initialization                             #
+################################################################################
+
 ## Helper
 #  Generate a list of directories that might contain models
 #  referring to getwd(), ve.runtime, and <ModelRoot>
@@ -176,7 +180,8 @@ getModelRoots <- function(get.root=0,Param_ls=NULL) {
 }
 
 ## Helper function
-# Add parameters to modelParam_ls from BaseModel; do nothing if BaseModel not defined
+# Add parameters to modelParam_ls from BaseModel
+# Do nothing if BaseModel not present in modelParam_ls
 addBaseModel <- function(modelParam_ls) {
 
   existingParams <- names(modelParam_ls)
@@ -287,8 +292,8 @@ cullInputPath <- function(InputPath,InputDir) {
 }
 
 ## Helper function
-# Locate modelDir within "ModelRoots"
-# Param_ls is the set of global runtime parameters (may be an empty list)
+# Build RunParam_ls for each model stage
+# Param_ls is the initial set of global runtime parameters (may be an empty list)
 findModel <- function( modelDir, Param_ls ) {
 
   model_ls <- list() # List of valid model stage structures
@@ -412,11 +417,16 @@ findModel <- function( modelDir, Param_ls ) {
   #     ResultsDir/OutputDir for outputs)
   #   modelStage$Path - Absolute path to stage (== ModelDir/StageDir)
   #   modelStage$StartFrom - modelStage$Name of some earlier modelStage within this Model
-  #     RunParam_ls from that stage is built upon
+  #     RunParam_ls from that stage forms the basis for this stage
   #   modelStage$RunParam_ls - collected elements for stage (must be complete)
   #   modelStage$Runnable - does this stage have everything it needs?
-  #   modelStage$ModelState_ls - after the stage has been run (create, or load from ModelDir/ResultsDir/StageDir)
-  #     Use ModelState_ls to contruct ModelState_ls$ModelStateList (pre-loaded ModelStates for DatastorePath)l
+  #   modelStage$Reportable - Is this a "terminal" stage (not a "StartFrom" for any other stage)?
+  #   modelStage$ModelState_ls - present after the stage has been loaded or run
+  #     Any "StartFrom" stage must have one of these before the stage starting from it can be run.
+  #   modelStage$RunStatus - elevated from modelStage$ModelState_ls$RunStatus
+  #     Generally "Loaded", "Running", "Run Complete", or "Run Failed"
+  #     modelStage$ModelState_ls will perhaps also contain a "LastMessage" if it failed
+  #   modelStage$Results - cached results object for this model stage (if Reportable)
 
   # Loop through modelStages list examining ModelDir/StageDir
   for ( stage_seq in seq_along(modelStages) ) {
@@ -504,7 +514,6 @@ findModel <- function( modelDir, Param_ls ) {
     stageDatastorePath <- normalizePath(stageDatastorePath,winslash="/",mustWork=FALSE)
     stageParam_ls$DatastorePath <- c( stageDatastorePath, DatastorePath)
 
-    browser()
     # Add stage run_parameters.json (and set ParamPath if it is not already present)
     # run_parameters.json is deprecated, and is expected only to provide "descriptive" parameters
     # e.g. Scenario or Description, possibly Years
@@ -565,6 +574,7 @@ findModel <- function( modelDir, Param_ls ) {
 # modelPath may be a full path, and will be expanded into known model directories
 #  if it is a relative path.
 ve.model.init <- function(modelPath, log="error") {
+
   # Load system model configuration
   visioneval::initLog(Save=FALSE,Threshold=log)
 
@@ -579,103 +589,20 @@ ve.model.init <- function(modelPath, log="error") {
   self$modelStages <- model_ls$modelStages
   self$RunParam_ls <- model_ls$modelParam_ls
 
+  # Validity: Do we have a runnable model?
+  private$p.valid <- is.list(self$modelStages) && length(self$modelStages)>0
+  if ( private$p.valid ) {
+    self$status <- "Initialized"
+  } else {
+    self$status <- "Incomplete Setup"
+  }
+
   return(FALSE)
 }
 
-## Look up a standard model
-#  'model' is bare name of standard model
-#  returns the full path to that model template
-findStandardModel <- function( model ) {
-  standardModels <- system.file("models",package="VEModel")
-  if ( ! nzchar(standardModels) ) {
-    standardModels <- getOption("VEStandardModels",default=normalizePath("inst/models"))
-  }
-  if (is.null(model) || ! nzchar(model)) {
-    return( dir(standardModels) )
-  }
-
-  model <- model[1]
-  model <- file.path(standardModels,model)
-  if ( ! dir.exists(model) ) {
-    visioneval::writeLog(paste("No standard model called ",model),Level="error")
-    return( findStandardModel("") )
-  }
-  return(model) # absolute path to standard model matching name
-}
-
-## install a standard model with data identified by "skeleton"
-#  We're still expecting to distribute with standard models pre-installed
-#  Called automatically from findModel, where modelPath must be a bare model name
-#  Can install from other locations by calling this function with a more elaborate modelPath
-
-SampleModelDataFormat <- c( sample="samp",template="tpl",test="mini" )
-
-installStandardModel <- function( modelName, modelPath, confirm, skeleton=c("sample","template","test"), Param_ls=NULL, log="error" ) {
-  # Locate and install standard modelName into modelPath
-  #   If modelPath is NULL or empty string, create conflict-resolved modelName in first available standard root
-  #   If modelPath is an existing directory, put modelName into it (conflict-resolved name)
-  #   If modelPath does not exist, but dirname(modelPath) exists, create new directory and put the model there
-  #   If dirname(modelPath) also does not exist, tell user dirname(modelPath) does not exist and
-  #   they have to try again
-
-  visioneval::initLog(Save=FALSE,Threshold=log)
-  
-  model <- findStandardModel( modelName )
-  if ( is.null(modelName) || ! nzchar(modelName) ) {
-    return(model) # Expecting a vector of available standard model names
-  } # Otherwise model is the path to them model we will install
-
-  # Set up destination modelPath (always put in the first defined root)
-  if ( ! is.list(Param_ls) ) Param_ls <- list()
-  root <- getModelRoots(1)
-  if ( missing(modelPath) || is.null(modelPath) ) modelPath <- modelName
-  if ( ! isAbsolutePath(modelPath) ) {
-    installPath <- normalizePath(file.path(root,modelPath),winslash="/",mustWork=FALSE)
-  }
-  if ( dir.exists(installPath) ) {
-    installPath <- getUniqueName( dirname(installPath), basename(modelPath) )
-  }
-
-  # Confirm installation if requested
-  install <- TRUE
-  if ( ! is.character(skeleton) ) {
-    skeleton <- "sample"
-  } else {
-    skeleton <- skeleton[1]
-    if ( ! skeleton %in% names(SampleModelDataFormat) ) {
-      skeleton <- "sample"
-    }
-  }
-  modelData <- SampleModelDataFormat[skeleton]
-  if ( confirm && interactive() ) {
-    msg <- paste0("Install standard model '",modelName,"' (",modelData,") in ",installPath,"?\n")
-    install <- confirmDialog(msg)
-  }
-
-  if ( ! install ) stop("Model ",modelName," not installed.",call.=FALSE)
-
-  # Now do the installation
-  visioneval::writeLog(paste0("Installing ",modelName," from ",model," as ",modelData),Level="info")
-  dir.create(installPath)
-
-  # Locate the model and data source files
-  model.path <- file.path(model,"model")
-  model.files <- dir(model.path,full.names=TRUE)
-
-  data.path <- file.path(model,modelData)
-  if ( ! dir.exists(data.path) ) {
-    visioneval::writeLog(msg<-paste("No",skeleton,"data available for",modelName),Level="error")
-    visioneval::writeLog(c("Directory missing:",data.path),Level="info")
-    stop(msg)
-  }
-  data.files <- dir(data.path,full.names=TRUE)
-
-  file.copy(model.files,installPath,recursive=TRUE) # Copy standard model into modelPath
-  file.copy(data.files,installPath,recursive=TRUE) # Copy skeleton data into modelPath
-  visioneval::writeLog(paste0("Installed ",modelName," in ",installPath),Level="info")
-
-  return( list(modelName=modelName,modelPath=installPath) )
-}
+################################################################################
+#                      Model Management: copy, rename, dir                     #
+################################################################################
 
 ve.model.copy <- function(newName=NULL,newPath=NULL,copyResults=TRUE) {
   # Copy the current model to NewName (in ModelDir, unless newPath is also provided)
@@ -788,6 +715,225 @@ ve.model.rename <- function(Model=NULL,Scenario=NULL,Description=NULL,Save=TRUE)
   return( self ) # Will print model if running interactively
 }
 
+# Archive results directory
+ve.model.archive <- function(SaveDatastore=TRUE) {
+  failToArchive <- archiveResults(
+    RunParam_ls=self$RunParam_ls,
+    RunDir=file.path(self$modelPath,visioneval::getRunParameter("ResultsDir",Param_ls=self$RunParam_ls)),
+    SaveDatastore=SaveDatastore
+  )
+  if ( length(failToArchive)>0 ) {
+    visioneval::writeLog(paste0("Failed to archive results (",paste(failToArchive,collapse=","),")"),Level="error")
+    return(FALSE)
+  }
+  return(TRUE)
+}
+
+# Provide a listing of key model components (respecting stages, BaseModel, etc.)
+# Collapse model results into a single model run entry (though there are typically three pieces:
+# the ModelState.Rda, the Datastore, and log*.txt). Find current results, as well as archived
+# results from past model runs.
+# "shorten" is a logical parameter - if true, strip off the "ve.runtime" part of any paths, so what
+#   is shown is relative to ve.runtime.
+# Parameters control elements of the display (if all are FALSE, make them all TRUE):
+#   root==TRUE   : show "root" elements (config, run_model.R)
+#   inputs=TRUE  : show files in "inputs" and "defs" locations for the model
+#   results=TRUE : show result sets
+#   outputs=TRUE : show "outputs" (extracts and query results)
+# all.files is a logical parameter indicating whether to print (TRUE) all file name (e.g. the 50-something
+#   input file names) or (FALSE) just the model directory(root), input directories
+#   (InputPath+InputDir) or date of data set (Current, Timestamp) for results, and for outputs,
+#   show the contents of the extract directories rather than just the subdirectory name
+# TODO: the all.files functionality is not implemented.
+ve.model.dir <- function(pattern=NULL,stage=NULL,root=FALSE,results=FALSE,outputs=FALSE,inputs=FALSE,all.files=TRUE,shorten=TRUE) {
+  # We're going to search up contents of these directories
+  #   self$modelPath (root)
+  #   self$modelPath/ResultsDir (results)
+  #   self$modelPath/ResultsDir/self$stagePaths[stage] (results)
+  #   self$modelPath/InputDir (inputs)
+  #   self$modelPath/self$stagePaths[stage]/InputDir (inputs)
+  #   self$modelPath/ParamDir (inputs)
+  #   self$modelPath/self$stagePaths[stage]/ParamDir (inputs)
+  #   self$modelPath/OutputDir (outputs)
+  #   self$modelPath/OutputDir/query (outputs)
+  # If none root/results/outputs/inputs is TRUE, then all are TRUE
+  #   Otherwise, only report the ones actually asked for
+  validDir <- dir.exists(self$modelPath)
+  if ( ! private$p.valid || ! validDir ) {
+    return("No model found.")
+    private$p.valid <- FALSE
+  }
+  
+  inputDetails <- if ( ! missing(inputs) ) inputs else FALSE
+  if ( all(missing(root),missing(results),missing(outputs),missing(inputs)) ) {
+    root <- results <- outputs <- inputs <- TRUE
+  }
+
+  if ( missing(shorten) || shorten ) shorten <- self$modelPath
+  if ( is.null(stage) ) stage<-c(1:self$stageCount)
+
+  if ( inputs ) {
+    inputPath <- file.path(
+      self$modelPath,c(
+        (InputDir <- visioneval::getRunParameter("InputDir",Param_ls=self$RunParam_ls)),
+        file.path(self$stagePaths[stage],InputDir)
+      )
+    )
+    inputFiles <- dir(normalizePath(inputPath,winslash="/",mustWork=FALSE),full.names=TRUE)
+    if ( inputDetails ) {
+      inputFiles <- inputFiles[ ! dir.exists(inputFiles) ] # keep only the files, not subdirectories
+    } else {
+      # no details: keep directories, not files
+      # but also show the input directory names themselves (but only if they exist)
+      inputFiles <- normalizePath(c(inputPath,inputFiles),winslash="/",mustWork=FALSE)
+      inputFiles <- inputFiles[ dir.exists(inputFiles) ]
+    }
+  } else inputFiles <- character(0)
+  ResultsDir <- normalizePath(
+    file.path(self$modelPath,visioneval::getRunParameter("ResultsDir",Param_ls=self$RunParam_ls)),
+    winslash="/",mustWork=FALSE
+  )
+  if ( outputs ) {
+    outputPath <- file.path(
+      ResultsDir,(OutputDir <- visioneval::getRunParameter("OutputDir",Param_ls=self$RunParam_ls))
+    )
+    outputFiles <- dir(normalizePath(outputPath,winslash="/",mustWork=FALSE),full.names=TRUE,recursive=all.files)
+  } else outputFiles <- character(0)
+  ResultsInRoot <- ( root && ResultsDir==self$modelPath )
+  if ( results || ResultsInRoot  ) {
+    # Handle the old-style case where ResultsDir==modelPath
+    # ResultsDir is already normalized
+    # We're only going to look for known result types ("artifacts")
+    resultPath <- c(
+      ResultsDir,
+      file.path(ResultsDir,self$stagePaths[stage])
+    )
+    resultPath <- normalizePath(resultPath,winslash="/",mustWork=FALSE)
+    mstates <- dir(resultPath,pattern="^ModelState(_[[:digit:]]{4}-.*)*\\.Rda$",full.names=TRUE)
+    dstores <- dir(resultPath,pattern="^Datastore(_[[:digit:]]{4}-.*)*$",full.names=TRUE)
+    logs    <- dir(resultPath,pattern="Log(_[[:digit:]]{4}-.*)+\\.txt",full.names=TRUE)
+    resultFiles <- c(mstates,dstores,logs)
+  } else resultFiles <- character(0)
+  if ( root ) {
+    rootPath <- c(self$modelPath,file.path(self$modelPath,self$stagePaths[stage]))
+    rootPath <- unique(normalizePath(rootPath,winslash="/",mustWork=FALSE))
+    rootFiles <- dir(rootPath,full.names=TRUE)
+    if ( ResultsInRoot ) rootFiles <- setdiff(rootFiles,resultFiles)
+    rootFiles <- setdiff(rootFiles, file.path(self$modelPath,self$stagePaths[stage]))
+  } else rootFiles <- character(0)
+
+  files <- sort(unique(c(
+    # in case nothing was asked for: list(list()[x]) would return NULL, not character(0)
+    # So force the type for files by providing an empty string to to add to NULL/nothing
+    character(0), 
+    unlist(
+      list(inputFiles,outputFiles,resultFiles,rootFiles)[c(inputs,outputs,results,root)]
+    )
+  )))
+  if ( nzchar(shorten) ) files <- sub(paste0(shorten,"/"),"",files,fixed=TRUE)
+  return(files)
+}
+
+# Function to interactively remove prior model runs or extracts
+ve.model.clear <- function(force=FALSE,outputOnly=NULL,stage=NULL,show=10) {
+  # Remove outputs and/or results, either interactivel or in batch
+  # 'show' controls maximum number of outputs to display
+  # Can limit to outputs in a certain 'stage'
+  # outputOnly will show results as well as outputs for deletion;
+  #   if outputs exist, we only show those by default
+  # force says "just go ahead and delete everything", respecting outputOnly,
+  #   so the default is to delete the outputs and leave the results, but if
+  #   called a second time, will delete the results.
+
+  if ( ! private$p.valid ) {
+    visioneval::writeLog(self$status,Level="error")
+    return( invisible(FALSE) )
+  }
+  
+  to.delete <- self$dir(outputs=TRUE)
+  if ( missing( outputOnly ) ) {
+    outputOnly <- length(to.delete)>0
+  }
+  if ( ! isTRUE(outputOnly) ) to.delete <- c(to.delete,self$dir(results=TRUE))
+  # note, by default $dir shortens by removing self$modelPath
+  # so this deletion will only work if getwd()==self$modelPath
+  if ( normalizePath(getwd(),winslash="/") != self$modelPath ) {
+    owd <- setwd(self$modelPath)
+    on.exit(setwd(owd))
+  }
+
+  force <- ( force || ! ( interactive() && length(to.delete)>0 ) )
+  if ( length(to.delete)>0 ) {
+    if ( force ) {
+      unlink(to.delete,recursive=TRUE)
+    } else if ( ! force && length(to.delete)>0 ) {
+      action = "h"
+      start = 1
+      stop <- min(start+show-1,length(to.delete))
+      while ( action != "q" ) {
+        print(to.delete[start:stop])
+        cat("Enter an item number to delete it, or a selection (2,3,7) or range (1:5)\n")
+        if ( action == "h" ) {
+          cat("'q' to quit, 'all' to delete all on this screen")
+          if ( start>1 )               cat(", 'p' for previous files")
+          if ( length(to.delete)>stop ) cat(", 'n' for more files")
+          cat("\n")
+        }
+        cat("Your choice: ")
+        response <- tolower(readline())
+        if ( grepl("^all$",response) ) {
+          response <- paste0(start,":",stop)
+        } else {
+          if ( grepl("[^hnpq0-9:, ]",response) ) { # if any illegal character, loop back to help
+            action = "h"
+            next
+          }
+          response <- sub("^ *","",response)
+        }
+        if ( grepl("^[0-9:, ]+$",response) ) {
+          response <- try ( eval(parse(text=paste("c(",response,")"))) )
+          # Look for character command
+          if ( is.numeric(response) ) {
+            candidates <- to.delete[start:stop]
+            unlink(candidates[response],recursive=TRUE)
+            cat("Deleted:\n",paste(candidates[response],collapse="\n"),"\n")
+          }
+          to.delete <- self$dir(outputs=TRUE)
+          if ( ! isTRUE(outputOnly) ) to.delete <- c(to.delete,self$dir(results=TRUE))
+          if ( length(to.delete) > 0 ) {
+            start = 1
+            stop <- min(start+show-1,length(to.delete))
+            action = "h"
+          } else {
+            cat("No files remaining to delete.\n")
+            action = "q"
+          }
+        } else {
+          action <- substr(response[1],1,1)
+          if ( action %in% c("n","p") ) {
+            if ( action == "n" ) {
+              start <- min(start + show,length(to.delete))
+              if ( start == length(to.delete) ) start <- max(length(to.delete),1)
+              stop <- min(start+show-1,length(to.delete))
+            } else if ( action == "p" ) {
+              start <- max(start - show,1)
+              stop <- min(start+show-1,length(to.delete))
+            }
+          } else if ( action %in% c("h","q") ) {
+            next
+          } else action = "h"
+        }
+      }
+    }
+  }
+  if ( ! force ) cat("Nothing else to delete.\n")
+  return(invisible(force))
+}
+
+################################################################################
+#                              Model Information                               #
+################################################################################
+
 # Helper function:
 # parse a table of package/module inputs from assembled AllSpecs_ls
 # returns a data.frame summarizing the inputs
@@ -842,6 +988,93 @@ summarizeSpecs <- function(AllSpecs_ls) {
   }
   specFrame <- specFrame[!is.na(specFrame$SPEC),] # remove dummyRow
   return(specFrame)
+}
+
+# List the model contents, using parsedScript and specSummary from ve.model.load
+ve.model.list <- function(inputs=FALSE,outputs=FALSE,details=NULL) {
+  # "inputs" lists the input files (Inp) by package and module (details = field attributes)
+  # "outputs" lists the fields that are Set in the Datastore (details = field attributes)
+  # if both are true, we also liet the Get elements
+  # "details" FALSE lists units and description plus pacakge/module/group/table/name
+  # "details" TRUE lists all the field attributes (the full data.frame of specSummary)
+
+  if ( ! private$p.valid ) {
+    visioneval::writeLog(paste0("Invalid model: ",self$status),level="error")
+    return( invisible(data.frame()) )
+  }
+
+  # which rows to return
+  print(class(self$specSummary))
+  inputRows <- if ( inputs ) which(self$specSummary$SPEC=="Inp") else integer(0)
+  outputRows <- if ( outputs ) which(self$specSummary$SPEC=="Set") else integer(0)
+  usedRows <- if ( inputs == outputs ) which(self$specSummary$SPEC=="Get") else integer(0)
+  listRows <- unique(c(inputRows,outputRows,usedRows))
+
+  # which fields to return
+  listFields <- c("SPEC","PACKAGE","MODULE","GROUP","TABLE","NAME")
+  addFields <- character(0)
+  if ( ! is.null(details) ) {
+    if ( is.character(details) ) {
+      addFields <- details[which(details %in% names(self$specSummary))]
+    }
+    if ( is.logical(details) ) {
+      if ( details ) {
+        addFields <- setdiff(names(self$specSummary),listFields)
+      } else {
+        addFields <- c("UNITS","DESCRIPTION")
+      }
+    }
+  }
+  listFields <- c(listFields, addFields)
+
+  return(self$specSummary[listRows,listFields])
+}
+
+# Helper
+# List unique sources in a parameter list
+uniqueSources <- function(stage) {
+  sources <- attr(stage$RunParam_ls,"source")
+  if ( is.null(sources) ) {
+    sources <- "NULL"
+  } else {
+    sources <- unique(sources$Source)
+  }
+  return(sources)
+}
+
+# Print a summary of a model stage
+printModelStage <- function(stage,details=FALSE) {
+  cat("Stage:",stage$Name,"(Reportable:",stage$Reportable,")\n")
+  cat("Status:",stage$RunStatus,"\n")
+  if ( details ) {
+    cat("   Starts from:",stage$StartFrom,"\n")
+    cat("   Configurations:\n")
+    cat(paste("   ",uniqueSources(stage),"\n"))
+  }
+}
+
+# Print a summary of the VEModel, including its run status
+ve.model.print <- function(details=FALSE) {
+  cat("Model:",self$modelName,"\n")
+  if ( details ) {
+    cat("Path:","\n")
+    cat(self$modelPath,"\n")
+  }
+  cat("Status:", self$status,"\n")
+  if ( private$p.valid ) {
+    cat("Model Stages:\n")
+    for ( s in self$modelStages ) {
+      printModelStage(s,details)
+  }
+  private$p.valid
+}
+
+ve.model.log <- function() {
+  ms <- self$ModelState[[self$stageCount]]
+  if ( is.null(ms) ) return("")
+  logfile <- file.path(self$resultspath(),ms$LogFile) # log file is saved in ResultsDir/stagePath
+  if ( is.null(logfile) || is.na(logfile) ) return("")
+  return(logfile)
 }
 
 # Helper function:
@@ -989,190 +1222,9 @@ ve.model.loadModelState <- function(log="error") {
   invisible(self$ModelState)
 }
 
-# Function to inspect the model configuration/setup parameters
-# With no arguments, reports name/value pair for values explicitly defined
-# If Param_ls is set, it adds its named components to self$RunParam_ls
-# The return is the new set of named values (using default or other show/search arguments)
-ve.model.set <- function(show="values", src=NULL, namelist=NULL, pattern=NULL,Param_ls=NULL) {
-  # break out the "do something" function (Param_ls provided - set values defined in Param_ls in
-  # self$RunParam_ls).
-  # "show" is a character vector describing what to return (default, "values" defined in self$RunParam_ls)
-  #   "name" - names of settings (character vector of matching names)
-  #   "value" - named list of settings present in self$RunParam_ls (or defaults) (DEFAULT)
-  #   "source" - return the source of the parameter (plus name or value if also requested)
-  # "show" also describes where to look
-  #   "runtime" - use just the list from VEModel::getSetup() ignoring the model-specific settings
-  #       (optionally include undefined defaults if "defaults" is also included in "show")
-  #   "defaults" - include the list of parameter defaults as if they were defined
-  #       (overridden by any that actually are defined)
-  #   "self" - (DEFAULT) returns the constructed model specification
-  #       (optionally including undefined defaults if "defaults" in "show)
-  #       (if "self" and "runtime", use "self")
-  #       If model is not valid, falls back to "runtime" as default
-  #   If only one of "source", "name", "value":
-  #      return a named vector (parameter names; corresponding element)
-  #   If both "source" and "value":
-  #      return a data.frame (row.names == "name")
-  #   If both "source" (or "value") and "name":
-  #      return a data.frame with a "name" column plus either source or value (row.names==names)
-  #   If all of "source", "name", "value":
-  #      return a data.frame of all three (row.names==names)
-  # If src is a character vector, find the parameter sources that match any of the elements
-  #   as a regular expression.
-  # If pattern is a character vector, look for names in the setup that match any of the
-  #  vector elements (as regular expressions)
-  # If namelist is a character vector, treat each item as a name and return the list of items from
-  #  the model setup (but dip into the full hierarchy, unless "src" is also set)
-
-  if ( is.null(Param_ls) ) {
-    where.options <- c("defaults","self","runtime")
-    if ( ! private$p.valid ) {
-      where.options <- where.options[-2] # Can't seek self if invalid
-    }
-    where.to.look <- where.options %in% show;
-    names(where.to.look) <- where.options;
-    if ( ! any(where.to.look) ) {
-      if ( private$p.valid && "self" %in% names(where.to.look) ) {
-        where.to.look["self"] <- TRUE
-      } else {
-        where.to.look["runtime"] <- TRUE
-      }
-    }
-    where.to.look <- where.options[where.to.look]
-
-    searchParams_ls <- list()
-    if ( "defaults" %in% where.to.look ) {
-      # defaults, possibly plus self
-      if ( "self" %in% where.to.look ) in.self <- self$RunParam_ls else in.self <- list()
-      searchParams_ls <-visioneval::mergeParameters(searchParams_ls,visioneval::defaultVERunParameters(in.self))
-    }
-    if ( "runtime" %in% where.to.look ) { # only self
-      searchParams_ls <- visioneval::mergeParameters(searchParams_ls,getSetup())
-    } else {
-      searchParams_ls <- visioneval::mergeParameters(searchParams_ls,self$RunParam_ls)
-    }
-  } else {
-    searchParams_ls <- Param_ls # search in command line structure
-  }
-
-  if ( is.character(src) ) {
-    # search for matching patterns in searchParams_ls source attribute
-    sources <- attr(searchParams_ls,"source")
-    matchsrc <- unique(sapply(src, function(s) sapply(sources,grep,pattern=s)) )
-  } else {
-    matchsrc <- integer(0)
-  }
-  if ( is.character(namelist) ) {
-    # Slightly faster than using pattern (no "grep" step)
-    matchname <- which(names(searchParams_ls) %in% namelist)
-  } else {
-    matchname <- integer(0)
-  }
-  if ( is.character(pattern) ) {
-    nms <- names(searchParams_ls)
-    matchpat <- unique(sapply(src, function(s) sapply(nms,grep,pattern=s)) )
-  } else {
-    matchpat <- integer(0)
-  }
-  matching <- unique(c(matchsrc,matchname,matchpat))
-  if ( is.null(matching) || length(matching)==0 ) {
-    sought <- searchParams_ls
-  } else {
-    sought <- searchParams_ls[matching]
-  }
-
-  # If parameters are provided, override the model's run parameters with them.
-  if ( ! is.null(Param_ls) ) {
-    self$RunParam_ls[ names(sought) ] <- sought
-  }
-
-  return.options <- c("name","value","source")
-  what.to.return <- return.options %in% show
-  if ( ! any(what.to.return) ) what.to.return <- c(FALSE,TRUE,FALSE) # just values
-
-  results <- data.frame( # columns in same order as return.options
-    Parameter = names(sought),
-    Value     = sought,
-    Source    = attr(sought,"source")
-  )
-  results <- results[,what.to.return] # logical indexing into columns
-  if ( is.data.frame(results) ) {
-    row.names(results) <- results$Parameter
-  } else {
-    names(results) <- names(sought) # One column, so data.frame drops to vector
-  }
-
-  return(results)
-}
-
-# List the model contents, using parsedScript and specSummary from ve.model.load
-ve.model.list <- function(inputs=FALSE,outputs=FALSE,details=NULL) {
-  # "inputs" lists the input files (Inp) by package and module (details = field attributes)
-  # "outputs" lists the fields that are Set in the Datastore (details = field attributes)
-  # if both are true, we also liet the Get elements
-  # "details" FALSE lists units and description plus pacakge/module/group/table/name
-  # "details" TRUE lists all the field attributes (the full data.frame of specSummary)
-
-  if ( ! private$p.valid ) {
-    visioneval::writeLog(paste0("Invalid model: ",self$status),level="error")
-    return( invisible(data.frame()) )
-  }
-
-  # which rows to return
-  print(class(self$specSummary))
-  inputRows <- if ( inputs ) which(self$specSummary$SPEC=="Inp") else integer(0)
-  outputRows <- if ( outputs ) which(self$specSummary$SPEC=="Set") else integer(0)
-  usedRows <- if ( inputs == outputs ) which(self$specSummary$SPEC=="Get") else integer(0)
-  listRows <- unique(c(inputRows,outputRows,usedRows))
-
-  # which fields to return
-  listFields <- c("SPEC","PACKAGE","MODULE","GROUP","TABLE","NAME")
-  addFields <- character(0)
-  if ( ! is.null(details) ) {
-    if ( is.character(details) ) {
-      addFields <- details[which(details %in% names(self$specSummary))]
-    }
-    if ( is.logical(details) ) {
-      if ( details ) {
-        addFields <- setdiff(names(self$specSummary),listFields)
-      } else {
-        addFields <- c("UNITS","DESCRIPTION")
-      }
-    }
-  }
-  listFields <- c(listFields, addFields)
-
-  return(self$specSummary[listRows,listFields])
-}
-
-ve.model.save <- function(FileName="visioneval.cnf") {
-  # Write self$RunParam_ls into file.path(self$modelPath,FileName) (YAML format).
-  # Do not include default values or those in the runtime setup
-  # Use the "set" function to limit what is shown.
-  # Can provide alternate name (but if it's not part of the known name set, it's 'just for
-  # reference')
-  if ( ! private$p.valid ) {
-    visioneval::writeLog(paste0("Invalid model: ",self$status),level="error")
-    return( invisible(list()) )
-  }
-
-  normalizePath(file.path(self$modelPath,FileName),winslash="/",mustWork=FALSE)
-  yaml::write_yaml(self$RunParam_ls,FileName,indent=2)
-  invisible(self$RunParam_ls)
-}
-
-ve.model.archive <- function(SaveDatastore=TRUE) {
-  failToArchive <- archiveResults(
-    RunParam_ls=self$RunParam_ls,
-    RunDir=file.path(self$modelPath,visioneval::getRunParameter("ResultsDir",Param_ls=self$RunParam_ls)),
-    SaveDatastore=SaveDatastore
-  )
-  if ( length(failToArchive)>0 ) {
-    visioneval::writeLog(paste0("Failed to archive results (",paste(failToArchive,collapse=","),")"),Level="error")
-    return(FALSE)
-  }
-  return(TRUE)
-}
+################################################################################
+#                                 Running Models                               #
+################################################################################
 
 # Run the modelPath (through its stages)
 # Find the runModel script
@@ -1405,227 +1457,145 @@ ve.model.run <- function(run="save",stage=NULL,lastStage=NULL,log="warn") {
   return(invisible(self$status))
 }
 
-ve.model.log <- function() {
-  ms <- self$ModelState[[self$stageCount]]
-  if ( is.null(ms) ) return("")
-  logfile <- file.path(self$resultspath(),ms$LogFile) # log file is saved in ResultsDir/stagePath
-  if ( is.null(logfile) || is.na(logfile) ) return("")
-  return(logfile)
-}
+################################################################################
+#                              Model Configuration                             #
+################################################################################
 
-# Provide a listing of key model components (respecting stages, BaseModel, etc.)
-# Collapse model results into a single model run entry (though there are typically three pieces:
-# the ModelState.Rda, the Datastore, and log*.txt). Find current results, as well as archived
-# results from past model runs.
-# "shorten" is a logical parameter - if true, strip off the "ve.runtime" part of any paths, so what
-#   is shown is relative to ve.runtime.
-# Parameters control elements of the display (if all are FALSE, make them all TRUE):
-#   root==TRUE   : show "root" elements (config, run_model.R)
-#   inputs=TRUE  : show files in "inputs" and "defs" locations for the model
-#   results=TRUE : show result sets
-#   outputs=TRUE : show "outputs" (extracts and query results)
-# all.files is a logical parameter indicating whether to print (TRUE) all file name (e.g. the 50-something
-#   input file names) or (FALSE) just the model directory(root), input directories
-#   (InputPath+InputDir) or date of data set (Current, Timestamp) for results, and for outputs,
-#   show the contents of the extract directories rather than just the subdirectory name
-# TODO: the all.files functionality is not implemented.
-ve.model.dir <- function(pattern=NULL,stage=NULL,root=FALSE,results=FALSE,outputs=FALSE,inputs=FALSE,all.files=TRUE,shorten=TRUE) {
-  # We're going to search up contents of these directories
-  #   self$modelPath (root)
-  #   self$modelPath/ResultsDir (results)
-  #   self$modelPath/ResultsDir/self$stagePaths[stage] (results)
-  #   self$modelPath/InputDir (inputs)
-  #   self$modelPath/self$stagePaths[stage]/InputDir (inputs)
-  #   self$modelPath/ParamDir (inputs)
-  #   self$modelPath/self$stagePaths[stage]/ParamDir (inputs)
-  #   self$modelPath/OutputDir (outputs)
-  #   self$modelPath/OutputDir/query (outputs)
-  # If none root/results/outputs/inputs is TRUE, then all are TRUE
-  #   Otherwise, only report the ones actually asked for
-  validDir <- dir.exists(self$modelPath)
-  if ( ! private$p.valid || ! validDir ) {
-    return("No model found.")
-    private$p.valid <- FALSE
-  }
-  
-  inputDetails <- if ( ! missing(inputs) ) inputs else FALSE
-  if ( all(missing(root),missing(results),missing(outputs),missing(inputs)) ) {
-    root <- results <- outputs <- inputs <- TRUE
-  }
+# TODO: clean up the "set" function. Need to be able to do the following:
+# Perhaps rename to "Settings"
+#   - Report global configuration ("Global")("All Models")
+#   - Report model-wide configuration ("Model")("All Stages")
+#   - Report stage configuration ("Stages")
+# Make interactive changes to a model's settings files (or edit externally in text editor)
+# Probe around at the different levels
 
-  if ( missing(shorten) || shorten ) shorten <- self$modelPath
-  if ( is.null(stage) ) stage<-c(1:self$stageCount)
+# Function to inspect the model configuration/setup parameters
+# With no arguments, reports name/value pair for values explicitly defined
+# The return is the new set of named values (using default or other show/search arguments)
+ve.model.set <- function(show="values", src=NULL, namelist=NULL, pattern=NULL,stage=NULL) {
+  # "show" is a character vector describing what to return (default, "values" defined in self$RunParam_ls)
+  #   "name" - names of settings (character vector of matching names)
+  #   "value" - named list of settings present in self$RunParam_ls (or defaults) (DEFAULT)
+  #   "source" - return the source of the parameter (plus name or value if also requested)
+  # "show" also describes where to look
+  #   "runtime" - use just the list from VEModel::getSetup() ignoring the model-specific settings
+  #       (optionally include undefined defaults if "defaults" is also included in "show")
+  #   "defaults" - include the list of parameter defaults as if they were defined
+  #       (overridden by any that actually are defined)
+  #   "self" - (DEFAULT) returns the constructed model specification
+  #       (optionally including undefined defaults if "defaults" in "show)
+  #       (if "self" and "runtime", use "self")
+  #       If model is not valid, falls back to "runtime" as default
+  #   If only one of "source", "name", "value":
+  #      return a named vector (parameter names; corresponding element)
+  #   If both "source" and "value":
+  #      return a data.frame (row.names == "name")
+  #   If both "source" (or "value") and "name":
+  #      return a data.frame with a "name" column plus either source or value (row.names==names)
+  #   If all of "source", "name", "value":
+  #      return a data.frame of all three (row.names==names)
+  # If src is a character vector, find the parameter sources that match any of the elements
+  #   as a regular expression.
+  # If pattern is a character vector, look for names in the setup that match any of the
+  #  vector elements (as regular expressions)
+  # If namelist is a character vector, treat each item as a name and return the list of items from
+  #  the model setup (but dip into the full hierarchy, unless "src" is also set)
 
-  if ( inputs ) {
-    inputPath <- file.path(
-      self$modelPath,c(
-        (InputDir <- visioneval::getRunParameter("InputDir",Param_ls=self$RunParam_ls)),
-        file.path(self$stagePaths[stage],InputDir)
-      )
-    )
-    inputFiles <- dir(normalizePath(inputPath,winslash="/",mustWork=FALSE),full.names=TRUE)
-    if ( inputDetails ) {
-      inputFiles <- inputFiles[ ! dir.exists(inputFiles) ] # keep only the files, not subdirectories
-    } else {
-      # no details: keep directories, not files
-      # but also show the input directory names themselves (but only if they exist)
-      inputFiles <- normalizePath(c(inputPath,inputFiles),winslash="/",mustWork=FALSE)
-      inputFiles <- inputFiles[ dir.exists(inputFiles) ]
+  if ( is.null(Param_ls) ) {
+    where.options <- c("defaults","self","runtime")
+    if ( ! private$p.valid ) {
+      where.options <- where.options[-2] # Can't seek self if invalid
     }
-  } else inputFiles <- character(0)
-  ResultsDir <- normalizePath(
-    file.path(self$modelPath,visioneval::getRunParameter("ResultsDir",Param_ls=self$RunParam_ls)),
-    winslash="/",mustWork=FALSE
-  )
-  if ( outputs ) {
-    outputPath <- file.path(
-      ResultsDir,(OutputDir <- visioneval::getRunParameter("OutputDir",Param_ls=self$RunParam_ls))
-    )
-    outputFiles <- dir(normalizePath(outputPath,winslash="/",mustWork=FALSE),full.names=TRUE,recursive=all.files)
-  } else outputFiles <- character(0)
-  ResultsInRoot <- ( root && ResultsDir==self$modelPath )
-  if ( results || ResultsInRoot  ) {
-    # Handle the old-style case where ResultsDir==modelPath
-    # ResultsDir is already normalized
-    # We're only going to look for known result types ("artifacts")
-    resultPath <- c(
-      ResultsDir,
-      file.path(ResultsDir,self$stagePaths[stage])
-    )
-    resultPath <- normalizePath(resultPath,winslash="/",mustWork=FALSE)
-    mstates <- dir(resultPath,pattern="^ModelState(_[[:digit:]]{4}-.*)*\\.Rda$",full.names=TRUE)
-    dstores <- dir(resultPath,pattern="^Datastore(_[[:digit:]]{4}-.*)*$",full.names=TRUE)
-    logs    <- dir(resultPath,pattern="Log(_[[:digit:]]{4}-.*)+\\.txt",full.names=TRUE)
-    resultFiles <- c(mstates,dstores,logs)
-  } else resultFiles <- character(0)
-  if ( root ) {
-    rootPath <- c(self$modelPath,file.path(self$modelPath,self$stagePaths[stage]))
-    rootPath <- unique(normalizePath(rootPath,winslash="/",mustWork=FALSE))
-    rootFiles <- dir(rootPath,full.names=TRUE)
-    if ( ResultsInRoot ) rootFiles <- setdiff(rootFiles,resultFiles)
-    rootFiles <- setdiff(rootFiles, file.path(self$modelPath,self$stagePaths[stage]))
-  } else rootFiles <- character(0)
-
-  files <- sort(unique(c(
-    # in case nothing was asked for: list(list()[x]) would return NULL, not character(0)
-    # So force the type for files by providing an empty string to to add to NULL/nothing
-    character(0), 
-    unlist(
-      list(inputFiles,outputFiles,resultFiles,rootFiles)[c(inputs,outputs,results,root)]
-    )
-  )))
-  if ( nzchar(shorten) ) files <- sub(paste0(shorten,"/"),"",files,fixed=TRUE)
-  return(files)
-}
-
-# Function to interactively remove prior model runs or extracts
-ve.model.clear <- function(force=FALSE,outputOnly=NULL,stage=NULL,show=10) {
-  # Remove outputs and/or results, either interactivel or in batch
-  # 'show' controls maximum number of outputs to display
-  # Can limit to outputs in a certain 'stage'
-  # outputOnly will show results as well as outputs for deletion;
-  #   if outputs exist, we only show those by default
-  # force says "just go ahead and delete everything", respecting outputOnly,
-  #   so the default is to delete the outputs and leave the results, but if
-  #   called a second time, will delete the results.
-
-  if ( ! private$p.valid ) {
-    visioneval::writeLog(self$status,Level="error")
-    return( invisible(FALSE) )
-  }
-  
-  to.delete <- self$dir(outputs=TRUE)
-  if ( missing( outputOnly ) ) {
-    outputOnly <- length(to.delete)>0
-  }
-  if ( ! isTRUE(outputOnly) ) to.delete <- c(to.delete,self$dir(results=TRUE))
-  # note, by default $dir shortens by removing self$modelPath
-  # so this deletion will only work if getwd()==self$modelPath
-  if ( normalizePath(getwd(),winslash="/") != self$modelPath ) {
-    owd <- setwd(self$modelPath)
-    on.exit(setwd(owd))
-  }
-
-  force <- ( force || ! ( interactive() && length(to.delete)>0 ) )
-  if ( length(to.delete)>0 ) {
-    if ( force ) {
-      unlink(to.delete,recursive=TRUE)
-    } else if ( ! force && length(to.delete)>0 ) {
-      action = "h"
-      start = 1
-      stop <- min(start+show-1,length(to.delete))
-      while ( action != "q" ) {
-        print(to.delete[start:stop])
-        cat("Enter an item number to delete it, or a selection (2,3,7) or range (1:5)\n")
-        if ( action == "h" ) {
-          cat("'q' to quit, 'all' to delete all on this screen")
-          if ( start>1 )               cat(", 'p' for previous files")
-          if ( length(to.delete)>stop ) cat(", 'n' for more files")
-          cat("\n")
-        }
-        cat("Your choice: ")
-        response <- tolower(readline())
-        if ( grepl("^all$",response) ) {
-          response <- paste0(start,":",stop)
-        } else {
-          if ( grepl("[^hnpq0-9:, ]",response) ) { # if any illegal character, loop back to help
-            action = "h"
-            next
-          }
-          response <- sub("^ *","",response)
-        }
-        if ( grepl("^[0-9:, ]+$",response) ) {
-          response <- try ( eval(parse(text=paste("c(",response,")"))) )
-          # Look for character command
-          if ( is.numeric(response) ) {
-            candidates <- to.delete[start:stop]
-            unlink(candidates[response],recursive=TRUE)
-            cat("Deleted:\n",paste(candidates[response],collapse="\n"),"\n")
-          }
-          to.delete <- self$dir(outputs=TRUE)
-          if ( ! isTRUE(outputOnly) ) to.delete <- c(to.delete,self$dir(results=TRUE))
-          if ( length(to.delete) > 0 ) {
-            start = 1
-            stop <- min(start+show-1,length(to.delete))
-            action = "h"
-          } else {
-            cat("No files remaining to delete.\n")
-            action = "q"
-          }
-        } else {
-          action <- substr(response[1],1,1)
-          if ( action %in% c("n","p") ) {
-            if ( action == "n" ) {
-              start <- min(start + show,length(to.delete))
-              if ( start == length(to.delete) ) start <- max(length(to.delete),1)
-              stop <- min(start+show-1,length(to.delete))
-            } else if ( action == "p" ) {
-              start <- max(start - show,1)
-              stop <- min(start+show-1,length(to.delete))
-            }
-          } else if ( action %in% c("h","q") ) {
-            next
-          } else action = "h"
-        }
+    where.to.look <- where.options %in% show;
+    names(where.to.look) <- where.options;
+    if ( ! any(where.to.look) ) {
+      if ( private$p.valid && "self" %in% names(where.to.look) ) {
+        where.to.look["self"] <- TRUE
+      } else {
+        where.to.look["runtime"] <- TRUE
       }
     }
+    where.to.look <- where.options[where.to.look]
+
+    searchParams_ls <- list()
+    if ( "defaults" %in% where.to.look ) {
+      # defaults, possibly plus self
+      if ( "self" %in% where.to.look ) in.self <- self$RunParam_ls else in.self <- list()
+      searchParams_ls <-visioneval::mergeParameters(searchParams_ls,visioneval::defaultVERunParameters(in.self))
+    }
+    if ( "runtime" %in% where.to.look ) { # only self
+      searchParams_ls <- visioneval::mergeParameters(searchParams_ls,getSetup())
+    } else {
+      searchParams_ls <- visioneval::mergeParameters(searchParams_ls,self$RunParam_ls)
+    }
+  } else {
+    searchParams_ls <- Param_ls # search in command line structure
   }
-  if ( ! force ) cat("Nothing else to delete.\n")
-  return(invisible(force))
+
+  if ( is.character(src) ) {
+    # search for matching patterns in searchParams_ls source attribute
+    sources <- attr(searchParams_ls,"source")
+    matchsrc <- unique(sapply(src, function(s) sapply(sources,grep,pattern=s)) )
+  } else {
+    matchsrc <- integer(0)
+  }
+  if ( is.character(namelist) ) {
+    # Slightly faster than using pattern (no "grep" step)
+    matchname <- which(names(searchParams_ls) %in% namelist)
+  } else {
+    matchname <- integer(0)
+  }
+  if ( is.character(pattern) ) {
+    nms <- names(searchParams_ls)
+    matchpat <- unique(sapply(src, function(s) sapply(nms,grep,pattern=s)) )
+  } else {
+    matchpat <- integer(0)
+  }
+  matching <- unique(c(matchsrc,matchname,matchpat))
+  if ( is.null(matching) || length(matching)==0 ) {
+    sought <- searchParams_ls
+  } else {
+    sought <- searchParams_ls[matching]
+  }
+
+  # If parameters are provided, override the model's run parameters with them.
+  if ( ! is.null(Param_ls) ) {
+    self$RunParam_ls[ names(sought) ] <- sought
+  }
+
+  return.options <- c("name","value","source")
+  what.to.return <- return.options %in% show
+  if ( ! any(what.to.return) ) what.to.return <- c(FALSE,TRUE,FALSE) # just values
+
+  results <- data.frame( # columns in same order as return.options
+    Parameter = names(sought),
+    Value     = sought,
+    Source    = attr(sought,"source")
+  )
+  results <- results[,what.to.return] # logical indexing into columns
+  if ( is.data.frame(results) ) {
+    row.names(results) <- results$Parameter
+  } else {
+    names(results) <- names(sought) # One column, so data.frame drops to vector
+  }
+
+  return(results)
 }
 
-# Print a summary of the VEModel, including its run status
-ve.model.print <- function() {
-  if ( private$p.valid ) {
-    cat("Model:",self$modelName,"\n")
-    cat("Path:\n")
-    print(self$modelPath)
-    cat("Datastore Type:",self$ModelState[[1]]$DatastoreType,"\n")
-  } else {
-    cat("Model: Invalid\n")
+ve.model.save <- function(FileName="visioneval.cnf") {
+  # Write self$RunParam_ls into file.path(self$modelPath,FileName) (YAML format).
+  # Do not include default values or those in the runtime setup
+  # Use the "set" function to limit what is shown.
+  # Can provide alternate name (but if it's not part of the known name set, it's 'just for
+  # reference')
+  if ( ! private$p.valid ) {
+    visioneval::writeLog(paste0("Invalid model: ",self$status),level="error")
+    return( invisible(list()) )
   }
-  cat("Status:", self$status,"\n")
-  self$status
+
+  normalizePath(file.path(self$modelPath,FileName),winslash="/",mustWork=FALSE)
+  yaml::write_yaml(self$RunParam_ls,FileName,indent=2)
+  invisible(self$RunParam_ls)
 }
 
 # Report the model results path (used to creat a VEResults object and
@@ -1649,6 +1619,10 @@ ve.model.resultspath <- function(stage,Param_ls=NULL) {
   );
   return(resultsPath)
 }
+
+################################################################################
+#                                Model Results                                 #
+################################################################################
 
 # create a VEResults object (possibly invalid/empty) based on the current model
 #   run or a particular model stage.
@@ -1718,6 +1692,10 @@ ve.model.query <- function(QueryName=NULL,FileName=NULL,load=TRUE) {
   )
 }
 
+################################################################################
+#                           VEModel Class Definition                           #
+################################################################################
+
 # Here is the VEModel R6 class
 # One of these objects is returned by "openModel"
 
@@ -1726,16 +1704,15 @@ VEModel <- R6::R6Class(
   public = list(
     # Public Data
     modelName=NULL,                         # Model identifier
-    modelPath=NULL,                         # 
-    modelStages=NULL,
+    modelPath=NULL,                         # Also as RunParam_ls$ModelDir
+    modelStages=NULL,                       # list of runnable stages
     RunParam_ls=NULL,                       # Run parameters from the model root
     specSummary=NULL,                       # List of inputs, gets and sets from master module spec list  
-    runStatus=NULL,
-    status="Uninitialized",
+    status="Uninitialized",                 # Where are we in opening or running the model?
 
     # Methods
     initialize=ve.model.init,               # initialize a VEModel object
-    valid=function() private$p.valid,         # report valid state
+    valid=function() private$p.valid,       # report valid state
     run=ve.model.run,                       # run a model (or just a subset of stages)
     rename=ve.model.rename,                 # Change model Name, Scenario, Description
     print=ve.model.print,                   # provides generic print functionality
@@ -1757,17 +1734,14 @@ VEModel <- R6::R6Class(
     }),
   private = list(
     # Private Members
-    p.loaded=FALSE,                         # Are modelStages loaded?
-    p.valid=FALSE,                          # R6 error: "All items in public, private and active must have unique names"
-    runError=NULL,
-    lastResults=list(),                     # Cache previous results object
-    # Private Methods
-    loadModelState=ve.model.loadModelState  # Function to load a model state file
+    p.valid=FALSE
   )
 )
 
-## EXPORTED HELPER FUNCTIONS
-#===========================
+################################################################################
+#                          Exported Helper Functions                           #
+################################################################################
+
 #' Open a VisionEval Model
 #'
 #' @description
@@ -1820,6 +1794,111 @@ openModel <- function(modelPath="",log="error") {
   } else {
     return( VEModel$new(modelPath = modelPath,log=log) )
   }
+}
+
+##########################################################################################
+#                      MANAGE "STANDARD MODELS" (VEModel Examples)                       #
+##########################################################################################
+
+## Look up a standard model
+#  'model' is bare name of standard model
+#  returns the full path to that model template
+findStandardModel <- function( model ) {
+  standardModels <- system.file("models",package="VEModel")
+  if ( ! nzchar(standardModels) ) {
+    standardModels <- getOption("VEStandardModels",default=normalizePath("inst/models"))
+  }
+  if (is.null(model) || ! nzchar(model)) {
+    return( dir(standardModels) )
+  }
+
+  model <- model[1]
+  model <- file.path(standardModels,model)
+  if ( ! dir.exists(model) ) {
+    visioneval::writeLog(paste("No standard model called ",model),Level="error")
+    return( findStandardModel("") )
+  }
+  return(model) # absolute path to standard model matching name
+}
+
+## install a standard model with data identified by "skeleton"
+#  We're still expecting to distribute with standard models pre-installed
+#  Called automatically from findModel, where modelPath must be a bare model name
+#  Can install from other locations by calling this function with a more elaborate modelPath
+
+# Sample data   = The Rogue Valley MPO example
+# Template data = input/defs files with no geography or years
+# Mini data     = Just a few zones from Rogue Valley
+SampleModelDataFormat <- c( sample="samp",template="tpl",test="mini" )
+
+installStandardModel <- function( modelName, modelPath, confirm, skeleton=c("sample","template","test"), Param_ls=NULL, log="error" ) {
+  # Locate and install standard modelName into modelPath
+  #   modelName says which standard model to install. If it is missing or empty, return a
+  #     list of available models
+  #   If modelPath is NULL or empty string, create conflict-resolved modelName in first
+  #     available root (see VEModel::getModelRoots function)
+  #   Otherwise, modelPath is presumed to be the directory into which modelName will be installed
+  #     (and basename(modelPath) will become the target model name, disambiguated).
+  #   If dirname(modelPath) also does not exist, tell user dirname(modelPath) does not exist and
+  #     they have to try again
+
+  visioneval::initLog(Save=FALSE,Threshold=log)
+  
+  model <- findStandardModel( modelName )
+  if ( is.null(modelName) || ! nzchar(modelName) ) {
+    return(model) # Expecting a vector of available standard model names
+  } # Otherwise model is the path to them model we will install
+
+  # Set up destination modelPath (always put in the first defined root)
+  if ( ! is.list(Param_ls) ) Param_ls <- list()
+  root <- getModelRoots(1)
+  if ( missing(modelPath) || is.null(modelPath) ) modelPath <- modelName
+  if ( ! isAbsolutePath(modelPath) ) {
+    installPath <- normalizePath(file.path(root,modelPath),winslash="/",mustWork=FALSE)
+  }
+  if ( dir.exists(installPath) ) {
+    installPath <- getUniqueName( dirname(installPath), basename(modelPath) )
+  }
+
+  # Confirm installation if requested
+  install <- TRUE
+  if ( ! is.character(skeleton) ) {
+    skeleton <- "sample"
+  } else {
+    skeleton <- skeleton[1]
+    if ( ! skeleton %in% names(SampleModelDataFormat) ) {
+      skeleton <- "sample"
+    }
+  }
+  modelData <- SampleModelDataFormat[skeleton]
+  if ( confirm && interactive() ) {
+    msg <- paste0("Install standard model '",modelName,"' (",modelData,") in ",installPath,"?\n")
+    install <- confirmDialog(msg)
+  }
+
+  if ( ! install ) stop("Model ",modelName," not installed.",call.=FALSE)
+
+  # Now do the installation
+  visioneval::writeLog(paste0("Installing ",modelName," from ",model," as ",modelData),Level="info")
+  dir.create(installPath)
+
+  # Locate the model and data source files
+  model.path <- file.path(model,"model")
+  model.files <- dir(model.path,full.names=TRUE)
+
+  data.path <- file.path(model,modelData)
+  if ( ! dir.exists(data.path) ) {
+    visioneval::writeLog(msg<-paste("No",skeleton,"data available for",modelName),Level="error")
+    visioneval::writeLog(c("Directory missing:",data.path),Level="info")
+    stop(msg)
+  }
+  data.files <- dir(data.path,full.names=TRUE)
+
+  file.copy(model.files,installPath,recursive=TRUE) # Copy standard model into modelPath
+  file.copy(data.files,installPath,recursive=TRUE) # Copy skeleton data into modelPath
+  visioneval::writeLog(paste0("Installed ",modelName," in ",installPath),Level="info")
+
+  return( list(modelName=modelName,modelPath=installPath) )
 }
 
 #' Install a Standard VisionEval Model
