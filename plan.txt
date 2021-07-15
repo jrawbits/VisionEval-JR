@@ -1,10 +1,19 @@
 Immediate Next:
 
+A question about "Results":
+
+  When we open a "ResultsDir", there will be a Log and a series of stage sub-directories with
+  (perhaps) their own logs and (definitely) ModelState and Datastore. We can open a single Results
+  path (with ModelState/Datastore) to extract or query just that Datastore (which may include upstream
+  linked Datastores, if those are available). The default for a Model will be generate a list of
+  "Reportable" modelStage results (those whose Name does not appear as the name of a "StartFrom"
+  model).
+
 Functions to work out in VEModel:
   "addBaseModel"
     To copy over structural parameters from another model (probably near done)
   standard models
-    Make them complete new-style models (versus the ones distributed)
+    Make them complete new-style models (versus the classic ones distributed)
   "ve.model.copy" copyResults (or not)
     Takes a snapshot of the Model without Results
     Note that VEResults should have a "copy" function to copy/flatten results (keeping

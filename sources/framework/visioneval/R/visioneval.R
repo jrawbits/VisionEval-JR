@@ -62,7 +62,7 @@
 #' loaded. If LoadDatastore is FALSE and DatastoreName is provided, LoadDatastore
 #' will be set to TRUE with a warning.
 #' @param SimulateRun A logical identifying whether the model run should be
-#' simulated. see \code{runModel} for details.
+#' simulated. see \code{prepareModelRun} for details.
 #' @param Param_ls A pre-built RunParameter structure to use as a basis for the model
 #'   runtime environment.
 #' @return The ModelState_ls that was constructed, invisibly.
@@ -94,7 +94,7 @@ initializeModel <- function(
   loadModel(RunParam_ls) # RunParam_ls is placed into ve.model$RunParam_ls and builds ve.model$ModelState_ls
 
   # Run the model (requires ve.model$ModelState_ls and ve.model$RunParam_ls
-  runModel(SimulateRun)
+  prepareModelRun(SimulateRun)
 
   # Return the resulting model state, invisibly
   invisible(ve.model$ModelState_ls)
@@ -601,11 +601,11 @@ loadModel <- function(
 }
 # Done with LoadEnv
 
-#RUN MODEL
-#==========
+#PREPARE MODEL RUN
+#=================
 #' Set up Datastore and ModelState_ls to run a model.
 #'
-#' \code{runModel} a visioneval framework control function that prepares the Datastore and
+#' \code{prepareModelRun} a visioneval framework control function that prepares the Datastore and
 #' ModelState_ls for running a VisionEval model, and loads the model's input files into the
 #' Datastore.
 #'
@@ -623,7 +623,7 @@ loadModel <- function(
 #' updated with the Datastore inventory, the model run status and a few other things.
 #'
 #' @export
-runModel <- function(
+prepareModelRun <- function(
   SimulateRun = FALSE
 ) {
 
