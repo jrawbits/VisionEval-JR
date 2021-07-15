@@ -63,8 +63,7 @@
 #' will be set to TRUE with a warning.
 #' @param SimulateRun A logical identifying whether the model run should be
 #' simulated. see \code{prepareModelRun} for details.
-#' @param Param_ls A pre-built RunParameter structure to use as a basis for the model
-#'   runtime environment.
+#' @param ... Additional arguments that may be passed as run parameters
 #' @return The ModelState_ls that was constructed, invisibly.
 #' @export
 initializeModel <- function(
