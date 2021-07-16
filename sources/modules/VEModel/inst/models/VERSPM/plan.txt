@@ -1,0 +1,11 @@
+Embrace a variety of configurations for VERSPM that can be used as samples.
+
+Basic model - classic content repackaged in modern model form (single stage)
+
+Model staged by Year (vertical): one stage does the base year, the other does the future year
+
+Model staged by Script (horizontal): run the population synthesis pieces,
+then do the later steps in a different stage - those later steps are vertically staged, so
+the model does the base year, then does a separate future year stage. The population
+synthesis includes both years.
+

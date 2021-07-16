@@ -3,7 +3,7 @@
 #===========
 
 #This script demonstrates the VisionEval framework for the RSPM model.
-cat('run_model.R: script entered\n')
+cat('run_VERSPM.R: script entered\n')
 #Load libraries
 #--------------
 library(visioneval)

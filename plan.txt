@@ -9,6 +9,11 @@ A question about "Results":
   "Reportable" modelStage results (those whose Name does not appear as the name of a "StartFrom"
   model).
 
+Next steps:
+  Re-create the sample VERSPM as VERSPM3 using the recommended new model structure.
+  Also create staged versions of VERSPM3 as VERSPM3-Yr (vertical stage) and VERSPM3-Pop (horizontal stage).
+  In the testing, do a combination staged model with both vertical and horizontal stages.
+
 Functions to work out in VEModel:
   "addBaseModel"
     To copy over structural parameters from another model (probably near done)

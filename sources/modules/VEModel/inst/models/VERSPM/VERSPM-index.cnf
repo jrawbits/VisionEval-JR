@@ -1,0 +1,18 @@
+ModelVariants:
+  base:
+    - description: VERSPM 3.0
+    - stages: "."
+    - config: visioneval
+    - script: run_VERSPM.R
+    - inputs: inputs
+    - defs:   defs
+  year:
+    - description: VERSPM 3.0 Staged by Year
+    - stages: [ "stage-year-2010", "stage-year-2038" ]
+    - config: visioneval-year
+    - inputs: inputs-year
+  pop:
+    - description: VERSPM 3.0 Staged Population Synthesis
+    - stages: [ "stage-pop-synth", "stage-pop-2010", "stage-pop-2038" ]
+    - config: visioneval-pop
+    - inputs: inputs-pop
