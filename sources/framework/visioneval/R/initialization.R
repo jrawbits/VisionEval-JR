@@ -1818,7 +1818,8 @@ parseModelScript <- function(FilePath) {
     )
   )
 
-  InitParams_ls      <- lapply(extractElement("initializeModel"),function(x)x$initializeModel)[[1]] # Ignore more than one
+  InitParams_ls      <- lapply(extractElement("initializeModel"),function(x)x$initializeModel)
+  if ( length(InitParams_ls) > 0 ) InitParams_ls <- InitParams_ls[[1]] # Ignore more than one
   RequiredVEPackages <- sapply(extractElement("requirePackage"),function(x)x$requirePackage$Package) # Vector of package names
 
   writeLog("Done parsing model script",Level="info")
