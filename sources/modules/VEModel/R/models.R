@@ -397,6 +397,7 @@ findModel <- function( modelDir, Param_ls ) {
     stages <- list.dirs(modelPath,full.names=FALSE,recursive=FALSE)
     structuralDirs <- c(
       visioneval::getRunParameter("QueryDir",Param_ls=modelParam_ls),
+      visioneval::getRunParameter("ScriptsDir",Param_ls=modelParam_ls),
       visioneval::getRunParameter("InputDir",Param_ls=modelParam_ls),
       visioneval::getRunParameter("ParamDir",Param_ls=modelParam_ls),
       visioneval::getRunParameter("ResultsDir",Param_ls=modelParam_ls)
@@ -440,7 +441,7 @@ findModel <- function( modelDir, Param_ls ) {
   #   modelStage$ModelState_ls - present after the stage has been loaded or run
   #     Any "StartFrom" stage must have one of these before the stage starting from it can be run.
   #   modelStage$RunStatus - elevated from modelStage$ModelState_ls$RunStatus
-  #     Generally "Loaded", "Running", "Run Complete", or "Run Failed"
+  #     Generally "Initialized", "Loaded", "Running", "Run Complete", or "Run Failed"
   #     modelStage$ModelState_ls will perhaps also contain a "LastMessage" if it failed
   #   modelStage$Results - cached results object for this model stage (if Reportable)
 
@@ -581,7 +582,7 @@ findModel <- function( modelDir, Param_ls ) {
       visioneval::writeLog(
         c(
           paste("Candidate stage",stage$Name,"is not Runnable"),
-          paste("Missing",missingParameters,collapse=",")
+          paste("Missing",missingParameters,collapse=", ")
         ),
         Level="warn"
       )
@@ -592,14 +593,14 @@ findModel <- function( modelDir, Param_ls ) {
     modelStages[[stage_seq]] <- stage
   }
 
-  # Return the modelStages (but leave out the ones that can't run
-  model_ls$modelStages <- modelStages[ sapply(modelStages,function(s) s$Runnable) ]
+  # Prepare the modelStages (but leave out the ones that can't run)
+  modelStages <- modelStages[ sapply(modelStages,function(s) s$Runnable) ]
 
   # Process set of modelStages
-  stageCount <- length(model_ls$modelStages)
+  stageCount <- length(modelStages)
 
   # Model won't open if there is not at least one runnable stage
-  if ( !is.list(model_ls$modelStages) || stageCount == 0 ) {
+  if ( !is.list(modelStages) || stageCount == 0 ) {
     stop(
       visioneval::writeLog("Model has no runnable stages!",Level="error")
     )
@@ -610,7 +611,7 @@ findModel <- function( modelDir, Param_ls ) {
     # e.g. ve.model.run looks at modelParam_ls to find SaveDatastore
     # Single stage model will ignore stage$Dir when constructing results or outputs
     # StageDir will still be used for InputPath
-    model_ls$modelParam_ls <- model_ls$modelStages[[1]]$RunParam_ls
+    model_ls$modelParam_ls <- modelStages[[1]]$RunParam_ls
   }
 
   # Put names on Stages and identify reportable stages
@@ -618,7 +619,11 @@ findModel <- function( modelDir, Param_ls ) {
   names(modelStages) <- stageNames
   startsFrom <- sapply( modelStages,function(s) ifelse("StartFrom" %in% names(s),s$StartFrom,"") )
   reportable <- ! stageNames %in% startsFrom
-  for ( r in 1:stageCount ) modelStages[[r]]$Reportable <- reportable[r]
+  for ( r in 1:stageCount ) {
+    modelStages[[r]]$Reportable <- reportable[r]
+    modelStages[[r]]$RunStatus <- "Initialized"
+  }
+  model_ls$modelStages <- modelStages
 
   return( model_ls )
 }
