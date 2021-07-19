@@ -1,9 +1,0 @@
-{
-  "Model": "VERSPM 3.0",
-  "ModelScript": "run_VERSPM.R",
-  "Scenario": "Full Model",
-  "Description": "Runs complete RVMPO Sample",
-  "Region": "RVMPO",
-  "BaseYear": "2010",
-  "Years": ["2010", "2038"]
-}
