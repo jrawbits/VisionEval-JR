@@ -1,7 +1,6 @@
 # Stage configuration
 
 # Scenario description
-Scenario       : VERSPM RVMPO Sample Stage Population Synthesis
+ModelScript    : run_stage_1.R
+Scenario       : VE-Stage First Horizontal Stage
 Description    : Population Synthesis for Base (2010) and Future (2038)
-BaseYear       : 2010
-Years          : [ 2010, 2038 ]

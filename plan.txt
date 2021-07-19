@@ -2,15 +2,16 @@ Immediate Next:
 
 A question about "Results":
 
-  When we open a "ResultsDir", there will be a Log and a series of stage sub-directories with
-  (perhaps) their own logs and (definitely) ModelState and Datastore. We can open a single Results
-  path (with ModelState/Datastore) to extract or query just that Datastore (which may include upstream
-  linked Datastores, if those are available). The default for a Model will be generate a list of
-  "Reportable" modelStage results (those whose Name does not appear as the name of a "StartFrom"
-  model).
+When we open a "ResultsDir", there will be a Log and a series of stage sub-directories with
+(perhaps) their own logs and (definitely) ModelState and Datastore. We can open a single Results
+path (with ModelState/Datastore) as a VERresult to extract or query just that Datastore (which may
+include upstream linked Datastores, if those are available). The default for a Model will be
+generate a list of "Reportable" modelStage results (those whose Name does not appear as the name of
+a "StartFrom" model).
 
 Next steps:
   Re-create the sample VERSPM as VERSPM3 using the recommended new model structure.
+  Get the installation working for those.
   Also create staged versions of VERSPM3 as VERSPM3-Yr (vertical stage) and VERSPM3-Pop (horizontal stage).
   In the testing, do a combination staged model with both vertical and horizontal stages.
 

@@ -362,6 +362,19 @@ findModel <- function( modelDir, Param_ls ) {
     InputDir=visioneval::getRunParameter("InputDir",Param_ls=modelParam_ls)
   )
 
+  # Locate ParamPath for overall model
+  # If it doesn't exist at the level of the model, could still set for individual stages
+  #   It makes the most sense to place ParamDir within ModelDir and use the same one
+  #   for each model stage (weird things will happen if different stages have different
+  #   defs).
+  if ( ! "ParamPath" %in% names(modelParam_ls) ) {
+    ParamPath <- file.path(
+      modelParam_ls$ModelDir,
+      visioneval::getRunParameter("ParamDir",Param_ls=modelParam_ls)
+    )
+    if ( file.exists(ParamPath) ) modelParam_ls$ParamPath <- ParamPath
+  }
+
   # Locate ModelScriptPath for base model if present (stages will possibly override and parse)
   ScriptName <- visioneval::getRunParameter("ModelScript",Param_ls=modelParam_ls)
   ScriptsDir <- visioneval::getRunParameter("ScriptsDir",Param_ls=modelParam_ls)
@@ -379,6 +392,7 @@ findModel <- function( modelDir, Param_ls ) {
   modelParam_ls$ModelScriptPath <- ModelScriptPath # Possibly unchanged, maybe still empty vector
 
   # Locate model stages
+  visioneval::writeLog("Locating model stages",Level="info")
   if ( ! "ModelStages" %in% names(modelParam_ls) ) {
     stages <- list.dirs(modelPath,full.names=FALSE,recursive=FALSE)
     structuralDirs <- c(
@@ -403,20 +417,24 @@ findModel <- function( modelDir, Param_ls ) {
     names(modelStages) <- sapply(modelStages,function(s)s$Name)
   } else {
     modelStages <- modelParam_ls$ModelStages
+    # TODO: need to set stage$Path
+    # TODO: need to read stage$Config into stage$RunParam_ls if Config exists
   }
   if ( !is.list(modelStages) || length(modelStages)==0 ) {
     stop( visioneval::writeLog("No model stages found!",Level="error") )
   }
 
-  # What needs to be in modelStages structure:
+  # What needs to be in modelStages structure (eventually):
   #   modelStage$Name - Name for "Scenario" run parameter, and also for modelStates list item
   #     At a minimum, to locate sub-directory and visioneval.cnf (containing additional parameters)
   #   modelStage$Dir - StageDir (basename within ModelDir for defs/inputs, and within ResultsDir or
   #     ResultsDir/OutputDir for outputs)
   #   modelStage$Path - Absolute path to stage (== ModelDir/StageDir)
+  #   modelStage$Config - Optional: if present, name of visioneval.cnf; sought relative to ModelDir
+  #     Config is useful if the stages visioneval.cnf is all that varies among stages
   #   modelStage$StartFrom - modelStage$Name of some earlier modelStage within this Model
   #     RunParam_ls from that stage forms the basis for this stage
-  #   modelStage$RunParam_ls - collected elements for stage (must be complete)
+  #   modelStage$RunParam_ls - collected elements for stage (must eventually be complete)
   #   modelStage$Runnable - does this stage have everything it needs?
   #   modelStage$Reportable - Is this a "terminal" stage (not a "StartFrom" for any other stage)?
   #   modelStage$ModelState_ls - present after the stage has been loaded or run
@@ -438,7 +456,16 @@ findModel <- function( modelDir, Param_ls ) {
     # If not all are present, the stage is not Runnable (warning)
 
     # Add stage-specific setting (over-riding model base settings)
-    stageParam_ls <- visioneval::loadConfiguration(ParamDir=stage$Path,override=modelParam_ls)
+    stageParam_ls <- list()
+    if ( "Config" %in% names(stage) ) {
+      ParamFile <- file.path(modelParam_ls$ModelDir,stage$Config)
+      if ( file.exists(ParamFile) ) {
+        stageParam_ls <- visioneval::loadConfiguration(ParamFile=ParamFile,override=modelParam_ls)
+      }
+    }
+    if ( length(stageParam_ls) == 0 ) {
+      stageParam_ls <- visioneval::loadConfiguration(ParamDir=stage$Path,override=modelParam_ls)
+    }
 
     # If startFrom is defined:
     #   Access its modelStages[[startFrom]]$runParam_ls (use startFrom Stage Name to find)
@@ -541,8 +568,11 @@ findModel <- function( modelDir, Param_ls ) {
     # TODO: could set path and parse up at modelParam_ls if there is a script at that level
     #       let the script file and parsed script be propagated down into the Stage
     stageParam_ls$ModelScriptPath <- ModelScriptPath
-    stageParam_ls$ParsedScript <- parseModelScript(stageParam_ls$ModelScriptPath)
-
+    stageParam_ls$ParsedScript <- visioneval::parseModelScript(stageParam_ls$ModelScriptPath)
+    if ( ! "DatastoreType" %in% names(stageParam_ls) ) {
+      # Force DatastoreType to be explicit
+      stageParam_ls$DatastoreType <- visioneval::getRunParameter("DatastoreType",Param_ls=stageParam_ls)
+    }
 
     # Check if stage can run (enough parameters to run visioneval::loadModel and visioneval::prepareModelRun)
     missingParameters <- visioneval::verifyModelParameters(stageParam_ls)
@@ -606,6 +636,7 @@ ve.model.init <- function(modelPath, log="error") {
 
   # Identify the run_model.R root location(s)
   # Also, update self$RunParam_ls with model-specific configuration
+  visioneval::writeLog(paste("Finding",modelPath),Level="info")
   model_ls <- findModel(modelPath,self$RunParam_ls)
   self$modelName <- model_ls$modelName
   self$modelPath <- model_ls$modelPath
@@ -1710,35 +1741,80 @@ openModel <- function(modelPath="",log="error") {
 ## Look up a standard model
 #  'model' is bare name of standard model
 #  returns the full path to that model template
-findStandardModel <- function( model ) {
+findStandardModel <- function( model, variant="" ) {
   standardModels <- system.file("models",package="VEModel")
   if ( ! nzchar(standardModels) ) {
+    # The following is for testing purposes...
     standardModels <- getOption("VEStandardModels",default=normalizePath("inst/models"))
   }
-  if (is.null(model) || ! nzchar(model)) {
-    return( dir(standardModels) )
+  if (missing(model) || is.null(model) || ! nzchar(model)) {
+    return( c("Available Models:",dir(standardModels)) )
   }
 
+  # Locate the model
   model <- model[1]
-  model <- file.path(standardModels,model)
-  if ( ! dir.exists(model) ) {
+  model_ls <- list()
+  model_ls$ModelDir <- file.path(standardModels,model)
+  if ( ! dir.exists(model_ls$ModelDir) ) {
     visioneval::writeLog(paste("No standard model called ",model),Level="error")
-    return( findStandardModel("") )
+    return( findStandardModel("") ) # recursive call to keep return directory in one place
   }
-  return(model) # absolute path to standard model matching name
+
+  # Read the model index to identify variants ("base" should always exist)
+  confPath <- file.path(model_ls$ModelDir,"model-index.cnf")
+  modelIndex <- try( yaml::yaml.load_file(confPath) )
+  if ( ! "variants" %in% names(modelIndex) ) {
+    visioneval::writeLog(paste0("No model variants defined in ",confPath),Level="error")
+    visioneval::writeLog(c(class(modelIndex),names(modelIndex)),Level="error")
+    return(c("No model variant:",variant))
+  }
+  if ( missing(variant) || ! nzchar(variant) || ( ! variant %in% names(modelIndex$variants) ) ) {
+    variantMsg <- c(paste0("Available variants for ",model,":"),names(modelIndex$variants))
+    if ( nzchar(variant) ) {
+      variantMsg <- c(paste0("Unknown variant '",variant,"'"),variantMsg)
+    }
+    return(variantMsg)
+  }
+
+  # Load the variant configuration
+  model_ls$Variant <- variant
+  variantConfig <- modelIndex$variants[[variant]]
+
+  # Get config file and description
+  model_ls$Description <- variantConfig$description
+  model_ls$Config <- normalizePath(file.path(model_ls$ModelDir,variantConfig$config))
+
+  # Get standard directories to copy (including stage directories if any)
+
+  modelTo <- c("scripts","inputs","defs","queries")
+  modelTo <- modelTo[ modelTo %in% names(variantConfig) ]
+  modelFrom <- unlist( variantConfig[modelTo] )
+  modelStages <- unlist(variantConfig$stages)
+  if ( is.null(modelStages) ) modelStages <- character(0)
+  modelTo <- c(modelTo, modelStages)
+  modelFrom <- c(modelFrom, modelStages)
+
+  modelSrc <- normalizePath(
+    file.path(model_ls$ModelDir,modelFrom),
+    winslash="/",
+    mustWork=FALSE
+  )
+  names(modelSrc) <- modelTo
+  modelDirs <- list()
+  for ( d in modelTo ) {
+    modelDirs[[d]] <- list()
+    modelDirs[[d]]$From <- modelSrc[d]
+    modelDirs[[d]]$To <- d
+  }
+  model_ls$Directories <- modelDirs
+
+  return(model_ls) # model structure for installation
 }
 
-## install a standard model with data identified by "skeleton"
-#  We're still expecting to distribute with standard models pre-installed
-#  Called automatically from findModel, where modelPath must be a bare model name
-#  Can install from other locations by calling this function with a more elaborate modelPath
-
-# Sample data   = The Rogue Valley MPO example
-# Template data = input/defs files with no geography or years
-# Mini data     = Just a few zones from Rogue Valley
-SampleModelDataFormat <- c( sample="samp",template="tpl",test="mini" )
-
-installStandardModel <- function( modelName, modelPath, confirm, skeleton=c("sample","template","test"), Param_ls=NULL, log="error" ) {
+## install a standard model with data identified by "variant"
+#  We're still expecting to distribute standard models in the runtime (but for now, those will
+#   be the "classic" models)
+installStandardModel <- function( modelName, modelPath, confirm, variant="base", log="error" ) {
   # Locate and install standard modelName into modelPath
   #   modelName says which standard model to install. If it is missing or empty, return a
   #     list of available models
@@ -1751,15 +1827,14 @@ installStandardModel <- function( modelName, modelPath, confirm, skeleton=c("sam
 
   visioneval::initLog(Save=FALSE,Threshold=log)
   
-  model <- findStandardModel( modelName )
-  if ( is.null(modelName) || ! nzchar(modelName) ) {
-    return(model) # Expecting a vector of available standard model names
-  } # Otherwise model is the path to them model we will install
+  model <- findStandardModel( modelName, variant )
+  if ( ! is.list(model) ) {
+    return(model) # Expecting a character vector of available information about standard models
+  } # Otherwise model is a list with details on the model we need to install
 
   # Set up destination modelPath (always put in the first defined root)
-  if ( ! is.list(Param_ls) ) Param_ls <- list()
   root <- getModelRoots(1)
-  if ( missing(modelPath) || is.null(modelPath) ) modelPath <- modelName
+  if ( missing(modelPath) || is.null(modelPath) ) modelPath <- model$Name
   if ( ! isAbsolutePath(modelPath) ) {
     installPath <- normalizePath(file.path(root,modelPath),winslash="/",mustWork=FALSE)
   }
@@ -1769,42 +1844,37 @@ installStandardModel <- function( modelName, modelPath, confirm, skeleton=c("sam
 
   # Confirm installation if requested
   install <- TRUE
-  if ( ! is.character(skeleton) ) {
-    skeleton <- "sample"
-  } else {
-    skeleton <- skeleton[1]
-    if ( ! skeleton %in% names(SampleModelDataFormat) ) {
-      skeleton <- "sample"
-    }
-  }
-  modelData <- SampleModelDataFormat[skeleton]
   if ( confirm && interactive() ) {
-    msg <- paste0("Install standard model '",modelName,"' (",modelData,") in ",installPath,"?\n")
+    msg <- paste0("Install standard model '",model$Name,"' into ",installPath,"?\n")
     install <- confirmDialog(msg)
   }
 
   if ( ! install ) stop("Model ",modelName," not installed.",call.=FALSE)
 
-  # Now do the installation
-  visioneval::writeLog(paste0("Installing ",modelName," from ",model," as ",modelData),Level="info")
+  # Create the installation directory
+  visioneval::writeLog(paste("Installing from",model$ModelDir),Level="info")
+  visioneval::writeLog(model$Description,Level="info")
+  visioneval::writeLog(paste("Installing into",installPath),Level="info")
   dir.create(installPath)
 
-  # Locate the model and data source files
-  model.path <- file.path(model,"model")
-  model.files <- dir(model.path,full.names=TRUE)
-
-  data.path <- file.path(model,modelData)
-  if ( ! dir.exists(data.path) ) {
-    visioneval::writeLog(msg<-paste("No",skeleton,"data available for",modelName),Level="error")
-    visioneval::writeLog(c("Directory missing:",data.path),Level="info")
-    stop(msg)
+  # Copy the configuration file
+  if ( "Config" %in% names(model) ) file.copy(model$Config,file.path(installPath,"visioneval.cnf"))
+  
+  # Process the model directories
+  for ( subdir in model$Directories ) {
+    from.dir <- subdir$From
+    to.dir <- file.path(installPath,subdir$To)
+    if ( ! dir.exists(from.dir) ) {
+      visioneval::writeLog(msg<-paste0("No variant (",variant,") for ",modelName),Level="error")
+      visioneval::writeLog(c("Directory missing:",from.dir),Level="error")
+      stop(msg)
+    }
+    if ( ! dir.exists(to.dir) ) dir.create(to.dir)
+    visioneval::writeLog(paste0("Copying ",subdir$From,"..."),Level="info")
+    copy.files <- dir(from.dir,full.names=TRUE)
+    file.copy(copy.files,to.dir,recursive=TRUE) # Copy standard model into modelPath
   }
-  data.files <- dir(data.path,full.names=TRUE)
-
-  file.copy(model.files,installPath,recursive=TRUE) # Copy standard model into modelPath
-  file.copy(data.files,installPath,recursive=TRUE) # Copy skeleton data into modelPath
   visioneval::writeLog(paste0("Installed ",modelName," in ",installPath),Level="info")
-
   return( list(modelName=modelName,modelPath=installPath) )
 }
 
@@ -1830,20 +1900,18 @@ installStandardModel <- function( modelName, modelPath, confirm, skeleton=c("sam
 #'   ve.runtime/models. If directory does not exist, create it and copy the modelName into it.
 #'   If directory does exist, create a unique variant of modelName adjacent to it. If it is NULL
 #'   create a unique variant of modelName in ve.runtime/models.
-#' @param skeleton A character string identifying the sample data to install. Options are "sample",
-#'   which is a small real-world model, "template" which installs data files containing only their
-#'   header row, or "test" which installs a miniature model with just enough data and years to
-#'   run the model script (used for testing framework functions).
+#' @param variant the name of a model variant (staging, sample data, etc) to install; empty string
+#'   will list available variants for modelName
 #' @param confirm if TRUE (default) and running interactively, prompt user to confirm, otherwise
 #'   just do it.
 #' @param log a string describing the minimum level to display
 #' @return A VEModel object of the model that was just installed
 #' @export
-installModel <- function(modelName=NULL, modelPath=NULL, skeleton=c("sample","template","test"), confirm=TRUE, log="error") {
-  model <- installStandardModel(modelName, modelPath, confirm, skeleton, log=log)
+installModel <- function(modelName=NULL, modelPath=NULL, variant="base", confirm=TRUE, log="error") {
+  model <- installStandardModel(modelName, modelPath, confirm=confirm, variant=variant, log=log)
   if ( is.list(model) ) {
     return( VEModel$new( modelPath=model$modelPath, log=log ) )
   } else {
-    return( model ) # should be a character vector of available standard models
+    return( model ) # should be a character vector of information about standard models
   }
 }
