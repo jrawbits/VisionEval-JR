@@ -141,7 +141,8 @@ loadParamFile <- function(Param_ls=NULL,ModelDir=NULL) {
 requiredParameters <- c(
   "Model", "Scenario", "Description", "Region",
   "BaseYear", "Years",
-  "DatastoreName", "DatastoreType", "Seed",
+#  "DatastoreName", "DatastoreType", "Seed",
+#  These will be given default values when we create the ModelState_ls, so don't worry about them here.
   "InputPath","ParamPath","ModelScriptPath","DatastorePath"
 )
 
@@ -150,8 +151,8 @@ requiredParameters <- c(
 #' Check that a set of run parameters is sufficient to launch a model
 #'
 #' @param Param_ls The set of parameters to be checked
-#' @return A character vector of parmeters that are missing or invalid (empty of everything is
-#' present)
+#' @return A character vector of parmeters that are missing or invalid (empty means everything
+#'   required is present)
 #' @export
 verifyModelParameters <- function(Param_ls) {
   missingParams <- requiredParameters[ ! requiredParameters %in% names(Param_ls) ]
