@@ -315,12 +315,6 @@ loadModel <- function(
   }
   RunParam_ls <- ve.model$RunParam_ls # May have been modified in initModelState or loadModelState
 
-  #===================================
-  #PUT LOG STATUS INTO NEW MODEL STATE
-  #===================================
-
-  setModelState(logState,Save=FALSE)
-
   #==========================================================
   #PARSE RUN SCRIPT FOR MODULE CALLS, CHECK AND COMBINE SPECS
   #==========================================================

@@ -237,7 +237,7 @@ addBaseModel <- function(modelParam_ls) {
   
   # If ParamDir defined in modelParam_ls: set ParamPath if ModelDir/ParamDir exists
   if ( "ParamDir" %in% existingParams ) {
-    paramPath <- file.path(modelPath,modelParam_ls$ParamDir)
+    paramPath <- file.path(modelParam_ls$ModelDir,modelParam_ls$ParamDir)
     if ( dir.exists(paramPath) ) modelParam_ls$ParamPath <- paramPath
   } else {
     modelParam_ls$ParamPath <- baseParam_ls$ParamPath # Use ParamDir("defs") from BaseModel
@@ -327,7 +327,7 @@ findModel <- function( modelDir, Param_ls=getSetup() ) {
       visioneval::writeLog(
         paste0("Model directory ",modelPath," does not exist"), Level="error"
       )
-      return(modelStages_ls)
+      return(model_ls)
     }
   }
   model_ls$modelPath <- modelPath;
@@ -474,7 +474,7 @@ findModel <- function( modelDir, Param_ls=getSetup() ) {
     #     InputPath (overlay from startFrom)
     if ( "StartFrom" %in% names(stageParam_ls) ) {
       stage$StartFrom <- stageParam_ls$StartFrom # Should be the name of an earlier stage
-      startFrom <- modelStates[[stageParam_ls$StartFrom]]
+      startFrom <- modelStages[[stageParam_ls$StartFrom]]
       if ( is.na(startFrom) ) {
         stop(
           visioneval::writeLog(
@@ -1149,7 +1149,7 @@ StatusLevelCodes <- c(
 )
 
 codeStatus <- function(level) {
-  if ( is.characted(level) ) {
+  if ( is.character(level) ) {
     level <- which(StatusLevelCodes==level)
   } else {
     level <- integer(0)
@@ -1159,11 +1159,11 @@ codeStatus <- function(level) {
   )
 }
 
-ve.model.printStatus(status=NULL) {
+ve.model.printStatus <- function(status=NULL) {
   if ( is.null(status) ) {
     status <- self$status
   }
-  if ( ! is.integer(status) || status < 1 || status > length(StatusCodes) ) {
+  if ( ! is.integer(status) || status < 1 || status > length(StatusLevelCodes) ) {
     status <- codeStatus("Unknown")
   }
   return( StatusLevelCodes[status] )
@@ -1194,7 +1194,8 @@ ve.model.load <- function(runModel=FALSE,runStages=character(0)) {
   }
 
   # if runModel==FALSE, do not save ModelState if not already present
-  visioneval::modelEnvironment()$RunModel <- runModel
+  ve.model <- visioneval::modelEnvironment()
+  ve.model$RunModel <- runModel
   
   # identify stages to load
   if ( length(runStages)>0 ) { # list of names of stages to run
@@ -1300,7 +1301,7 @@ ve.model.run <- function(run="continue",stage=NULL,log="warn") {
   } else if ( run == "save" ) {
     SaveDatastore <- TRUE
   } else {
-    SaveDatastore <- visioneval::getRunParamter("SaveDatastore",Param_ls=self$RunParam_ls)
+    SaveDatastore <- visioneval::getRunParameter("SaveDatastore",Param_ls=self$RunParam_ls)
   }
 
   if ( run != "continue" && SaveDatastore && dir.exists(workingResultsDir) ) {
@@ -1337,7 +1338,7 @@ ve.model.run <- function(run="continue",stage=NULL,log="warn") {
   on.exit(setwd(owd))
 
   # If saving Datastore, archive the Datastore
-  LogLevel <- getRunParameter("LogLevel",Default=log,Param_ls=RunParam_ls)
+  LogLevel <- getRunParameter("LogLevel",Default=log,Param_ls=self$RunParam_ls)
 
   # Set up the model runtime environment
   for ( ms in runStages ) { # iterate over names of stages to run
@@ -1371,11 +1372,12 @@ ve.model.run <- function(run="continue",stage=NULL,log="warn") {
         visioneval::prepareModelRun()                     # Initialize Datastore
 
         # Run the model script
-        sys.source(stage$ModelScriptPath,envir=new.env(),silent=TRUE)
+        sys.source(stage$ModelScriptPath,envir=new.env())
 
         # If we get this far without a "stop", save the ModelState and RunStatus
         list(ModelState_ls=ve.model$ModelState_ls,RunStatus=codeStatus("Run Complete"))
-      }
+      },
+      silent=TRUE
     )
 
     # Return to base working directory
@@ -1415,7 +1417,7 @@ ve.model.run <- function(run="continue",stage=NULL,log="warn") {
 # Function to inspect the model configuration/setup parameters
 # With no arguments, reports name/value pair for values explicitly defined
 # The return is the new set of named values (using default or other show/search arguments)
-ve.model.set <- function(show="values", src=NULL, namelist=NULL, pattern=NULL,stage=NULL) {
+ve.model.set <- function(show="values", src=NULL, namelist=NULL, pattern=NULL,stage=NULL,Param_ls=NULL) {
   # "show" is a character vector describing what to return (default, "values" defined in self$RunParam_ls)
   #   "name" - names of settings (character vector of matching names)
   #   "value" - named list of settings present in self$RunParam_ls (or defaults) (DEFAULT)
