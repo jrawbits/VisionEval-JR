@@ -57,7 +57,6 @@ modelRunning <- function() {
     } else { # The model is running in backward-compatible mode
       return(ve.model$RunModel <- TRUE)
     }
-#   }
 }
 
 #GET VISIONEVAL RUN PARAMETER
@@ -737,6 +736,10 @@ fileTimeStamp <- function( TimeStamp, Prefix=NULL ) {
 #' @export
 initLog <- function(TimeStamp = NULL, Threshold="warn", Save=TRUE, Prefix = NULL, Quiet=TRUE) {
 
+  # Don't touch the log if it is already initialized
+  ve.model <- modelEnvironment()
+  if ( "LogStatus" %in% names(ve.model) ) return(invisible(ve.model$LogStatus))
+
   if (is.null(TimeStamp)) {
     TimeStamp <- Sys.time()
   }
@@ -765,8 +768,8 @@ initLog <- function(TimeStamp = NULL, Threshold="warn", Save=TRUE, Prefix = NULL
   }
 
   # Save and return the Log status (e.g. to use TimeStamp or start saving later)
-  ve.model <- modelEnvironment()
   ve.model$LogStatus <- list(LogFile=LogFile,ModelStart=TimeStamp)
+
   invisible(ve.model$LogStatus)
 }
 #initLog()

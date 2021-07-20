@@ -1,5 +1,6 @@
 Immediate Next:
 
+
 A question about "Results":
 
 When we open a "ResultsDir", there will be a Log and a series of stage sub-directories with
@@ -9,11 +10,17 @@ include upstream linked Datastores, if those are available). The default for a M
 generate a list of "Reportable" modelStage results (those whose Name does not appear as the name of
 a "StartFrom" model).
 
-Next steps:
-  Re-create the sample VERSPM as VERSPM3 using the recommended new model structure.
-  Get the installation working for those.
-  Also create staged versions of VERSPM3 as VERSPM3-Yr (vertical stage) and VERSPM3-Pop (horizontal stage).
-  In the testing, do a combination staged model with both vertical and horizontal stages.
+Can now open a new-style model successfully (single stage VERSPM)
+  Test loading the multi-stage standard models (All stages present and runnable? Correct reportable?)
+    VERSPM-pop
+    VERSPM-years
+    VE-State-base
+    VE-State-staged
+    VERPAT
+  Test that we can open a "classic" VERSPM (from sources/models)
+  Test that we can open VE-Stage-staged (from sources/models)
+
+Then go to work on making each model run: 
 
 Functions to work out in VEModel:
   "addBaseModel"
