@@ -153,7 +153,7 @@ test_install <- function(modelName="VERSPM",variant="base",installAs=NULL,run=FA
   return(rs)
 }
 
-test_run <- function(modelName="JRSPM",variant="base",reset=FALSE,log="warn") {
+test_run <- function(modelName="TEST-RUN",baseModel="VERSPM",variant="base",reset=FALSE,log="warn") {
   if ( ! reset ) {
     testStep(paste("Attempting to re-open existing",modelName))
     rs <- openModel(modelName)
@@ -175,8 +175,8 @@ test_run <- function(modelName="JRSPM",variant="base",reset=FALSE,log="warn") {
           testStep("Clearing runtime environment")
           unlink(modelPath,recursive=TRUE)
         }
-        testStep(paste("Installing VERSPM model from package as",modelName))
-        rs <- installModel("VERSPM",modelName,variant=variant,log=log,confirm=FALSE)
+        testStep(paste("Installing",baseModel,"model from package as",modelName))
+        rs <- installModel(baseModel,modelName,variant=variant,log=log,confirm=FALSE)
 
         testStep("Running model...")
         rs$run(run="reset",log=log) # clears results directory
