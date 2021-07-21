@@ -12,9 +12,9 @@ variants:
     defs: defs
     queries: queries
   classic: # no config, standard run_model.R script
-    scripts: scripts-base
+    scripts: scripts-classic
     inputs: inputs-base
-    defs: defs-base
+    defs: defs-classic
     # queries: queries
   year:
     # inputs differ by stage

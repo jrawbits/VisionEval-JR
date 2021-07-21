@@ -87,29 +87,37 @@ testStep <- function(msg) {
 }
 
 # Check that we can source run_model.R to run a classic model
-test_classic <- function(modelName="VERSPM-Classic") {
+test_classic <- function(modelName="VERSPM-Classic",clear=TRUE,log="info") {
   modelPath <- file.path("models",modelName)
   owd <- getwd()
   on.exit(setwd(owd))
 
-  if ( dir.exists(modelPath) ) {
-    testStep("Clearing runtime environment")
+  if ( dir.exists(modelPath) && clear ) {
+    testStep("Clearing model to start from scratch")
     unlink(modelPath,recursive=TRUE)
+  } else {
+    testStep("Re-running existing installation")
   }
 
-  testStep(paste("Installing classic VERSPM model from package as",modelName))
-  rs <- installModel("VERSPM",variant="classic",modelName,log=log,confirm=FALSE)
-  rm(rs)  # Don't keep the VEModel around
+  if ( ! dir.exists(modelPath) ) {
+    testStep(paste("Installing classic VERSPM model from package as",modelName))
+    rs <- installModel("VERSPM",variant="classic",modelName,log=log,confirm=FALSE)
+    modelName <- rs$modelName
+    rm(rs)  # Don't keep the VEModel around
+  }
 
-  testStep(paste("Running",rs$modelName,"by sourcing scripts/run_model.R"))
-  setwd(rs$modelPath)
-  source("scripts/run_model.R")
+  testStep(paste("Running",modelName,"by sourcing scripts/run_model.R"))
+
+  setwd(modelPath)
+  require(visioneval) # Put it on the search path for GetYears, RunModule, etc
+  source("run_model.R")
+  detach("package:visioneval") # But leave the namespace loaded
 
   testStep("Reviewing model status")
+
   setwd(owd)
   rs <- openModel(modelName)
-  print(rs$runStatus)
-
+  cat("Model Status:",rs$printStatus(),"\n")
   return(rs)
 }
   
