@@ -1054,12 +1054,18 @@ summarizeSpecs <- function(AllSpecs_ls,stage) {
 }
 
 # List the model contents, using parsedScript and specSummary from ve.model.load
-ve.model.list <- function(inputs=FALSE,outputs=FALSE,details=NULL) {
+ve.model.list <- function(inputs=FALSE,outputs=FALSE,details=NULL,stage=character(0)) {
   # "inputs" lists the input files (Inp) by package and module (details = field attributes)
   # "outputs" lists the fields that are Set in the Datastore (details = field attributes)
   # if both are true, we also liet the Get elements
   # "details" FALSE lists units and description plus pacakge/module/group/table/name
   # "details" TRUE lists all the field attributes (the full data.frame of specSummary)
+  # "stage" is a list of stage names (default = all stages) to appear in the output
+  #   The fields shown are just the ones accessed in that particular stage
+  # TODO: Include only Reportable stages unless name specified. If a reportable stage is
+  #   requested, include the "StartFrom" tree for this stage as well. So augment the
+  #   stage list by including "StartFrom" stages for each named stage (or each
+  #   Reportable stage by default).
 
   if ( ! private$p.valid ) {
     visioneval::writeLog(paste0("Invalid model: ",self$printStatus()),level="error")
@@ -1162,6 +1168,7 @@ ve.model.log <- function() {
 
 StatusLevelCodes <- c(
   "Unknown",
+  "Uninitialized",
   "Run Failed",
   "Load Failed",
   "Incomplete Setup",
@@ -1171,6 +1178,7 @@ StatusLevelCodes <- c(
   "Run Complete"
 )
 
+# Turn text representation ("level") into a status code
 codeStatus <- function(level) {
   if ( is.character(level) ) {
     level <- which(StatusLevelCodes==level)
@@ -1182,6 +1190,7 @@ codeStatus <- function(level) {
   )
 }
 
+# Return text representation of the status
 ve.model.printStatus <- function(status=NULL) {
   if ( is.null(status) ) {
     status <- self$status
@@ -1192,6 +1201,11 @@ ve.model.printStatus <- function(status=NULL) {
   return( StatusLevelCodes[status] )
 }
 
+# Show "minimum" stage status (see StatusLevelCodes)
+ve.model.updateStatus <- function() {
+  self$status <- min(sapply(self$modelStages,function(s) s$RunStatus))
+}
+
 # Helper function:
 #    Key function here is to create an in-memory copy of each stage's ModelState_ls
 #      either by loading, or by initializing
@@ -1200,14 +1214,11 @@ ve.model.printStatus <- function(status=NULL) {
 #      interrogate for VERequiredPackages).
 #  Resulting structure can be explored for model inputs and outputs, script, etc.
 
-# Two needs:
+X# Two needs:
 #   1. Load existing model states if stages have been run before
 #   2. Build new model states if not running to parse the model script and check that
 #      everything is where it needs to be - unintrusive
 # Second step will not be performed if "ifExists" is TRUE (the default)
-
-# Use "runModel=TRUE" to rebuild and then save the constructed ModelState (make sure
-#   that archiving has occurred first).
 
 ve.model.load <- function(runStages=character(0),ifExists=TRUE) {
 
@@ -1229,31 +1240,27 @@ ve.model.load <- function(runStages=character(0),ifExists=TRUE) {
   # Load or Create the ModelState_ls for each stage if not already loaded
   for ( index in loadStages ) {
     stage <- self$modelStages[[index]]
-    envir = new.env()
-    envir$RunModel <- FALSE
-    envir$Owner <- "ve.model.load"
     if ( ! "ModelState_ls" %in% names(stage) ) {
+      envir = new.env()
+      envir$RunModel <- FALSE
+      envir$Owner <- "ve.model.load"
       ms <- visioneval::loadModel(stage$RunParam_ls,ifExists=ifExists,envir=envir)
-      if ( is.list(ms) && length(ms)>0 ) {
+      if ( is.list(ms) && length(ms)>0 ) { # Save the ModelState if created successfully
         stage$ModelState_ls <- ms
         stage$RunStatus <- stage$ModelState_ls$RunStatus
-        if ( is.null(stage$RunStatus) ) {
-          stage$RunStatus <- codeStatus("Load Failed")
-        }
         self$modelStages[[index]] <- stage
+      } else {
+        stage$RunStatus <- NULL
+      }
+      if ( is.null(stage$RunStatus) ) {
+        stage$RunStatus <- codeStatus("Load Failed")
       }
     }
   }
+  # Update self$status
+  self$updateStatus()
 
-  # Return TRUE if all the stage ModelStates are valid
-  return(
-    any(
-      grepl( "Failed",
-        sapply( self$modelStages,
-          function(x)self$printStatus(x$RunStatus) )
-      )
-    )
-  )
+  return(self$printStatus())
 }
 
 ################################################################################
@@ -1430,7 +1437,7 @@ ve.model.run <- function(run="continue",stage=NULL,log="warn") {
   }
 
   # Update overall model status
-  self$status <- min(sapply(self$modelStages,function(s) s$RunStatus)) # "Worst"/Lowest RunStatus for the overall model
+  self$updateStatus() # "Worst"/Lowest RunStatus for the overall model
 
   return(invisible(self$status))
 }
@@ -1689,7 +1696,7 @@ VEModel <- R6::R6Class(
     modelStages=NULL,                       # list of runnable stages
     RunParam_ls=NULL,                       # Run parameters from the model root
     specSummary=NULL,                       # List of inputs, gets and sets from master module spec list  
-    status="Uninitialized",                 # Where are we in opening or running the model?
+    status=codeStatus("Uninitialized"),     # Where are we in opening or running the model?
 
     # Methods
     initialize=ve.model.init,               # initialize a VEModel object
@@ -1699,6 +1706,7 @@ VEModel <- R6::R6Class(
     rename=ve.model.rename,                 # Change model Name, Scenario, Description
     print=ve.model.print,                   # provides generic print functionality
     printStatus=ve.model.printStatus,       # turn integer status into text representation
+    updateStatus=ve.model.updateStatus,     # fill in overall status based on individual stage status
     list=ve.model.list,                     # interrogator function (script,inputs,outputs,parameters
     dir=ve.model.dir,                       # list model elements (output, scripts, etc.)
     clear=ve.model.clear,                   # delete results or outputs (current or past)
