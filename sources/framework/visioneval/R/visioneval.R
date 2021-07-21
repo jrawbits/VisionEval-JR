@@ -96,6 +96,7 @@ initializeModel <- function(
   initLog(Threshold=LogLevel) # Does nothing if logger is already active in ve.model
 
   # Build the model state from RunParam_ls
+  # Model will run in the current directory...
   loadModel(RunParam_ls) # RunParam_ls is placed into ve.model$RunParam_ls and builds ve.model$ModelState_ls
 
   # Running: Save the Log and ModelState files
@@ -264,11 +265,19 @@ getModelParameters <- function(DotParam_ls=list(),DatastoreName=NULL,LoadDatasto
 #'
 #' @param RunParam_ls is returned from \code{getModelParameters}
 #' @param Message a character string to report why we're waiting...
-#' @return The ModelState_ls that was constructed, invisibly.
+#' @param ifExists a logical - if TRUE and not modelRunning(), simply load an existing model state.
+#'   if FALSE, create a new model state in memory if there is no
+#' existing model state. Ignored if modelRunning().
+#' @param RunDir the directory in which to seek/create the model run
+#' @param envir The environment into which to load the ModelState
+#' @return The ModelState_ls that was constructed (or NULL if only loading a non-existent one)
 #' @export
 loadModel <- function(
   RunParam_ls,
-  Message = "Initializing Model. This may take some time..."
+  Message = "Initializing Model. This may take some time...",
+  ifExists = FALSE,
+  RunDir = getwd(),
+  envir = modelEnvironment()
 ) {
   # IMPORTANT: Do not write/re-write a model state or log until archiving is done.
 
@@ -276,7 +285,7 @@ loadModel <- function(
   #   ModelState as needed. Performs an in-memory "Init" first if no ModelState file exists so the
   #   parsed elements of run_model.R are available for inspection, but it will not save the
   #   ModelState_ls. The ModelState_ls will be saved by the runModel function RunModel is TRUE. This
-  #   function will clear the ve.model environment, load the ModelState, parse the run_model.R
+  #   function will clear the envir environment, load the ModelState, parse the run_model.R
   #   script, check presence of files, check specifications, etc. ModelState_ls remains in the
   #   ve.model environment.
 
@@ -285,6 +294,8 @@ loadModel <- function(
   #==========================
 
   RunModel <- modelRunning()
+  owd <- setwd(RunDir)
+  on.exit(setwd(owd))
 
   #===============================
   # GET CURRENT MODEL STATE IF ANY
@@ -294,8 +305,8 @@ loadModel <- function(
 
   # Get status of current model state
   # Expect that getwd() contains (or will contain) the ModelState.Rda we're working on
-  ve.model$ModelStatePath <- normalizePath(ModelStateFile,winslash="/",mustWork=FALSE)
-  if ( ! grepl("\\.Rda$",ve.model$ModelStatePath) ) {
+  envir$ModelStatePath <- normalizePath(ModelStateFile,winslash="/",mustWork=FALSE)
+  if ( ! grepl("\\.Rda$",envir$ModelStatePath) ) {
     stop(
       writeLog("Configuration Error: ModelStateFile name must have '.Rda' extension",Level="error"),
       call.=FALSE
@@ -306,14 +317,27 @@ loadModel <- function(
   # ESTABLISH MODEL STATE IN MEMORY
   #================================
 
-  # We'll start saving the model state after we have (if necessary) archived the existing one.
-  if ( ! RunModel && file.exists(ve.model$ModelStatePath) ) {
-    RunParam_ls <- loadModelState(ve.model$ModelStatePath)
+  # We'll start saving the model state later
+  if ( ! RunModel ) {
+    if ( file.exists(envir$ModelStatePath) ) {
+      RunParam_ls <- loadModelState(envir$ModelStatePath)
+      if ( "ModelState_ls" %in% names(envir) ) {
+        if ( ! "RunStatus" %in% names(envir$ModelState_ls) ) {
+          # VEModel run function will set RunStatus in the ModelState_Ls
+          # Classic model run doesn't know what the RunStatus is...
+          setModelState(RunStatus=1,Save=TRUE,envir=envir) # 1 == "Unknown" run status (see VEModel)
+        }
+      }
+    }
+    # Stop here if we don't want to build a new model state (used in VEModel FindModel)
+    if ( ifExists ) {
+      return(envir$ModelState_ls) # Returns NULL if no ModelState_ls
+    }
   } else {
     # Initialize a fresh model state - update later if loading existing datastore
-    RunParam_ls <- initModelState(Save=FALSE,Param_ls=RunParam_ls)
+    RunParam_ls <- initModelState(Save=FALSE,Param_ls=RunParam_ls,envir=envir)
   }
-  RunParam_ls <- ve.model$RunParam_ls # May have been modified in initModelState or loadModelState
+#  RunParam_ls <- envir$RunParam_ls # Don't need this - using Param_ls returned from model state access functions
 
   #==========================================================
   #PARSE RUN SCRIPT FOR MODULE CALLS, CHECK AND COMBINE SPECS
@@ -343,7 +367,7 @@ loadModel <- function(
   } else {
     parsedScript <- RunParam_ls$ParsedScript
   }
-  setModelState(list(ParsedScript_ls=parsedScript),Save=FALSE)
+  setModelState(list(ParsedScript_ls=parsedScript),Save=FALSE,envir=envir)
 
   #==========================================================
   # SAVE RAW MODULE CALLS INTO MODEL STATE FROM PARSED SCRIPT
@@ -352,7 +376,8 @@ loadModel <- function(
   # Use ModuleCalls_df later in runModule
   setModelState(
     list(ModuleCalls_df=parsedScript$ModuleCalls_df), # Full list of calls for current model state/stage
-    Save=FALSE
+    Save=FALSE,
+    envir=envir
   )
 
   #===================================================
@@ -368,7 +393,7 @@ loadModel <- function(
   RunDstore$Name <- normalizePath(RunDstore$Name, winslash = "/", mustWork = FALSE)
   RunDstore$Dir  <- dirname(RunDstore$Name)
   RunParam_ls$RunDstore <- RunDstore # for use if this model becomes a VEModel BaseModel
-  setModelState(list(RunDstore=RunDstore),Save=FALSE) # for use in this model run
+  setModelState(list(RunDstore=RunDstore),Save=FALSE,envir=envir) # for use in this model run
 
   # Allow explicit function parameter to be overridden from RunParam_ls if defined there
   # May have been changed from function parameter by earlier call to getModelParameters
@@ -449,7 +474,7 @@ loadModel <- function(
   }
 
   # Save the LoadDstore structure for use when model runs
-  setModelState(list(LoadDstore=LoadDstore),Save=FALSE)
+  setModelState(list(LoadDstore=LoadDstore),Save=FALSE,envir=envir)
 
   # Check for consistency of Load and Save parameters
   # TODO: rework use case for restarting from current Datastore (during debugging for example)
@@ -497,7 +522,7 @@ loadModel <- function(
 
       #Get datastore type from current ModelState
       LoadDstoreType <- (LoadEnv$ModelState_ls$DatastoreType)
-      RunDstoreType <- (ve.model$ModelState_ls$DatastoreType)
+      RunDstoreType <- (envir$ModelState_ls$DatastoreType)
 
       #Check that run and load datastores are of same type
       if ( RunDstoreType != LoadDstoreType) {
@@ -509,10 +534,10 @@ loadModel <- function(
       }
 
       #Check that geography, units, deflators and base year are consistent
-      BadGeography <- !isTRUE(all.equal(ve.model$ModelState_ls$Geo_df, LoadEnv$ModelState_ls$Geo_df))
-      BadUnits <- !isTRUE(all.equal(ve.model$ModelState_ls$Units, LoadEnv$ModelState_ls$Units))
-      BadDeflators <- !isTRUE(all.equal(ve.model$ModelState_ls$Deflators, LoadEnv$ModelState_ls$Deflators))
-      BadBaseYear <- ! (ve.model$ModelState_ls$BaseYear == LoadEnv$ModelState_ls$BaseYear)
+      BadGeography <- !isTRUE(all.equal(envir$ModelState_ls$Geo_df, LoadEnv$ModelState_ls$Geo_df))
+      BadUnits <- !isTRUE(all.equal(envir$ModelState_ls$Units, LoadEnv$ModelState_ls$Units))
+      BadDeflators <- !isTRUE(all.equal(envir$ModelState_ls$Deflators, LoadEnv$ModelState_ls$Deflators))
+      BadBaseYear <- ! (envir$ModelState_ls$BaseYear == LoadEnv$ModelState_ls$BaseYear)
 
       if ( BadGeography || BadUnits || BadDeflators || BadBaseYear) {
         elements <- paste(
@@ -576,15 +601,14 @@ loadModel <- function(
   # ENSURE RunParam_ls UP TO DATE
   #==============================
 
-  ve.model$RunParam_ls <- RunParam_ls
-  setModelState(list(RunParam_ls=RunParam_ls,RunStatus="Loaded"),Save=FALSE)
+  envir$RunParam_ls <- RunParam_ls
+  setModelState(list(RunParam_ls=RunParam_ls),Save=FALSE,envir=envir)
 
   # If not running model, we've done everything needed from initializeModel. Additional setup
   # operations (parsing model script, examining StartFrom, loading module specifications
   # can be done externally in VEModel, for example)
-  return(ve.model$ModelState_ls)
+  return(envir$ModelState_ls)
 }
-# Done with LoadEnv
 
 #PREPARE MODEL RUN
 #=================
@@ -603,18 +627,19 @@ loadModel <- function(
 #' report if the run_model.R script does not generate all required datasets
 #' plus other oddities in the model_script. Saves time when trying out a new
 #' combination of modules; don't bother using with a model that already runs.
+#' @param envir The environment in which to see ModelState_ls
 #' 
 #' @return The ModelState_ls that was constructed, invisibly. It will have been
 #' updated with the Datastore inventory, the model run status and a few other things.
 #'
 #' @export
 prepareModelRun <- function(
-  SimulateRun = FALSE
+  SimulateRun = FALSE,
+  envir = modelEnvironment()
 ) {
 
-  ve.model <- modelEnvironment()
-  if ( ! all( c("RunParam_ls","ModelState_ls") %in% names(ve.model) ) ) {
-    ve.model$RunModel <- FALSE
+  if ( ! all( c("RunParam_ls","ModelState_ls") %in% names(envir) ) ) {
+    envir$RunModel <- FALSE
     stop(
       writeLog("Model State or Run parameters not created: call loadModel or initializeModel",Level="error")
     )
@@ -622,14 +647,14 @@ prepareModelRun <- function(
   writeLog("Preparing Model Run...",Level="info")
 
   # Establish run environment
-  RunParam_ls <- ve.model$ModelState_ls$RunParam_ls # Both ModelState_ls and RunParam_ls must exist...
-  RunModel <- ve.model$RunModel <- TRUE
+  RunParam_ls <- envir$ModelState_ls$RunParam_ls # Both ModelState_ls and RunParam_ls must exist...
+  RunModel <- envir$RunModel <- TRUE
 
   #### IMPORTANT: The working directory must be the place we want to write the ModelState file and
   ####            create the Datastore. The "ResultsDir" (plus RunStep/Scenario)
 
   # ModelStatePath may be a subdirectory of ResultsDir if the model is staged
-  RunDirectory <- ve.model$ModelState_ls$ModelStatePath
+  RunDirectory <- envir$ModelState_ls$ModelStatePath
 
   owd <- setwd(RunDirectory)
   on.exit(setwd(owd))
@@ -658,8 +683,8 @@ prepareModelRun <- function(
     loadModelParameters() # i.e. model_parameters.json - an input file historically located in "defs"
   } else {
     # Grab LoadDstore parameters from the ModelState
-    LoadDstore <- ve.model$ModelState_ls$LoadDstore
-    RunDstore <- ve.model$ModelState_ls$RunDstore;
+    LoadDstore <- envir$ModelState_ls$LoadDstore
+    RunDstore <- envir$ModelState_ls$RunDstore;
 
     loadEnv <- new.env()
     loadEnv$ModelState_ls <- LoadDstore$ModelState_ls
@@ -700,7 +725,7 @@ prepareModelRun <- function(
     # Initialize geography for years not present in datastore
     # Handles model stages where the new stage adds one or more Years
     #  instead of (or in addition to) adding module calls.
-    RunYears_ <- ve.model$ModelState_ls$Years
+    RunYears_ <- envir$ModelState_ls$Years
     LoadYears_ <- LoadDstore$ModelState_ls$Years
     if (!all(RunYears_ == LoadYears_)) {
       NewYears_ <- RunYears_[!(RunYears_ %in% LoadYears_)]
@@ -720,7 +745,7 @@ prepareModelRun <- function(
   #CAPTURE RunParam_ls
   #===================
   setModelState(list(RunParam_ls=RunParam_ls),Save=RunModel)
-  ve.model$RunParam_ls <- RunParam_ls # Save the run parameters explicitly as well
+  envir$RunParam_ls <- RunParam_ls # Save the run parameters explicitly as well
 
   #==================
   #SIMULATE MODEL RUN
@@ -733,7 +758,7 @@ prepareModelRun <- function(
   SimulateRun  <- getRunParameter("SimulateRun",Default=SimulateRun,Param_ls=RunParam_ls)
   if (SimulateRun) {
     writeLog("Simulating Model Run...",Level="info")
-    simDataTransactions(ve.model$ModelState_ls$AllSpecs_ls)
+    simDataTransactions(envir$ModelState_ls$AllSpecs_ls)
   }
 
   #===============================
@@ -741,7 +766,7 @@ prepareModelRun <- function(
   #===============================
 
   writeLog("Adding input files...",Level="info")
-  processInputFiles(ve.model$ModelState_ls$AllSpecs_ls) # Add them to the Datastore
+  processInputFiles(envir$ModelState_ls$AllSpecs_ls) # Add them to the Datastore
 
   #============================
   # PRINT MODEL RUN STEP HEADER
@@ -751,10 +776,10 @@ prepareModelRun <- function(
   # intended as metadata for the model run
   writeLogMessage(
     paste(
-      paste("Name:",ve.model$ModelState_ls$Model),
-      paste("Scenario:",ve.model$ModelState_ls$Scenario),
-      paste("Description:",ve.model$ModelState_ls$Description),
-      paste("Timestamp:",ve.model$ModelState_ls$FirstCreated),
+      paste("Name:",envir$ModelState_ls$Model),
+      paste("Scenario:",envir$ModelState_ls$Scenario),
+      paste("Description:",envir$ModelState_ls$Description),
+      paste("Timestamp:",envir$ModelState_ls$FirstCreated),
       sep="\n"
     )
   )
@@ -764,7 +789,7 @@ prepareModelRun <- function(
   # DONE WITH INITIALIZATION
   #=========================
 
-  invisible(ve.model$ModelState_ls)
+  invisible(envir$ModelState_ls)
 }
 
 #===============

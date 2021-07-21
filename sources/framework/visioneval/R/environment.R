@@ -731,13 +731,14 @@ fileTimeStamp <- function( TimeStamp, Prefix=NULL ) {
 #' Prefix is 'CreateHouseholds', the log file is named 'Log_CreateHouseholds_<date>_<time>.txt'. The
 #' default value is NULL in which case the Prefix is the date and time.
 #' @param Quiet a logical (default=TRUE); if FALSE, write initialization parameters as a log message
+#' @param envir The enviroment in which to track the log status
 #' @return A list containing the name of the constructed log file and the time stamp
 #' @import futile.logger
 #' @export
-initLog <- function(TimeStamp = NULL, Threshold="warn", Save=TRUE, Prefix = NULL, Quiet=TRUE) {
+initLog <- function(TimeStamp = NULL, Threshold="warn", Save=TRUE, Prefix = NULL, Quiet=TRUE, envir=modelEnvironment()) {
 
   # Don't touch the log if it is already initialized
-  ve.model <- modelEnvironment()
+  ve.model <- envir
   if ( "LogStatus" %in% names(ve.model) ) return(invisible(ve.model$LogStatus))
 
   if (is.null(TimeStamp)) {
@@ -931,7 +932,7 @@ writeLog <- function(Msg = "", Level="NONE", Logger="") {
     message(
       "writeLog(Msg,Level,Logger): No message supplied\n",
       "Available Log Levels:\n",
-      paste(names(log.threshold),collapse=", ")
+      paste(log.threshold,collapse=", ")
     )
   } else {
     # Pick the logger

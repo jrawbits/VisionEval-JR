@@ -24,12 +24,13 @@
 #' @param Param_ls A named list of model run parameters
 #' @param RunPath (default getwd()) is the directory in which ModelState, Datastore and log
 #'   are being stored.
+#' @param envir The environment in which to create the ModelState_ls
 #' @return The updated RunParam_ls with ModelState parameters fleshed out
 #' @export
-initModelState <- function(Save=TRUE,Param_ls=NULL,RunPath=NULL) {
+initModelState <- function(Save=TRUE,Param_ls=NULL,RunPath=NULL,envir=modelEnvironment()) {
 
   # Load model environment (should have RunParam_ls already loaded, furnishing ...)
-  model.env <- modelEnvironment()
+  model.env <- envir
   if ( ! is.list(Param_ls) ) {
     Param_ls <- model.env$RunParam_ls;
   }
@@ -357,12 +358,11 @@ loadModelState <- function(FileName=getModelStateFileName(),envir=NULL) {
   if (file.exists(FileName)) {
     load(FileName,envir=envir)
   }
-  Param_ls <- get0( "RunParam_ls", envir=envir, ifnotfound=list() )
-  if ( length(Param_ls) == 0 ) {
-    ModelState_ls <- get0( "ModelState_ls", envir=envir, ifnotfound=list() )
-    if ( length(ModelState_ls) > 0 ) {
-      Param_ls <- ModelState_ls$RunParam_ls
-    }
+  ModelState_ls <- get0( "ModelState_ls", envir=envir, ifnotfound=list() )
+  if ( length(ModelState_ls) > 0 ) {
+    Param_ls <- ModelState_ls$RunParam_ls
+  } else {
+    Param_ls <- get0( "RunParam_ls", envir=envir, ifnotfound=list() )
   }
   return ( Param_ls )
 }
