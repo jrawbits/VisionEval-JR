@@ -17,30 +17,13 @@ Work on settings (how to make that more transparent?)
     Show applied value
     Show overridden values (all the way back up to Defaults)
 
-Future restructuring:
-  Make the ModelStage list into an R6 class, notably with a $run function
-    $results (a VEResults object)
-  Results are stored in the ModelStage
-
-Add a new class VEModelStage which handles runnable units. A reportable unit will be pulled out
-by default for extraction or queries. The VEModel delegates down into its list of VEModelStages.
-The VEModelStage contains a VEResults object (ModelState_ls/Datastore). VEModel$results produces
-a list of VEResults that we can pass to a VEQuery. A vector of file paths can be transformed into
-a list of VEResults.
-
 Add a helper function for VEModel, which is "openResults" (taking a model name, or a path to a
 results directory, defaulting to the current directory).
 
 VEModel$results will generate VEResults from all its reportable stages (or specific names can be
 supplied).
 
-Opening a path fills in the VEModelStage structure. A list of paths makes a list of Model Stages,
-which we will try to open if they exist.
-
-When we open a path into results, we can construct the entire ModelStage - the result won't
-be Runnable, which is the key difference from opening a stage within a model. We just get access
-to the stage results. It's not Runnable (we have that flag, which we use to filter out non-stages
-when we're opening a full model), but we can navigate it as an output structure.
+Opening a path fills in a VEResults. A list of paths makes a list of VEResults (if valid).
 
 Could still keep the VEResults as it is now, and inject it as an element of the ModelStage.
 So a VEModel contains one or more ModelStages, one or more of which are Runnable, and one or
@@ -49,22 +32,17 @@ more of which are Reportable. A runnable model stage builds a VEResults object w
 (as it does currently), and gives back a list of vectors of metrics. It can also query a single
 VEResult object.
 
-VEResults itself always be a list of results? Perhaps what we really need to do is create
+Can VEResults itself always be a list of results? Perhaps what we really need to do is create
 a VEModelStage class that will accumulate the results, and what we really get in VEResults is a list
 of the stages. Then we have the path, the ModelState_ls and everything else we need, already open.
 If we open a path from the file system, we find the ModelState_ls and expand that into a
 VEModelStage object.
 
-The low-level "run" function will then be implemented for the ModelStage, not the VEModel itself
-(which simply loads and runs its ModelStages). The VEModel controls the ResultsDir (with ModelStage
-results placed inside that - if there is only one runnable stage, we set the StageDir to "."). If
-there is a Runnable model in the ModelDir (rather than a StageDir), we give it a StageDir of "Model"
-(and if that collides, repeatedly suffix "-0" so "Model-0", "Model-0-0" etc.
-
-VEQuery will take a list of ModelStages and operate on those. If we give it a VEModel, it pulls out
+VEQuery will take a list of VEResults and operate on those. If we give it a VEModel, it pulls out
 the Reportable stages (unless a specific stage is named: only one in that case, especially if not
-Reportable). Then we run the low-level query on each ModelStage and assemble a named list of query
-results (e.g. via lapply) and readily convert that list into a data.frame.
+Reportable) and builds a list of their results. Then we run the low-level query on each VEResults
+and assemble a named list of query results (e.g. via lapply) and readily convert that list into a
+data.frame.
 
 Need to work on extract function: resultsdir/output/extract-timestamp/stage/{metadata.csv,results.csv}.
   Flatten or not to flatten? Answer is "flatten" so all available data shows up in the .csv, but option not to Flatten
