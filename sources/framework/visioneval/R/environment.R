@@ -49,13 +49,14 @@ modelEnvironment <- function(Clear=NULL) {
 #' \code{modelRunning} returns TRUE if the model is running; otherwise
 #' the run_model.R script is executed as a "dry run".
 #'
+#' @param envir The environment in which the model is running (default visioneval::ve.model)
 #' @return TRUE if ve.model$RunModel is TRUE, otherwise FALSE
 #' @export
-modelRunning <- function() {
-    if ( "RunModel" %in% names(ve.model) ) { # VEModel or initializeModel will set
-      return(ve.model$RunModel)
+modelRunning <- function(envir=modelEnvironment()) {
+    if ( "RunModel" %in% names(envir) ) { # VEModel or initializeModel will set
+      return(envir$RunModel)
     } else { # The model is running in backward-compatible mode
-      return(ve.model$RunModel <- TRUE)
+      return(envir$RunModel <- TRUE)
     }
 }
 
@@ -730,16 +731,26 @@ fileTimeStamp <- function( TimeStamp, Prefix=NULL ) {
 #' @param Prefix A character string appended to the file name for the log file. For example, if the
 #' Prefix is 'CreateHouseholds', the log file is named 'Log_CreateHouseholds_<date>_<time>.txt'. The
 #' default value is NULL in which case the Prefix is the date and time.
+#' @param Clear a logical (default=FALSE); if FALSE, use existing LogStatus (output file and
+#'   threshold)
 #' @param Quiet a logical (default=TRUE); if FALSE, write initialization parameters as a log message
 #' @param envir The enviroment in which to track the log status
 #' @return A list containing the name of the constructed log file and the time stamp
 #' @import futile.logger
 #' @export
-initLog <- function(TimeStamp = NULL, Threshold="warn", Save=TRUE, Prefix = NULL, Quiet=TRUE, envir=modelEnvironment()) {
+initLog <- function(TimeStamp = NULL, Threshold="warn", Save=TRUE, Prefix = NULL,
+  Clear=FALSE, Quiet=TRUE,
+  envir=modelEnvironment()) {
 
   # Don't touch the log if it is already initialized
   ve.model <- envir
-  if ( "LogStatus" %in% names(ve.model) ) return(invisible(ve.model$LogStatus))
+  if ( "LogStatus" %in% names(ve.model) ) {
+    if ( ! Clear ) {
+      return(invisible(ve.model$LogStatus))
+    } else {
+      rm("LogStatus",envir=ve.model)
+    }
+  }
 
   if (is.null(TimeStamp)) {
     TimeStamp <- Sys.time()
