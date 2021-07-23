@@ -121,7 +121,7 @@ test_classic <- function(modelName="VERSPM-Classic",clear=TRUE,log="info") {
   return(rs)
 }
   
-test_install <- function(modelName="VERSPM",variant="base",installAs=NULL,run=FALSE,log="warn") {
+test_install <- function(modelName="VERSPM",variant="base",installAs=NULL,run=FALSE,log="info") {
 
   if ( ! nzchar(variant) ) variant <- ""
   if ( missing(installAs) || is.null(installAs) ) {
@@ -153,40 +153,36 @@ test_install <- function(modelName="VERSPM",variant="base",installAs=NULL,run=FA
   return(rs)
 }
 
-test_run <- function(modelName="TEST-RUN",baseModel="VERSPM",variant="base",reset=FALSE,log="warn") {
+test_run <- function(modelName="Test-VERSPM-base",baseModel="VERSPM",variant="base",reset=FALSE,log="info") {
   if ( ! reset ) {
     testStep(paste("Attempting to re-open existing",modelName))
     rs <- openModel(modelName)
-    if ( rs$status != "Complete" ) {
+    if ( rs$status != codeStatus("Run Complete") ) {
+      print(rs)
       reset <- TRUE
-      message("Rebuilding model")
+      message("\nStage is not Complete; Rebuilding model")
     } else {
-      message("Using existing model run")
-      return(rs)
+      message("Returning existing model run")
     }
   }
   if (reset) {
     testStep("Install and Run a Full Model")
     modelPath <- file.path("models",modelName)
     owd <- getwd()
-    tryCatch(
-      {
-        if ( dir.exists(modelPath) ) {
-          testStep("Clearing runtime environment")
-          unlink(modelPath,recursive=TRUE)
-        }
-        testStep(paste("Installing",baseModel,"model from package as",modelName))
-        rs <- installModel(baseModel,modelName,variant=variant,log=log,confirm=FALSE)
+    if ( dir.exists(modelPath) ) {
+      testStep("Clearing runtime environment")
+      unlink(modelPath,recursive=TRUE)
+    }
+    testStep(paste("Installing",baseModel,"model from package as",modelName))
+    rs <- installModel(baseModel,modelName,variant=variant,log=log,confirm=FALSE)
 
-        testStep("Running model...")
-        rs$run(run="reset",log=log) # clears results directory
-        return(rs)
-      },
-      error=function(e) { cat("Runtime error:\n",conditionMessage(e),"\nRemember to takedown()\n") },
-      finally=setwd(owd)
-    )
-    return("Failed to run.")
+    testStep("Print model")
+    print(rs)
+
+    testStep("Running model...")
+    rs$run(run="reset",log=log) # clears results directory
   }
+  return(rs)
 }
 
 test_model <- function(oldstyle=TRUE, test.copy=FALSE, log="info") {
@@ -196,38 +192,28 @@ test_model <- function(oldstyle=TRUE, test.copy=FALSE, log="info") {
 
   testStep("open (and maybe run) the full test version of VERSPM")
   jr <- openModel("JRSPM")
-  if ( ! jr$status=="Complete" ) {
-    cat("Re-running model due to status",jr$status,"\n")
-    jr <- test_run(modelName="JRSPM",log=log)
+  if ( ! jr$status == codeStatus("Run Complete") ) {
+    cat("Re-running model due to status",jr$printStatus(),"\n")
+    jr <- test_run(modelName="JRSPM",baseModel="VERSPM",variant="base",reset=TRUE,log=log)
   }
   if (! "VEModel" %in% class(jr) ) {
     return(jr)
-  } else print(jr)
+  } else print(jr,details=TRUE)
 
   testStep("gather base model parameters")
   base.dir <- jr$modelPath
   cat("Base Model directory:\n")
   print(base.dir)
 
-  jrParam_ls <- jr$RunParam_ls
-  base.defs <- normalizePath(
-    file.path(
-      base.dir,
-      visioneval::getRunParameter("ParamDir",Param_ls = jrParam_ls)
-    ),winslash="/",mustWork=TRUE
-  )
-  cat("Base defs:\n")
-  print(base.defs)
-
-  base.inputs <- normalizePath(
-    file.path(
-      base.dir,
-      visioneval::getRunParameter("InputPath",Param_ls = jrParam_ls),
-      visioneval::getRunParameter("InputDir",Param_ls = jrParam_ls)
-    ),winslash="/",mustWork=TRUE
-  )
-  cat("Base inputs:\n")
-  print(base.inputs)
+  for ( stage in jr$modelStages ) {
+    cat("Stage:",stage$Name,"\n")
+    jrParam_ls <- stage$RunParam_ls
+    cat("  ParamPath    :",visioneval::getRunParameter("ParamPath",Param_ls=jrParam_ls),"\n")
+    cat(paste("  InputPath    :",visioneval::getRunParameter("InputPath",Param_ls=jrParam_ls),"\n"))
+    cat("  InputDir     :",visioneval::getRunParameter("InputDir",Param_ls=jrParam_ls),"\n")
+    cat(paste("  DatastorePath:",visioneval::getRunParameter("DatastorePath",Param_ls=jrParam_ls),"\n"))
+  }
+  return("Stop Test")
 
   testStep("construct a bare model from scratch")
   bare.dir <- file.path("models","BARE")
@@ -241,8 +227,6 @@ test_model <- function(oldstyle=TRUE, test.copy=FALSE, log="info") {
 
   runModelFile <- file.path(bare.dir,"run_model.R")
   runModel_vc <- c(
-    'library(visioneval)',
-    'initializeModel()',
     'for(Year in getYears()) {',
     'runModule("CreateHouseholds","VESimHouseholds",RunFor = "AllYears",RunYear = Year)',
     'runModule("PredictWorkers","VESimHouseholds",RunFor = "AllYears",RunYear = Year)',

@@ -443,9 +443,6 @@ findModel <- function( modelDir, Param_ls=getSetup() ) {
     stop( visioneval::writeLog("No model stages found!",Level="error") )
   }
 
-  # Call them by their Name
-  names(modelStages) <- sapply(modelStages,function(s)s$Name)
-
   # Loop through modelStages, completing initialization using "StartFrom" stages
   visioneval::writeLog("Finding runnable stages",Level="info")
   runnableStages <- list()
@@ -465,6 +462,9 @@ findModel <- function( modelDir, Param_ls=getSetup() ) {
       visioneval::writeLog("Model has no runnable stages!",Level="error")
     )
   }
+
+  # Call the modelStages by their Names
+  names(modelStages) <- sapply(modelStages,function(s)s$Name)
 
   # Set Reportable attribute for the stages
   if ( stageCount == 1 ) {
@@ -1048,14 +1048,22 @@ ve.stage.load <- function(onlyExisting=TRUE) {
   if ( is.null(self$ModelState_ls) ) {
     envir = visioneval::modelEnvironment(Clear="ve.stage.load")
     envir$RunModel <- FALSE
-    ms <- visioneval::loadModel(self$RunParam_ls,onlyExisting=onlyExisting)
-    if ( is.list(ms) && length(ms)>0 ) { # Save the ModelState if created successfully
-      self$ModelState_ls <- ms
-      if ( ! "RunStatus" %in% self$ModelState_ls ) {
-        self$ModelState_ls$RunStatus <- codeStatus("Loaded")
+    print(names(self))
+    if ( dir.exists(self$RunPath) ) {
+      visioneval::writeLog("Trying to load ModelState from",Level="info")
+      visioneval::writeLog(self$RunPath,Level="info")
+      visioneval::writeLog(paste(dir(self$RunPath),collapse="\n"),Level="info")
+      owd <- setwd(self$RunPath)
+      on.exit(setwd(owd))
+      ms <- visioneval::loadModel(self$RunParam_ls,onlyExisting=onlyExisting)
+      if ( is.list(ms) && length(ms)>0 ) { # Save the ModelState if created successfully
+        self$ModelState_ls <- ms
+        if ( ! "RunStatus" %in% self$ModelState_ls ) {
+          self$ModelState_ls$RunStatus <- codeStatus("Loaded")
+        }
+        self$RunStatus <- self$ModelState_ls$RunStatus
+      return(TRUE)
       }
-      self$RunStatus <- self$ModelState_ls$RunStatus
-    return(TRUE)
     }
   }
   return(FALSE)
@@ -1105,14 +1113,15 @@ ve.stage.run <- function(log="warn") {
     msg <- as.character(runResults) # try-error (captures "stop" message)
     visioneval::writeLog(msg,Level="error") # possibly redundant with interior logging
     self$RunStatus <- codeStatus("Run Failed")
-    if ( "ModelState_ls" %in% visioneval::modelEnvironment() ) {
-      visioneval::setModelState(list(RunStatus=self$RunStatus))
+    if ( "ModelState_ls" %in% names(visioneval::modelEnvironment()) ) {
+      visioneval::setModelState(list(RunStatus=self$RunStatus),envir=ve.model)
     }
   } else {
     # Success: Assemble the runResults
     self$ModelState_ls <- runResults$ModelState_ls # The story of the run...
     self$RunStatus <- runResults$RunStatus
-    visioneval::setModelState(list(RunStatus=self$RunStatus))
+    browser()
+    visioneval::setModelState(list(RunStatus=self$RunStatus),envir=ve.model)
   }
 }
 
@@ -1299,6 +1308,8 @@ ve.model.print <- function(details=FALSE) {
   if ( details ) {
     cat("Path:","\n")
     cat(self$modelPath,"\n")
+    cat("Configurations:","\n")
+    cat(paste("   ",uniqueSources(self$RunParam_ls),"\n")) # Generates one row for each unique source
   }
   cat("Status:", self$printStatus(),"\n")
   if ( private$p.valid ) {
@@ -1410,6 +1421,13 @@ ve.model.load <- function(onlyExisting=TRUE) {
 #       can still be interpreted properly. We still need to pull out the "initializeModel"
 #       parameters...
 
+# Proxy some visioneval functions (things that might get called from
+# classic run_model.R without namespace resolution.
+getYears <- visioneval::getYears
+runModule <- visioneval::runModule
+runScript <- visioneval::runScript
+requirePackage <- visioneval::requirePackage
+
 # Run the modelStages
 ve.model.run <- function(run="continue",stage=NULL,log="warn") {
   # TODO: rework for the new Stage architecture
@@ -1496,8 +1514,9 @@ ve.model.run <- function(run="continue",stage=NULL,log="warn") {
   # Identify stages to run
   runStages <- names(self$modelStages)
   if ( toRun > length(runStages) ) { # should never happen
+    visioneval::writeLog(paste("Stages:",runStages,collapse=","),Level="info")
     msg <- visioneval::writeLog(paste("Starting stage",toRun,"comes after last stage",length(runStages)),Level="error")
-    stop(msg)
+    return( invisible(self$status) )
   }
   runStages <- runStages[toRun:length(runStages)]
 
@@ -1509,8 +1528,8 @@ ve.model.run <- function(run="continue",stage=NULL,log="warn") {
   owd <- getwd()
   on.exit(setwd(owd))
 
-  # If saving Datastore, archive the Datastore
-  LogLevel <- getRunParameter("LogLevel",Default=log,Param_ls=self$RunParam_ls)
+  # Establish the LogLevel from the overall environment
+  LogLevel <- visioneval::getRunParameter("LogLevel",Default=log,Param_ls=self$RunParam_ls)
 
   # Set up the model runtime environment
   for ( ms in runStages ) { # iterate over names of stages to run

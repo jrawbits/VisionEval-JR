@@ -58,6 +58,11 @@ initModelState <- function(Save=TRUE,Param_ls=NULL,RunPath=NULL,envir=modelEnvir
     stop( writeLog(Message,Level="error") )
   }
 
+  # Reformat BaseYear and Years if they were entered as numbers
+  # Classically, they went in as strings. Numbers are more natural to write.
+  if ( is.numeric(Param_ls$BaseYear) ) Param_ls$BaseYear <- as.character(Param_ls$BaseYear)
+  if ( is.numeric(Param_ls$Years) ) Param_ls$Years <- as.character(Param_ls$Years)
+
   # Install the parameters that do exist - the required parameters become the foundation for
   # ModelState_ls. Other parameters are placed in newModelState_ls$RunParameters,
   # (including things like ParamDir, UnitsFile, etc.)
