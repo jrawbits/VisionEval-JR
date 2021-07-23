@@ -1048,21 +1048,17 @@ ve.stage.load <- function(onlyExisting=TRUE) {
   if ( is.null(self$ModelState_ls) ) {
     envir = visioneval::modelEnvironment(Clear="ve.stage.load")
     envir$RunModel <- FALSE
-    print(names(self))
     if ( dir.exists(self$RunPath) ) {
-      visioneval::writeLog("Trying to load ModelState from",Level="info")
-      visioneval::writeLog(self$RunPath,Level="info")
-      visioneval::writeLog(paste(dir(self$RunPath),collapse="\n"),Level="info")
       owd <- setwd(self$RunPath)
       on.exit(setwd(owd))
       ms <- visioneval::loadModel(self$RunParam_ls,onlyExisting=onlyExisting)
       if ( is.list(ms) && length(ms)>0 ) { # Save the ModelState if created successfully
         self$ModelState_ls <- ms
-        if ( ! "RunStatus" %in% self$ModelState_ls ) {
-          self$ModelState_ls$RunStatus <- codeStatus("Loaded")
+        if ( ! "RunStatus" %in% names(self$ModelState_ls) ) {
+          self$ModelState_ls$RunStatus <- codeStatus("Unknown")
         }
         self$RunStatus <- self$ModelState_ls$RunStatus
-      return(TRUE)
+        return(TRUE)
       }
     }
   }
@@ -1084,11 +1080,11 @@ ve.stage.run <- function(log="warn") {
   owd <- setwd(self$RunPath)
   on.exit(setwd(owd))
 
-  runResults <- try (
-    {
-      # Take ownership of ve.model
-      ve.model <- visioneval::modelEnvironment(Clear="VEModelStage::run") # add Owner
+  # Take ownership of ve.model
+  ve.model <- visioneval::modelEnvironment(Clear="VEModelStage::run") # add Owner
 
+  RunStatus <- try (
+    {
       # Initialize Log, create new ModelState
       ve.model$RunModel <- TRUE
       visioneval::initLog(Threshold=log,Save=TRUE) # Log stage
@@ -1102,15 +1098,14 @@ ve.stage.run <- function(log="warn") {
 
       # If we get this far without a "stop", save the ModelState and RunStatus
       RunStatus <- codeStatus("Run Complete")
-      list(ModelState_ls=ve.model$ModelState_ls,RunStatus=RunStatus)
     },
     silent=TRUE
   )
 
   # Process results (or errors)
-  if ( ! is.list(runResults) ) {
+  if ( ! is.numeric(RunStatus) ) {
     # Failure: stop trapped while performing run sequence
-    msg <- as.character(runResults) # try-error (captures "stop" message)
+    msg <- as.character(RunStatus) # try-error (captures "stop" message)
     visioneval::writeLog(msg,Level="error") # possibly redundant with interior logging
     self$RunStatus <- codeStatus("Run Failed")
     if ( "ModelState_ls" %in% names(visioneval::modelEnvironment()) ) {
@@ -1118,11 +1113,11 @@ ve.stage.run <- function(log="warn") {
     }
   } else {
     # Success: Assemble the runResults
-    self$ModelState_ls <- runResults$ModelState_ls # The story of the run...
-    self$RunStatus <- runResults$RunStatus
-    browser()
+    self$RunStatus <- RunStatus
     visioneval::setModelState(list(RunStatus=self$RunStatus),envir=ve.model)
   }
+  self$ModelState_ls <- ve.model$ModelState_ls # The story of the run...
+  return(invisible(self$ModelState_ls))
 }
 
 # Helper

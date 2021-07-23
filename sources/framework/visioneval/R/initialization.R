@@ -132,7 +132,7 @@ initModelState <- function(Save=TRUE,Param_ls=NULL,RunPath=NULL,envir=modelEnvir
   }
   newModelState_ls$DatastorePath <- Param_ls$DatastorePath
 
-  model.env$ModelState_ls <- newModelState_ls
+  model.env$ModelState_ls <- newModelState_ls # Replace whatever is already there
   model.env$RunParam_ls <- Param_ls # Includes all the run Parameters, including "required"
 
   # Note that the ModelState is saved in the working directory
@@ -436,6 +436,8 @@ setModelState <- function(ChangeState_ls=list(), FileName = NULL, Save=TRUE, env
 
   if ( Save ) {
     if ( is.null(FileName) ) FileName <- file.path(envir$ModelState_ls$ModelStatePath,getModelStateFileName())
+    writeLog(paste0("Saving ",paste(names(ChangeState_ls),collapse=",")),Level="trace")
+    writeLog(paste0("To file: ",FileName),Level="trace")
     result <- try(save("ModelState_ls",envir=envir,file=FileName))
     if ( class(result) == 'try-error' ) {
       Msg <- paste('Could not write ModelState:', FileName)
@@ -445,7 +447,7 @@ setModelState <- function(ChangeState_ls=list(), FileName = NULL, Save=TRUE, env
     }
   } else if ( length(ChangeState_ls)==0 ) {
     writeLog("I'm just sitting here watching the wheels go round and round...",Level="trace")
-    writeLogMessage(traceback(1),Level="trace")
+    writeLogMessage(.traceback(1),Level="trace")
   }
   invisible(TRUE)
 }

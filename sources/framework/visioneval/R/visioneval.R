@@ -321,19 +321,12 @@ loadModel <- function(
   if ( ! RunModel ) {
     if ( file.exists(envir$ModelStatePath) ) {
       RunParam_ls <- loadModelState(envir$ModelStatePath)
-      if ( "ModelState_ls" %in% names(envir) ) {
-        if ( ! "RunStatus" %in% names(envir$ModelState_ls) ) {
-          # VEModel run function will set RunStatus in the ModelState_Ls
-          # Classic model run doesn't know what the RunStatus is...
-          setModelState(list(RunStatus=1),Save=TRUE,envir=envir) # 1 == "Unknown" run status (see VEModel)
-        }
-      }
+      if ( onlyExisting ) {
+        # Stop here if we don't want to build a new model state (used in VEModel FindModel)
+        writeLog("Opened existing ModelState_ls ",Level="info")
+        return(envir$ModelState_ls) # Returns empty list if no ModelState_ls
+      } 
     }
-    # Stop here if we don't want to build a new model state (used in VEModel FindModel)
-    if ( onlyExisting ) {
-      writeLog("Opened existing ModelState_ls ",Level="info")
-      return(envir$ModelState_ls) # Returns NULL if no ModelState_ls
-    } # else should fall through into the next if test
   }
 
   # Initialize a fresh model state - update later if loading existing datastore
