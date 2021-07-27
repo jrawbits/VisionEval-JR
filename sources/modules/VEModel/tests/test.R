@@ -86,6 +86,10 @@ testStep <- function(msg) {
   cat("",paste(msg,collapse="\n"),"",sep="\n")
 }
 
+stopTest <- function(msg) {
+  stop(msg)
+}
+
 # Check that we can source run_model.R to run a classic model
 test_classic <- function(modelName="VERSPM-Classic",clear=TRUE,log="info") {
   modelPath <- file.path("models",modelName)
@@ -121,7 +125,7 @@ test_classic <- function(modelName="VERSPM-Classic",clear=TRUE,log="info") {
   return(rs)
 }
   
-test_install <- function(modelName="VERSPM",variant="base",installAs=NULL,run=FALSE,log="info") {
+test_install <- function(modelName="VERSPM",variant="base",installAs=NULL,log="info") {
 
   if ( ! nzchar(variant) ) variant <- ""
   if ( missing(installAs) || is.null(installAs) ) {
@@ -166,18 +170,8 @@ test_run <- function(modelName="Test-VERSPM-base",baseModel="VERSPM",variant="ba
     }
   }
   if (reset) {
-    testStep("Install and Run a Full Model")
-    modelPath <- file.path("models",modelName)
-    owd <- getwd()
-    if ( dir.exists(modelPath) ) {
-      testStep("Clearing runtime environment")
-      unlink(modelPath,recursive=TRUE)
-    }
-    testStep(paste("Installing",baseModel,"model from package as",modelName))
-    rs <- installModel(baseModel,modelName,variant=variant,log=log,confirm=FALSE)
-
-    testStep("Print model")
-    print(rs)
+    testStep("Running model installer...")
+    rs <- test_install(baseModel,variant,modelName,log)
 
     testStep("Running model...")
     rs$run(run="reset",log=log) # clears results directory
@@ -185,16 +179,16 @@ test_run <- function(modelName="Test-VERSPM-base",baseModel="VERSPM",variant="ba
   return(rs)
 }
 
-test_model <- function(oldstyle=TRUE, test.copy=FALSE, log="info") {
+test_model <- function(modelName="JRSPM", oldstyle=TRUE, test.copy=FALSE, log="info") {
 
   cat("*** Test Model Management Functions ***\n")
   options(warn=2) # Make warnings into errors...
 
   testStep("open (and maybe run) the full test version of VERSPM")
-  jr <- openModel("JRSPM")
+  jr <- openModel(modelName)
   if ( ! jr$status == codeStatus("Run Complete") ) {
     cat("Re-running model due to status",jr$printStatus(),"\n")
-    jr <- test_run(modelName="JRSPM",baseModel="VERSPM",variant="base",reset=TRUE,log=log)
+    jr <- test_run(modelName=modelName,baseModel="VERSPM",variant="base",reset=TRUE,log=log)
   }
   if (! "VEModel" %in% class(jr) ) {
     return(jr)
@@ -213,7 +207,6 @@ test_model <- function(oldstyle=TRUE, test.copy=FALSE, log="info") {
     cat("  InputDir     :",visioneval::getRunParameter("InputDir",Param_ls=jrParam_ls),"\n")
     cat(paste("  DatastorePath:",visioneval::getRunParameter("DatastorePath",Param_ls=jrParam_ls),"\n"))
   }
-  return("Stop Test")
 
   testStep("construct a bare model from scratch")
   bare.dir <- file.path("models","BARE")
@@ -227,6 +220,7 @@ test_model <- function(oldstyle=TRUE, test.copy=FALSE, log="info") {
 
   runModelFile <- file.path(bare.dir,"run_model.R")
   runModel_vc <- c(
+    '',
     'for(Year in getYears()) {',
     'runModule("CreateHouseholds","VESimHouseholds",RunFor = "AllYears",RunYear = Year)',
     'runModule("PredictWorkers","VESimHouseholds",RunFor = "AllYears",RunYear = Year)',
@@ -275,33 +269,40 @@ test_model <- function(oldstyle=TRUE, test.copy=FALSE, log="info") {
 
   testStep("Copy other configuration files (geo, units, deflators)")
 
+  base.defs <- jr$setting("ParamPath",shorten=FALSE)
   from <- file.path(base.defs,c("units.csv","deflators.csv","geo.csv"))
   file.copy(from=from,to=bare.defs)
   print(bare.defs)
   print(dir(bare.defs,full.names=TRUE))
 
-  testStep("Open BARE model using defaults (no inputs yet) and save object in .GlobalEnv")
-  bare <<- openModel("BARE",log="info")
+  testStep("Open BARE model using defaults (no inputs yet)")
+  bare <- openModel("BARE",log="info")
 
   testStep("List model inputs (only)...")
 
   # NOTE: though the specs will have an "INPUTDIR" column, it will be "NA"
   #   if the file does not exist on the model's InputPath (which is the case
   #   for the bare model).
-  # TODO: ModelDir/Inputs should be the default INPUTDIR in that case.
 
-  print(inputs <- bare$list(inputs=TRUE,details="FILE")) # or just details=TRUE
+  base.inputs <- file.path(
+    jr$setting("InputPath",shorten=FALSE),
+    jr$setting("InputDir")
+  )
+  cat("Base Inputs",base.inputs,"\n")
+  inputs <- bare$list(inputs=TRUE,details="FILE")
   required.files <- unique(file.path(base.inputs,inputs[,"FILE"]))
   required.files <- required.files[which(file.exists(required.files))]
 
   testStep("Copy model parameters to 'inputs' - could also be in 'defs')")
 
   # Inputs for sample modules: CreateHouseholds and PredictWorkers
-  from <- file.path(base.defs,"model_parameters.json")
-  file.copy(from=from,to=bare.inputs)
+  # Historically, model_parameters.json was in ParamDir; the framework will
+  #   look in both ParamDir and InputDir; sample model has it in InputDir
+  from <- file.path(base.inputs,"model_parameters.json")
+  file.copy(from=from,to=bare.inputs) # or copy to bare.defs...
   print(dir(bare.inputs))
 
-  testStep(paste("Copy the other required input files from",jr$modelName))
+  testStep(paste("Copy required input files from",jr$modelName))
 
   print(required.files)
   from <- required.files
@@ -319,12 +320,11 @@ test_model <- function(oldstyle=TRUE, test.copy=FALSE, log="info") {
   testStep("run the bare model again with 'save'")
 
   bare$set(
-    Param_ls=visioneval::addParameterSource(
-      Param_ls=list(
-        Scenario="Run with save",
-        Description="This run will save prior results"
-      ),Source="test.R/test_model()"
-    )
+    stage=bare$modelStages[[1]]$Name,
+    modelState=TRUE,
+    Source="test.R/test_model()",
+    Scenario="Run with save",
+    Description="This run will save prior results"
   )
   bare$run(run="save") # should generate a results archive
   print(bare$dir(results=TRUE))
@@ -334,12 +334,11 @@ test_model <- function(oldstyle=TRUE, test.copy=FALSE, log="info") {
   testStep("run (really DON'T run) the bare model again with 'continue'")
 
   bare$set(
-    Param_ls=visioneval::addParameterSource(
-      Param_ls=list(
-        Scenario="Run with 'continue'",
-        Description="This run should not do anything"
-      ),Source="test.R/test_model()"
-    )
+    stage=bare$modelStages[[1]]$Name,
+    modelState=TRUE,
+    Source="test.R/test_model()",
+    Scenario="Run with 'continue'",
+    Description="This run should not do anything"
   )
   bare$run(run="continue") # examine last run status and don't run if "Complete"
   print(bare$dir(results=TRUE))
@@ -349,12 +348,11 @@ test_model <- function(oldstyle=TRUE, test.copy=FALSE, log="info") {
   testStep("run the bare model with 'reset'")
 
   bare$set(
-    Param_ls=visioneval::addParameterSource(
-      Param_ls=list(
-        Scenario="Run with 'reset'",
-        Description="This run should rebuild current results but not change archived list"
-      ),Source="test.R/test_model()"
-    )
+    stage=bare$modelStages[[1]]$Name,
+    modelState=TRUE,
+    Source="test.R/test_model()",
+    Scenario="Run with 'reset'",
+    Description="This run should rebuild current results but not change archived list"
   )
   bare$run(run="reset") # Should regenerate just the unarchived results
   cat("Results should still have one saved version plus the current results:\n")
@@ -770,9 +768,21 @@ test_query <- function(log="warn",multiple=FALSE) {
     # Generate several copies of jr
     testStep("Making model copies")
     cp.1 <- jr$copy("Scenario1")
-    cp.1$rename(Scenario="Scenario 1",Description="Same as original...")
+    cp.1$set(
+      stage=cp.1$modelStages[[1]]$Name,
+      modelState=TRUE,
+      Source="test.R/test_query()",
+      Scenario="Scenario 1",
+      Description="Same as original..."
+    )
     cp.2 <- jr$copy("Scenario2")
-    cp.1$rename(Scenario="Scenario 2",Description="Same as original...")
+    cp.2$set(
+      stage=cp.1$modelStages[[1]]$Name,
+      modelState=TRUE,
+      Source="test.R/test_query()",
+      Scenario="Scenario 1",
+      Description="Same as original..."
+    )
 
     # TODO: add a flag to VEModel:$copy to copy or ignore any results (currently does
     # results if they exist; want to be able to force ignoring them.)

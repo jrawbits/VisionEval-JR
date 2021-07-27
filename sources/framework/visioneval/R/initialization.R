@@ -1821,14 +1821,6 @@ parseModelScript <- function(FilePath) {
     )
   )
 
-  Stages_df <- do.call(
-    rbind.data.frame,
-    lapply(
-      extractElement("Stage"),
-      function(x) normalizeElementFields(x$Stage,StageCallNames)
-    )
-  )
-
   InitParams_ls      <- lapply(extractElement("initializeModel"),function(x)x$initializeModel)
   if ( length(InitParams_ls) > 0 ) InitParams_ls <- InitParams_ls[[1]] # Ignore more than one
   RequiredVEPackages <- sapply(extractElement("requirePackage"),function(x)x$requirePackage$Package) # Vector of package names
@@ -1839,7 +1831,6 @@ parseModelScript <- function(FilePath) {
       AllCalls_ls        = Elements,
       ModuleCalls_df     = ModuleCalls_df,
       ScriptCalls_df     = ScriptCalls_df,
-      Stages_df          = Stages_df,
       RequiredVEPackages = RequiredVEPackages,
       InitParams_ls      = InitParams_ls
     )
@@ -1851,14 +1842,12 @@ ModelElementNames <- c(
   "runModule",
   "runScript",
   "initializeModel",
-  "requirePackage",
-  "modelStage"
+  "requirePackage"
 )
 ModelElementsRegex <- paste(ModelElementNames,collapse="|")
 
 ModuleCallNames <- c("ModuleName","PackageName","RunFor")
 ScriptCallNames <- c("Module","Specification","RunFor","ModuleType")
-StageCallNames  <- c("Name","Sequence")
 
 normalizeElementFields <- function(Elements_ls,NeededNames) {
   missingNames <- setdiff(NeededNames,names(Elements_ls)) # names needed but not found
@@ -1889,9 +1878,14 @@ screenTypes <- function(x) {
 #    Additional arguments destined for ... will be expanded to their name or position
 extractModelElements <- function(test.expr,depth=0) {
   # use 'grep' to find the calls to VE Model Elements in test.expr
-  ve.elements <- grep(ModelElementsRegex,sapply(test.expr,function(s) all.names(s)))
+  ve.elements <- grep(ModelElementsRegex,sapply(test.expr,function(s) all.names(s),simplify=FALSE))
 
   parsed.calls <- list()
+#   if ( length(test.expr)==1 && any(ve.elements>1) ) {
+#       for ( deeper.call in Recall(test.expr[[1]],depth=depth+1) ) {
+#         parsed.calls[[length(parsed.calls)+1]] <- deeper.call
+#       }
+#   }
   for ( v in ve.elements ) { # iterate through matching elements
     r <- test.expr[[v]]
     r.char <- as.character(r)

@@ -394,7 +394,6 @@ loadModel <- function(
   LoadDatastore  <- getRunParameter("LoadDatastore",Default=FALSE,Param_ls=RunParam_ls)
 
   # Set up load datastore parameters
-  # TODO: Might have relayed LoadDstore from the RunDstore element of BaseModel
   LoadDstore <- getRunParameter("LoadDstore",Default=list(),Param_ls=RunParam_ls)
   if ( ! ( is.list(LoadDstore) && all(c("Name","Dir") %in% LoadDstore) ) ) {
     LoadDstore <- list()

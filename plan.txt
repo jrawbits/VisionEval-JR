@@ -1,11 +1,7 @@
 The path to completion:
 
-Re-verify that the framework model run (classic) still works
-Re-verify that the classic model can still run within VEModel
-  Make sure we can re-open the model afterwards and that it has a suitable RunStatus applied
-    ("Classic Run")
-Run the new-style basic model
-Run the staged models
+Run the staged models (using LoadDatastore - VE-State-Staged)
+Run without LoadDatastore (DatastorePath)
 Run with a BaseModel (LoadDatastore implied)
 
 Check the list function and other status items
