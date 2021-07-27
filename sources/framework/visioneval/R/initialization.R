@@ -120,8 +120,13 @@ initModelState <- function(Save=TRUE,Param_ls=NULL,RunPath=NULL,envir=modelEnvir
   }
   newModelState_ls[ names(CheckResults_ls$Update) ] <- CheckResults_ls$Update;
 
-  # Establish the ModelState in model.env
-  newModelState_ls$FirstCreated <- Sys.time() # Timestamp
+  # Finalize the ModelState in model.env using initLog for the "kickoff"
+  if ( "LogStatus" %in% names(model.env) ) {
+    newModelState_ls$LogFile <- model.env$LogStatus$LogFile
+    newModelState_ls$FirstCreated <- model.env$LogStatus$ModelStart
+  } else {
+    newModelState_ls$FirstCreated <- Sys.time() # Timestamp
+  }
   newModelState_ls$RunParam_ls <- Param_ls;
 
   # Establish RunPath and DatastorePath in parameters and ModelState_ls
@@ -139,7 +144,7 @@ initModelState <- function(Save=TRUE,Param_ls=NULL,RunPath=NULL,envir=modelEnvir
   # Model is expected to run in the directory that will receive its output.
   #   ModelState.Rda is the model description for this run
   #   Datastore are the model results for this run
-  if ( Save) save("ModelState_ls", envir=model.env, file = getModelStateFileName(model.env$RunParam_ls))
+  if ( Save) save("ModelState_ls", envir=model.env, file = file.path(RunPath,getModelStateFileName(model.env$RunParam_ls)))
 
   writeLog(paste0("Parameter Names from initModelState:\n",paste(names(model.env$RunParam_ls),collapse=",")),Level="info")
 
