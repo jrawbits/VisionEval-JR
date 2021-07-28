@@ -1323,6 +1323,7 @@ ve.model.list <- function(inputs=FALSE,outputs=FALSE,details=NULL,stage=characte
     visioneval::writeLog("Loading model specifications (may take some time)...",Level="warn")
     self$load(onlyExisting=FALSE) # Create new model states if they are not present in the file system
     for ( stage in self$modelStages ) {
+      visioneval::writeLog(paste("Loading Stage specs for",stage$Name),Level="info")
       AllSpecs_ls <- stage$ModelState_ls$AllSpecs_ls
       if ( ! is.null( AllSpecs_ls ) ) {
         specFrame <- summarizeSpecs(AllSpecs_ls,stage$Name)
@@ -1331,12 +1332,14 @@ ve.model.list <- function(inputs=FALSE,outputs=FALSE,details=NULL,stage=characte
         } else {
           rbind(self$specSummary,specFrame)
         }
+      } else {
+        visioneval::writeLog(paste("No specifications for",stage$Name),Level="warn")
       }
     }
+    visioneval::writeLog(paste("Loaded",nrow(self$specSummary),"Specifications"),Level="info")
   }
 
   # which rows to return
-  print(class(self$specSummary))
   inputRows <- if ( inputs ) which(self$specSummary$SPEC=="Inp") else integer(0)
   outputRows <- if ( outputs ) which(self$specSummary$SPEC=="Set") else integer(0)
   usedRows <- if ( inputs == outputs ) which(self$specSummary$SPEC=="Get") else integer(0)
@@ -1381,7 +1384,8 @@ ve.model.print <- function(details=FALSE) {
   private$p.valid
 }
 
-ve.model.log <- function() {
+# Return the log file location (shorten=FALSE appends full model path)
+ve.model.log <- function(shorten=TRUE) {
   # Report log files for each model stage (a vector)
   logs <- character(0)
   for ( s in self$modelStages ) {
@@ -1392,6 +1396,7 @@ ve.model.log <- function() {
       logFile <- dir(p,pattern="\\.log$",full.names=TRUE)
     }
     if ( is.character(logFile) && length(logFile)>0 ) {
+      if ( ! shorten ) logFile <- normalizePath(file.path(s$RunPath,logFile))
       logs <- c(logs,logFile)
     }
   }
@@ -1471,6 +1476,9 @@ ve.model.load <- function(onlyExisting=TRUE) {
       visioneval::writeLog("Model is incomplete and cannot be loaded.",Level="error")
     )
   }
+
+  # Un-cache the specSummary (things may have changed)
+  self$specSummary <- NULL
 
   # Load or Create the ModelState_ls for each stage if not already loaded
   for ( index in seq_along(self$modelStages) ) {
@@ -1651,7 +1659,7 @@ ve.model.set <- function(stage=NULL,modelState=FALSE,Source="Interactive",Param_
           ms.names <- names(s$ModelState_ls)
           to.change <- ms.names[ ms.names %in% names(Param_ls) ]
           if ( length(to.change) > 0 ) {
-            s$ModelState_ls[ ms.names ] <- Param_ls[ ms.names ]
+            s$ModelState_ls[ to.change ] <- Param_ls[ to.change ]
           }
         }
         self$modelStages[[stgname]] <- s
@@ -1884,7 +1892,7 @@ openModel <- function(modelPath="",log="error") {
       )
     )
   } else {
-    visioneval::initLog(Console=TRUE,Threshold=log, envir=new.env())
+    visioneval::initLog(Save=FALSE,Threshold=log, envir=new.env())
     return( VEModel$new(modelPath = modelPath,log=log) )
   }
 }
@@ -2079,7 +2087,7 @@ installStandardModel <- function( modelName, modelPath, confirm, variant="base",
 #' @export
 installModel <- function(modelName=NULL, modelPath=NULL, variant="base", confirm=TRUE, log="error") {
   # Load system model configuration (clear the log status)
-  visioneval::initLog(Console=TRUE,Threshold=log, envir=new.env())
+  visioneval::initLog(Save=FALSE,Threshold=log, envir=new.env())
   model <- installStandardModel(modelName, modelPath, confirm=confirm, variant=variant, log=log)
   if ( is.list(model) ) {
     return( VEModel$new( modelPath=model$modelPath, log=log ) )
