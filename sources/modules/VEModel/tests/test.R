@@ -397,14 +397,15 @@ test_model <- function(modelName="JRSPM", oldstyle=TRUE, test.copy=FALSE, log="i
   print(nrow(flds))
   print(flds[sample(nrow(flds),10),])
 
-  # TODO: may not work after this point...
-
-  testStep("extract model results - should see them in the directory")
+  testStep("extract model results, show directory")
   br <- bare$results()
   br$extract(prefix="BareTest")
 
+  cat("Directory:\n")
+  print(bare$dir(output=TRUE,all.files=TRUE))
+
   testStep("clear the bare model extracts")
-  print(bare$dir(output=TRUE))
+  cat("Interactive clearing:\n")
   bare$clear(force=!interactive())
 
   testStep("model after clearing outputs...")
@@ -424,21 +425,30 @@ test_model <- function(modelName="JRSPM", oldstyle=TRUE, test.copy=FALSE, log="i
   print(cp$dir())
 
   testStep("Break the run_model.R script in the copy and observe failure")
-  runModelFile <- file.path(cp$modelPath,cp$stageScripts[1])
+  runModelFile <- file.path(cp$modelPath,"run_model.R")
   runModel_vc[4] <- 'runModule("BorrowHouseholds","VESimHouseholds",RunFor="AllYears",RunYear=Year)'
   cat(runModelFile,paste(runModel_vc,collapse="\n"),sep="\n")
   writeLines(runModel_vc,con=runModelFile)
   cp$run() # Should throw error message about missing module...
 
   testStep("Display log from failed run...")
-  logs <- cp$log()
+  logs <- cp$log(shorten=FALSE)
   for ( log in logs ) {
     cat("Log file",log,"\n")
     cat(readLines(log),sep="\n")
   }
   
   testStep("remove model copy")
-  unlink("models/BARE-COPY",recursive=TRUE)
+  print(cp$dir(all.files=TRUE))
+  debug(cp$load)
+  cp$clear(force=TRUE,outputOnly=FALSE,archives=TRUE)
+  print(cp$dir(all.files=TRUE))
+
+  testStep("display what's left...")
+  print(cp)
+  unlink(file.path("models",cp$modelName),recursive=TRUE)
+
+  testStep("directory still accessible?")
   print(cp$dir())
   rm(cp)
 
