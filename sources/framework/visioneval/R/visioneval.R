@@ -322,7 +322,7 @@ loadModel <- function(
     if ( file.exists(envir$ModelStatePath) ) {
       RunParam_ls <- loadModelState(envir$ModelStatePath,envir=envir)
       if ( onlyExisting ) {
-        # Stop here if we don't want to build a new model state (used in VEModel FindModel)
+        # Stop here if we don't want to build a new model state (used in VEModel findModel)
         writeLog("Opened existing ModelState_ls ",Level="info")
         return(envir$ModelState_ls) # Returns empty list if no ModelState_ls
       } 
