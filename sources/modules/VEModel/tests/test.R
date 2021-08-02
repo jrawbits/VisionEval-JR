@@ -18,7 +18,7 @@ if ( ! requireNamespace("yaml",quietly=TRUE) ) {
 }
 
 logLevel <- function(log="info") {
-  visioneval::initLog(Save=FALSE,Threshold=log)
+  initLog(Save=FALSE,Threshold=log)
 }
 
 setup <- function(ve.runtime=NULL) {
