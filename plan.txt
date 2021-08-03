@@ -6,6 +6,17 @@ Add a model function to save a visioneval.cnf for a stage, or for the
   model itself. If we dicked with the in-memory version, save whatver
   is current.
 
+When we load a stage with a different script, we need to locate the
+required packages (for the earlier stage). That is done inside initModelState,
+when we first create it, but we need to be able to reach back to the earlier
+stage model state and obtain its required packages - perhaps pass that in as
+a parameter...
+In the "LoadDatastore" variant, we use the DatastoreName to locate the previous
+ModelState. We need to elaborate that to support virtual stages...
+Perhaps put VERequiredPackages into the run parameters - if it's there, then
+we use it (so the framework only goes through opening the previous model state
+if LoadDatastore is explicitly TRUE).
+
 Run the staged models (using LoadDatastore - VE-State-Staged)
 Run without LoadDatastore (DatastorePath)
 Run with a BaseModel (LoadDatastore implied)

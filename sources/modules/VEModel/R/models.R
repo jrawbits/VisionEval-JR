@@ -927,69 +927,109 @@ ve.model.clear <- function(force=FALSE,outputOnly=NULL,archives=FALSE,stage=NULL
 # Load the stage configuration
 ve.stage.init <- function(stageParam_ls=list(),modelParam_ls=list()) {
   # modelParam_ls is the base list of parameters from the Model
-  # Dir is the subdirectory for the stage, holding InputDir/ParamDir
-  #   default of NULL becomes "."
-  # ModelDir is where to seek Dir
-  #   default of NULL becomes modelParam_ls$ModelDir and if not provided, then "."
-  # Name is how we refer to the stage
-  #   default is basename(Dir)
-  # Path is the path to directory holding InputDir/ParamDir
-  #   default is ModelDir/Dir (or Dir itself if absolute path)
-  # Config is alternative path/name for "visioneval.cnf" for stage
-  #   default is Path/visioneval.cnf
-  self$Dir <- if ( is.null(stageParam_ls$Dir) ) "." else stageParam_ls$Dir
-
+  # stageParam_ls has the following elements (it's not really a RunParam_ls,
+  #   just a regular named list):
+  #
+  #   Dir is the subdirectory for the stage, holding InputDir/ParamDir
+  #     default of NULL becomes "."
+  #   ModelDir is where to seek Dir
+  #     default of NULL becomes modelParam_ls$ModelDir and if not provided, then "."
+  #   Name is how we refer to the stage
+  #     default is basename(Dir)
+  #   Path is the path to directory holding InputDir/ParamDir
+  #     default is ModelDir/Dir (or Dir itself if absolute path)
+  #   Config is alternative path/name for "visioneval.cnf" for stage
+  #     default is Path/visioneval.cnf
+  #
   if ( "ModelDir" %in% names(modelParam_ls) ) {
     ModelDir <- modelParam_ls$ModelDir
   } else ModelDir <- "."
   ModelDir <- normalizePath(ModelDir,winslash="/")
 
-  # Locate ParamDir, InputDir, ScriptsDir
+  # Set up stage Path if available
   if ( is.null(stageParam_ls$Path) ) {
-    self$Path=normalizePath(file.path(ModelDir,stageParam_ls$Dir),winslash="/")
+    if ( ! is.null(stageParam_ls$Dir) ) {
+      testPath <- normalizePath(file.path(ModelDir,stageParam_ls$Dir),winslash="/")
+      if ( file.exists(testPath) ) {
+        writeLog(paste0("Implicit Stage Path:",self$Path),Level="info")
+        writeLog(paste0("Constructed from:",stageParam_ls$Dir),Level="info")
+        self$Path <- testPath
+      } # else self$Path stays NULL and we'll read from Config
+    }
   } else {
-    self$Path=normalizePath(stageParam_ls$Path,winslash="/")
+    self$Path <- normalizePath(stageParam_ls$Path,winslash="/")
+    writeLog(paste0("Explicit Stage Path:",self$Path),Level="info")
   }
-
-  # Set Name if not supplied
-  self$Name <- if ( is.null(stageParam_ls$Name) ) basename(self$Path) else stageParam_ls$Name
-  # If self$Dir is ".", Name will be basename of Model
-
-  # no Path for stage - abort
-  # NOTE: should rarely happen
-  if ( ! dir.exists(self$Path) ) {
-    writeLog("Model Stage",self$Name,"has no root directory.",Level="info")
-  }
-
-  # Stage Output
-  self$RunPath <- file.path(
-    ModelDir,
-    visioneval::getRunParameter("ResultsDir",Param_ls=modelParam_ls),
-    self$Dir
-  )
-  self$RunPath <- normalizePath(self$RunPath,winslash="/",mustWork=FALSE)
+  # self$Path may still be NULL, in which case we need stageParam_ls$Config
+  
+  # Set self$Dir (used for input and output)
+  self$Dir <- if ( is.null(stageParam_ls$Dir) ) "." else stageParam_ls$Dir
 
   # Construct stage configuration
   self$RunParam_ls <- list()
+
+  # If self$Path is NULL, leave it that way until after the Config has been located
   if ( ! is.null(stageParam_ls$Config)) {
     # Look for Config file, if specified
+    # Generally it's a bad idea to use an absolute path, but we'll handle it
+    writeLog(paste("Locating configuration:",stageParam_ls$Config),Level="info")
     if ( ! isAbsolutePath(stageParam_ls$Config) ) {
-      Config <- file.path(self$Path,stageParam_ls$Config)
+      if ( ! is.null(self$Path) ) {
+        Config <- file.path(self$Path,stageParam_ls$Config)
+      } else {
+        Config <- file.path(ModelDir,stageParam_ls$Config)
+      }
       self$Config <- normalizePath(Config,winslash="/",mustWork=FALSE)
     }
     if ( is.character(self$Config) && file.exists(self$Config) ) {
-      self$RunParam_ls <- visioneval::loadConfiguration(ParamFile=self$Config,override=modelParam_ls)
+      writeLog(paste("Loading Config:",self$Config),Level="info")
+      self$RunParam_ls <- visioneval::loadConfiguration(ParamPath=self$Config,override=modelParam_ls)
+      writeLog(paste("self$RunParam_ls contains:",paste(names(self$RunParam_ls),collapse=", ")),Level="info")
     } else {
       writeLog(paste("Warning: No Config for",self$Name),Level="info")
       writeLog(paste("Looked for: ",self$Config),Level="info")
       self$Config <- NULL
     }
   }
-  if ( length(self$RunParam_ls) == 0 ) {
-    # if unable to read explicit Config, load "visioneval.cnf" from stage directory
+  if ( length(self$RunParam_ls) == 0 && ! is.null(self$Path) ) {
+    # if no explicit Config, and the Stage directory exists, load "visioneval.cnf" from stage directory
     self$RunParam_ls <- visioneval::loadConfiguration(ParamDir=self$Path,override=modelParam_ls)
   }
-  writeLog(paste("stage RunParam_ls:",paste(self$RunParam_ls,collapse=",")),Level="info")
+  if (length(self$RunParam_ls) == 0 ) { # Still no stage parameters 
+    writeLog("Stage has no explicit configuration.",Level="info")
+    self$RunParam_ls <- modelParam_ls
+  }
+  writeLog(paste("Stage RunParam_ls:",paste(names(self$RunParam_ls),collapse=",")),Level="info")
+
+  # Now set self$Path if it is still NULL: the Config should provide locations
+  # relative to ModelDir for the structural directories in that case (probably just
+  # the ModelScript)
+  if ( is.null(self$Path) ) self$Path <- ModelDir
+
+  # Set Stage Name if not supplied
+  self$Name <- if ( is.null(stageParam_ls$Name) ) {
+    if ( "Dir" %in% names(stageParam_ls) ) {
+      if ( stageParam_ls$Dir == "." ) {
+        basename(ModelDir)
+      } else {
+        basename(stageParam_ls$Dir)
+      }
+    }
+  } else {
+    stageParam_ls$Name
+  }
+  if ( is.null(self$Name) ) {
+    writeLog( paste(names(stageParam_ls),collapse=","),level="info" )
+    stop( writeLog("Model stage has no Name!",level="error") )
+  }
+
+  # Stage Output
+  self$RunPath <- file.path(
+    ModelDir,
+    visioneval::getRunParameter("ResultsDir",Param_ls=self$RunParam_ls),
+    self$Dir
+  )
+  self$RunPath <- normalizePath(self$RunPath,winslash="/",mustWork=FALSE)
 
   # Default InputPath
   if ( ! "InputPath" %in% names(self$RunParam_ls) ) {
@@ -1109,16 +1149,18 @@ ve.stage.runnable <- function(priorStages) {
   self$RunParam_ls <- visioneval::loadParamFile(Param_ls=self$RunParam_ls,ModelDir=self$Path)
 
   # Set up ModelScriptPath if current stage has different ModelScript from overall model
+  # TODO: Not working for VE-State with pure configuration (no stage directory)
   ModelDir        <- visioneval::getRunParameter("ModelDir",Param_ls=self$RunParam_ls)
   ScriptName      <- visioneval::getRunParameter("ModelScript",Param_ls=self$RunParam_ls)
   ScriptsDir      <- visioneval::getRunParameter("ScriptsDir",Param_ls=self$RunParam_ls)
   stageModelScriptPath <- character(0)
-  for ( scriptDir in c(
+  browser()
+  for ( scriptDir in unique( c(
     file.path(self$Path,ScriptsDir),
     file.path(self$Path),
     file.path(ModelDir,ScriptsDir),
     file.path(ModelDir)
-  ) ) {
+  ) ) ) {
     ScriptPath <- file.path(scriptDir,ScriptName)
     if ( file.exists(ScriptPath) ) {
       stageModelScriptPath <- normalizePath(ScriptPath,winslash="/",mustWork=FALSE)

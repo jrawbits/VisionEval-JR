@@ -27,7 +27,7 @@ ModelStages    :
     Config : scripts/visioneval-4.cnf
     Reportable: true
 
-# Scenario description
+# Scenario description for Base Model
 Seed           : 1
 Scenario       : VE-State Oregon Sample
 Description    : Base Year 2010 + Future 2040
