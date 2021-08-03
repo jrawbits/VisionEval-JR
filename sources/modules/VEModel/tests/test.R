@@ -133,7 +133,28 @@ test_classic <- function(modelName="VERSPM-Classic",clear=TRUE,log="info") {
   cat("Model Status:",rs$printStatus(),"\n")
   return(rs)
 }
+
+test_all_install <- function() {
+
+  owd <- setwd("models")
+  print(files<-list.dirs("models",full.names=TRUE,recursive=FALSE))
+  if ( length(files)>0 ) unlink(files,recursive=TRUE)
+  setwd(owd)
   
+  # VERSPM variants
+  print(installModel("VERSPM",variant="classic",confirm=FALSE))
+  print(installModel("VERSPM",variant="base",confirm=FALSE))
+  print(installModel("VERSPM",variant="year",confirm=FALSE))
+  print(installModel("VERSPM",variant="pop",confirm=FALSE))
+
+  # VERPAT variants
+  print(installModel("VERPAT",variant="base",confirm=FALSE))
+
+  # VE-State variants
+  print(installModel("VE-State",variant="base",confirm=FALSE))
+  print(installModel("VE-State",variant="staged",confirm=FALSE))
+}
+
 test_install <- function(modelName="VERSPM",variant="base",installAs=NULL,log="info") {
 
   if ( ! missing(log) ) logLevel(log)
@@ -450,14 +471,19 @@ test_model <- function(modelName="JRSPM", oldstyle=FALSE, reset=FALSE, log="info
   }
   
   testStep("remove model copy")
+  cat("Directory before...\n")
   print(cp$dir(all.files=TRUE))
-  debug(cp$load)
   cp$clear(force=TRUE,outputOnly=FALSE,archives=TRUE)
+  cat("\nDirectory after...\n")
   print(cp$dir(all.files=TRUE))
 
   testStep("display what's left...")
   print(cp)
+  print(dir("models"))
+  cat("Unlinking",cp$modelName,"\n")
   unlink(file.path("models",cp$modelName),recursive=TRUE)
+  cat("Is",cp$modelName,"still present?\n")
+  print(dir("models"))
 
   testStep("directory still accessible?")
   print(cp$dir())
@@ -488,10 +514,19 @@ test_results <- function (log="info") {
   cat("Selection after clearing...\n")
   sl <- rs$select()
   print(sl)
+  rm(cp)
 
   testStep("Pull out results and selection (head 12)...")
   cat("Results...\n")
-  rs <- jr$results()
+  rs <- jr$results()  # Gets results for final Reportable stage (only)
+
+  # TODO: rs may be a list of VEResults (not just a single object)?
+  # Use case is mostly for doing queries over a set of scenarios...
+  # Return a list if jr$results(all.stages=TRUE) or jr$results(stages=c(stage1,stage2)) with
+  # length(stages)>1 : all reportable stages in that case.
+  # An individual stage can also be called out explicitly (and in that case, it does not
+  #   need to be Reportable).
+
   print(rs)
   cat("Selection...\n")
   sl <- rs$select() # Get full field list

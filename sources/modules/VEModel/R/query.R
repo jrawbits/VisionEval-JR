@@ -619,7 +619,7 @@ ve.query.run <- function(
   }
   if ( Geography %in% c("Azone","Marea") ) {
     if ( missing(GeoValue) || ! is.character(GeoValue) || length(GeoValue)>1 || ! nzchar(GeoValue) ) {
-      writeLog("Not supported: Breaking measures by ",Geography," including all values",Level="error")
+      writeLog(paste0("Not supported: Breaking measures by ",Geography," including all values"),Level="error")
       # TODO: need to assemble proper combinations of By/GeoValues when unpacking results from
       # summarizeDatasets in makeMeasure: we end up with a 2-D matrix, not a vector or scalar, and
       # we need to transform that to a long form with suitable names for each element
@@ -630,7 +630,7 @@ ve.query.run <- function(
       # Use those by default (but we can override the break descriptions)
       return(character(0))
     } else {
-      writeLogMessage("Evaluating measures for this ",Geography,": ",GeoValue)
+      writeLogMessage(paste0("Evaluating measures for this ",Geography,": ",GeoValue))
     }
   } else {
     GeoValue <- "" # Region has no GeoValue
@@ -1038,9 +1038,10 @@ ve.spec.setgeo <- function(Geography=NULL) {
       # Mostly, that would probably be a logic error in the query specification
       if ( any( geotest) && any(test.sum[["Table"]][geotest] != Geography["Type"]) ) {
         writeLogMessage(
-          "Skipping specification ",test.spec[["Name"]],
-          " due to Table mismatch: ",
-          Geography["Type"]," vs. Table ",paste(test.sum[["Table"]][geotest],collapse=", ")
+          paste0(
+            "Skipping specification ",test.spec[["Name"]]," due to Table mismatch: ",
+            Geography["Type"]," vs. Table ",paste(test.sum[["Table"]][geotest],collapse=", ")
+          )
         )
       } else {
         # If Table is not a conflicting ve.small.geo,

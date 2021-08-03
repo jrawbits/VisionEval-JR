@@ -235,6 +235,7 @@ addBaseModel <- function(modelParam_ls) {
     modelParam_ls <- visioneval::addRunParameter(
       modelParam_ls,
       DatastorePath=visioneval::getRunParameter("DatastorePath",Param_ls=baseParam_ls,Source=TRUE),
+      # TODO: do we need the following if we're not loading a Datastore?
       LoadDstore=visioneval::getRunParameter("RunDstore",Param_ls=baseParam_ls,Source=TRUE)
     )
   }
@@ -462,7 +463,6 @@ findModel <- function( modelDir, Param_ls=getSetup() ) {
   if ( ! "ModelStages" %in% names(modelParam_ls) ) {
     # In general, to avoid errors with random sub-directories becoming stages
     #  it is best to explicitly set ModelStages in the model's main visioneval.cnf
-    browser()
     stages <- list.dirs(modelPath,full.names=FALSE,recursive=FALSE)
     structuralDirs <- c(
       visioneval::getRunParameter("DatastoreName",Param_ls=modelParam_ls),
@@ -601,7 +601,7 @@ ve.model.init <- function(modelPath, log="error") {
 ve.model.copy <- function(newName=NULL,newPath=NULL,copyResults=TRUE,copyArchives=FALSE) {
   # Copy the current model to NewName (in ModelDir, unless newPath is also provided)
   if ( ! private$p.valid ) {
-    writeLog(paste0("Invalid model: ",self$printStatus()),level="error")
+    writeLog(paste0("Invalid model: ",self$printStatus()),Level="error")
     return( NULL )
   }
   
@@ -1019,8 +1019,8 @@ ve.stage.init <- function(stageParam_ls=list(),modelParam_ls=list()) {
     stageParam_ls$Name
   }
   if ( is.null(self$Name) ) {
-    writeLog( paste(names(stageParam_ls),collapse=","),level="info" )
-    stop( writeLog("Model stage has no Name!",level="error") )
+    writeLog( paste(names(stageParam_ls),collapse=","),Level="info" )
+    stop( writeLog("Model stage has no Name!",Level="error") )
   }
 
   # Stage Output
@@ -1129,7 +1129,7 @@ ve.stage.runnable <- function(priorStages) {
         )
       }
     }
-    DatastorePath <- character(0) # Path doesn't matter any more
+    DatastorePath <- character(0) # Path doesn't matter any more (copying upstream into current Datastore)
     # Existence of loaded/linked Datastore is verified when the stage runs
   } else {
     DatastorePath <- startFrom$DatastorePath # Virtual Datastore linkage
@@ -1154,7 +1154,6 @@ ve.stage.runnable <- function(priorStages) {
   ScriptName      <- visioneval::getRunParameter("ModelScript",Param_ls=self$RunParam_ls)
   ScriptsDir      <- visioneval::getRunParameter("ScriptsDir",Param_ls=self$RunParam_ls)
   stageModelScriptPath <- character(0)
-  browser()
   for ( scriptDir in unique( c(
     file.path(self$Path,ScriptsDir),
     file.path(self$Path),
@@ -1227,11 +1226,13 @@ ve.stage.load <- function(onlyExisting=TRUE,reset=FALSE) {
       }
       self$RunStatus <- self$ModelState_ls$RunStatus
       return(TRUE)
-    } else {
+    } else if ( ! onlyExisting) {
       writeLog(
         paste0("Unable to build model state for stage ",self$Name,"!"),
         Level="warn"
       )
+    } else {
+      self$RunStatus <- codeStatus("Uninitialized")
     }
   }
   return(FALSE)
@@ -1424,7 +1425,7 @@ ve.model.list <- function(inputs=FALSE,outputs=FALSE,details=NULL,stage=characte
   #   Reportable stage by default).
 
   if ( ! private$p.valid ) {
-    writeLog(paste0("Invalid model: ",self$printStatus()),level="error")
+    writeLog(paste0("Invalid model: ",self$printStatus()),Level="error")
     return( invisible(data.frame()) )
   }
 
@@ -1592,7 +1593,24 @@ ve.model.load <- function(onlyExisting=TRUE,reset=FALSE) {
 
   # Load or Create the ModelState_ls for each stage
   for ( index in seq_along(self$modelStages) ) {
-    self$modelStages[[index]]$load(onlyExisting=onlyExisting,reset=reset)
+    stage <- self$modelStages[[index]]
+    if ( ! is.null( stage$RunParam_ls$StartFrom ) ) {
+      startFrom <- stage$RunParam_ls$StartFrom
+      startFromState_ls <- self$modelStages[[startFrom]]$ModelState_ls # may be NULL
+      if ( ! is.null(startFromState_ls) ) {
+        visioneval::addRunParameter(
+          stage$RunParam_ls,
+          Source="VEModelState::load",
+          StartFromModelState=startFromState_ls
+        )
+      } else {
+        stop(
+          writeLog(paste("StartFrom",startFrom,"has no ModelState_ls!"),Level="error")
+        )
+      }
+    }
+    stage$load(onlyExisting=onlyExisting,reset=reset)
+    self$modelStages[[index]] <- stage
   }
   # Update self$status
   self$updateStatus()
@@ -1845,7 +1863,7 @@ ve.model.results <- function(stage=NULL) {
   # Create a results object wrapping the directory that contains the model
   # results for the given stage (or last stage if not given)
   if ( ! private$p.valid ) {
-    writeLog(paste0("Invalid model: ",self$status),level="error")
+    writeLog(paste0("Invalid model: ",self$status),Level="error")
     return( NULL )
   }
 
@@ -1871,7 +1889,7 @@ ve.model.results <- function(stage=NULL) {
 #  of available queries if no QueryName is provided).
 ve.model.query <- function(QueryName=NULL,FileName=NULL,load=TRUE) {
   if ( ! private$p.valid ) {
-    writeLog(paste0("Invalid model: ",self$status),level="error")
+    writeLog(paste0("Invalid model: ",self$status),Level="error")
     return( NULL )
   }
 
