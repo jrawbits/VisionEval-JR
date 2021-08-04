@@ -9,6 +9,11 @@
 #functions don't directly interact with the datastore. Instead, they rely on the
 #datastore listing (Datastore) that is maintained in the model state file.
 
+# TODO: these initial functions checking Dataset existence, reading
+# attributes, checking table existence should all move to datastore.r
+
+# TODO: Create a function to walk the DatastorePath and return the
+# listing/location for datasets in the alternate datastore.
 
 #CHECK DATASET EXISTENCE
 #=======================
@@ -34,6 +39,10 @@
 #' an attribute that is a string of the full path to where the dataset should be
 #' in the datastore.
 #' @export
+
+# TODO: Change this to use the model state rather than the
+# DstoreListing_df and to follow the DatastorePath...
+
 checkDataset <- function(Name, Table, Group, DstoreListing_df) {
   # TODO: DatasetName should include virtual location (local, base)
   Name <- as.character(Name)
@@ -66,9 +75,12 @@ checkDataset <- function(Name, Table, Group, DstoreListing_df) {
 #'   as contained in the model state file.
 #' @return A named list of the dataset attributes.
 #' @export
+
+# TODO: follow the DatastorePath instead of just using the current
+# listing.
+
 getDatasetAttr <- function(Name, Table, Group, DstoreListing_df) {
   DatasetName <- file.path(Group, Table, Name)
-  #checkDataset(Name, Table, Group, DstoreListing_df)[[2]]
   DatasetIdx <- which(DstoreListing_df$groupname == DatasetName)
   DstoreListing_df$attributes[[DatasetIdx]]
 }
@@ -90,6 +102,10 @@ getDatasetAttr <- function(Name, Table, Group, DstoreListing_df) {
 #'   as contained in the model state file.
 #' @return A logical identifying whether a table is present in the datastore.
 #' @export
+
+# TODO: change to follow DatastorePath in model state, rather than
+# directly using the listing.
+
 checkTableExistence <- function(Table, Group, DstoreListing_df) {
   TableName <- file.path(Group, Table)
   TableName %in% DstoreListing_df$groupname

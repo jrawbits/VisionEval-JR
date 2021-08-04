@@ -1357,10 +1357,9 @@ getFromDatastore <- function(ModuleSpec_ls, RunYear, Geo = NULL, GeoIndex_ls = N
     } else {
       Index <- NULL
     }
-    DstoreListing_ls <- G$Datastore
-    DatasetExists <- checkDataset(Name, Table, DstoreGroup, DstoreListing_ls)
-    if (DatasetExists) {
-      Data_ <- readFromTable(Name, Table, DstoreGroup, Index)
+
+    Data_ <- readFromTable(Name, Table, DstoreGroup, Index)
+    if (!is.na(Data)) {
       #Convert currency
       if (Type == "currency") {
         FromYear <- G$BaseYear
@@ -1370,6 +1369,8 @@ getFromDatastore <- function(ModuleSpec_ls, RunYear, Geo = NULL, GeoIndex_ls = N
         }
       }
       #Convert units
+      #TODO: GetDatasetAttr needs to be reimplemented to follow DatastorePath
+      #  when getting the target units: BaseYear may not be present, for example.
       SimpleTypes_ <- c("integer", "double", "character", "logical")
       ComplexTypes_ <- names(Types())[!(names(Types()) %in% SimpleTypes_)]
       if (Type %in% ComplexTypes_) {
@@ -1381,7 +1382,7 @@ getFromDatastore <- function(ModuleSpec_ls, RunYear, Geo = NULL, GeoIndex_ls = N
         )
         Conversion_ls <-
         convertUnits(Data_, Type,
-          getDatasetAttr(Name, Table, AttrGroup, DstoreListing_ls)$UNITS,
+          getDatasetAttr(Name, Table, AttrGroup, G$Datastore)$UNITS,
           Spec_ls$UNITS)
         Data_ <- Conversion_ls$Values
       }
@@ -1389,6 +1390,8 @@ getFromDatastore <- function(ModuleSpec_ls, RunYear, Geo = NULL, GeoIndex_ls = N
       Data_ <- convertMagnitude(Data_, 1, Spec_ls$MULTIPLIER)
       #Add data to list
       L[[Group]][[Table]][[Name]] <- Data_
+    } else {
+      writeLog(paste("Does not exist:",file.path(DstoreGroup,Table,Name)),Level="info")
     }
   }
   #Return the list

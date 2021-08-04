@@ -1,5 +1,17 @@
 The path to completion:
 
+readFromDataset should always return attributes (eliminate ReadAttr
+parameter). Then use those attributes directly.
+
+Also reimplment the CheckDataset and readDatasetAttr functions in
+validation.r to follow the DatastorePath.
+
+Run the staged models (using LoadDatastore - VE-State-Staged)
+Run without LoadDatastore (DatastorePath)
+Run with a BaseModel (LoadDatastore implied)
+
+Does LoadDatastore properly copy the Datastore (with flattening)?
+
 Then get test_results and test_query to work.
 
 Add a model function to save a visioneval.cnf for a stage, or for the
@@ -10,10 +22,6 @@ everything, just what should be in that particular configuration)
 
 Test all the models again with restructured visioneval::loadModel
 and supporting stuff in VEModel package.
-
-Run the staged models (using LoadDatastore - VE-State-Staged)
-Run without LoadDatastore (DatastorePath)
-Run with a BaseModel (LoadDatastore implied)
 
 It would be great to develop a "debug dump" tool:
   Generate a zip file with a stripped-down version of the Datastore
