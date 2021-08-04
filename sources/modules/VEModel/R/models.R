@@ -2107,7 +2107,7 @@ findStandardModel <- function( model, variant="" ) {
 ## install a standard model with data identified by "variant"
 #  We're still expecting to distribute standard models in the runtime (but for now, those will
 #   be the "classic" models)
-installStandardModel <- function( modelName, modelPath, confirm, variant="base", log="error" ) {
+installStandardModel <- function( modelName, modelPath, confirm, overwrite=FALSE, variant="base", log="error" ) {
   # Locate and install standard modelName into modelPath
   #   modelName says which standard model to install. If it is missing or empty, return a
   #     list of available models
@@ -2135,7 +2135,11 @@ installStandardModel <- function( modelName, modelPath, confirm, variant="base",
     installPath <- normalizePath(newModelPath,winslash="/",mustWork=FALSE)
   } else installPath <- modelPath
   if ( dir.exists(installPath) ) {
-    installPath <- getUniqueName( dirname(installPath), basename(installPath) )
+    if ( ! overwrite ) {
+      installPath <- getUniqueName( dirname(installPath), basename(installPath) )
+    } else {
+      unlink(installPath,recursive=TRUE)
+    }
   }
 
   # Confirm installation if requested
@@ -2218,10 +2222,10 @@ installStandardModel <- function( modelName, modelPath, confirm, variant="base",
 #' @param log a string describing the minimum level to display
 #' @return A VEModel object of the model that was just installed
 #' @export
-installModel <- function(modelName=NULL, modelPath=NULL, variant="base", confirm=TRUE, log="info") {
+installModel <- function(modelName=NULL, modelPath=NULL, variant="base", confirm=TRUE, overwrite=FALSE, log="info") {
   # Load system model configuration (clear the log status)
   initLog(Save=FALSE,Threshold=log, envir=new.env())
-  model <- installStandardModel(modelName, modelPath, confirm=confirm, variant=variant, log=log)
+  model <- installStandardModel(modelName, modelPath, confirm=confirm, overwrite=overwrite, variant=variant, log=log)
   if ( is.list(model) ) {
     return( VEModel$new( modelPath=model$modelPath, log=log ) )
   } else {

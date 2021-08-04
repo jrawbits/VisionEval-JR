@@ -141,18 +141,22 @@ test_all_install <- function() {
   if ( length(files)>0 ) unlink(files,recursive=TRUE)
   setwd(owd)
   
-  # VERSPM variants
-  print(installModel("VERSPM",variant="classic",confirm=FALSE))
-  print(installModel("VERSPM",variant="base",confirm=FALSE))
-  print(installModel("VERSPM",variant="year",confirm=FALSE))
-  print(installModel("VERSPM",variant="pop",confirm=FALSE))
+  return (
+    list(
+      # VERSPM variants
+      vr.classic = installModel("VERSPM",variant="classic",confirm=FALSE,overwrite=TRUE),
+      vr.base = installModel("VERSPM",variant="base",confirm=FALSE,overwrite=TRUE),
+      vr.year = installModel("VERSPM",variant="year",confirm=FALSE,overwrite=TRUE),
+      vr.pop = installModel("VERSPM",variant="pop",confirm=FALSE,overwrite=TRUE),
 
-  # VERPAT variants
-  print(installModel("VERPAT",variant="base",confirm=FALSE))
+      # VERPAT variants
+      vp.base = installModel("VERPAT",variant="base",confirm=FALSE,overwrite=TRUE),
 
-  # VE-State variants
-  print(installModel("VE-State",variant="base",confirm=FALSE))
-  print(installModel("VE-State",variant="staged",confirm=FALSE))
+      # VE-State variants
+      vs.base = installModel("VE-State",variant="base",confirm=FALSE,overwrite=TRUE),
+      vs.staged = installModel("VE-State",variant="staged",confirm=FALSE,overwrite=TRUE)
+    )
+  )
 }
 
 test_install <- function(modelName="VERSPM",variant="base",installAs=NULL,log="info") {
