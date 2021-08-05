@@ -1,10 +1,7 @@
 The path to completion:
 
-readFromDataset should always return attributes (eliminate ReadAttr
-parameter). Then use those attributes directly.
-
-Also reimplment the CheckDataset and readDatasetAttr functions in
-validation.r to follow the DatastorePath.
+Do not use the datastore path for the current (under construction)
+Datastore.
 
 Run the staged models (using LoadDatastore - VE-State-Staged)
 Run without LoadDatastore (DatastorePath)
