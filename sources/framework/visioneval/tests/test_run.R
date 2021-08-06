@@ -220,5 +220,24 @@ test_deep_copy <- function(modelName="Classic",log="info") {
   print(list.dirs(modelPath,recursive=TRUE))
 }
 
+extract_bzone <- function(modelDir,Year) {
+  # modelDir is the location that holds the model run Datastore
+  # Years is the year to analyze (e.g. 2010 or "2050" - either number
+  # or character)
+  setwd(modelDir)
+  complete <- list()
+  Datasets <- c("Household/Bzone","Household/IsUrbanMixNbrhd")
+  Datafiles <- file.path("Datastore",Year,paste0(Datasets,".Rda"))
+  results <- list()
+  my.env <- new.env()
+  for ( rs in seq_along(Datasets) ) {
+    results[[Datasets[rs]]] <- get(load(Datafiles[rs],envir=my.env),pos=my.env)
+  }
+  results <- as.data.frame(table(as.data.frame(results)))
+  results <- merge(results[results[2]=="0",],results[results[2]=="1",],by="Household.Bzone",suffixes=c(".No",".Yes"))[,-c(2,4)]
+  results$PctMixedUse = results[3] / results[2] * 100.0
+  return(results)
+}
+
 # Now set it all up
 rewind()

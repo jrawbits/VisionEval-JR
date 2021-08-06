@@ -128,10 +128,6 @@ readFromTable <- function(Name, Table, Group, Index = NULL, ReadAttr = TRUE, env
 
   # Attempt to read the Table from current Datastore using its associated function
   table <- envir$readFromTable(Name, Table, Group, Index, ReadAttr, envir=envir)
-  writeLog(
-    paste(class(table),"(",length(table),") returned from readFromTable(",Name,",",Table,",",Group,")"),
-    Level="trace"
-  )
   if ( length(table)==1 && is.null(attributes(table)) && length(G$DatastorePath)>1 ) {
     # table might legitimately be NA of length 1. Attributes are non-null if it is "for real"
     # If failed to find, then try upstream Datastore locations
@@ -144,12 +140,31 @@ readFromTable <- function(Name, Table, Group, Index = NULL, ReadAttr = TRUE, env
     for ( ms.env in msPaths ) {
       # Use the read function associated with the upstream Datastore
       table <- ms.env$readFromTable(Name, Table, Group, Index, ReadAttr, envir=ms.env)
-      if ( ! is.null(attributes(table)) ) break
+      if ( ! is.null(attributes(table)) ) {
+        writeLog(
+          paste0("Found ",file.path(Name,Table,Group)," in ",ms.env$ModelStatePath),
+          Level="info"
+        )
+        break
+      }
     }
     if ( is.null(attributes(table)) ) {
-      Message <- paste("Dataset", Name, "in table", Table, "in group", Group, "could not be located.")
-      stop( writeLog(Message,Level="error") )
+      writeLog(
+        paste0(file.path(Name,Table,Group)," ",class(table)," (",length(table),") not found on DatastorePath"),
+        Level="info"
+      )
+    } else {
+      # Only "trace" - caller will report at LogLevel "info"
+      writeLog(
+        paste0(file.path(Name,Table,Group)," ",class(table)," (",length(table),") not found in current Datastore"),
+        Level="trace"
+      )
     }
+  } else {
+    writeLog(
+      paste0(file.path(Name,Table,Group)," ",class(table)," (",length(table),") returned from current Datastore"),
+      Level="trace"
+    )
   }
   return(table)
 }
@@ -690,6 +705,11 @@ writeToTableRD <- function(Data_, Spec_ls, Group, Index = NULL, envir=modelEnvir
   }
 
   if (!DatasetExists) {
+
+    # TODO: Problem creating a Dataset here (not yet in G$Datastore$groupname)
+    # Means we need to initialize the Table if that happens. See "SetInDatastore"
+    #   for sample code we might want to pull out as a function
+
     # Add to Datastore listing
     GroupName <- paste(Group, Spec_ls$TABLE, sep = "/")
     Length <-
@@ -1606,6 +1626,10 @@ setInDatastore <- function(Data_ls, ModuleSpec_ls, ModuleName, Year, Geo = NULL,
   #Get the model state
   G <- getModelState(envir=envir)
   #Make any specified tables
+  # TODO: current strategy of looking at ModuleSpec_ls fails with virtual data stores since
+  #   the table and group may not exist yet in the current stage, and that won't have been
+  #   diagnosed necessarily ModuleSpec_ls. Need to backstop here to make sure the tables
+  #   requested actually exist. Perhaps as an "else"...
   if (!is.null(ModuleSpec_ls$NewSetTable)) {
     TableSpec_ls <- ModuleSpec_ls$NewSetTable
     for (i in 1:length(TableSpec_ls)) {
@@ -1872,7 +1896,7 @@ mergeDatastoreListings <- function(baseListing, addListing) {
 
 #COPY A DATASTORE
 #================
-#' Copy a Datastore and ModelState_ls from one location to another
+#' Copy a Datastore and ModelState_ls from current directory to another location
 #'
 #' \code{copyDatastore} a visioneval framework datastore function that copies the
 #' Datastore associated with a ModelState_ls to another location.
