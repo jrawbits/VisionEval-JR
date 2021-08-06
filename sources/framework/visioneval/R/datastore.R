@@ -1887,6 +1887,9 @@ mergeDatastoreListings <- function(baseListing, addListing) {
 #' the same DatastoreType, so type conversion helps link a base model run using one DatastoreType to
 #' a child model with a different DatastoreType.
 #'
+#' Important: the working directory must contain the ModelState.Rda and Datastore that the function
+#' will copy (can't work currently from a different directory than that).
+#'
 #' 'Flattening' the Datastore will convert a linked Datastore into a copy in which all the Datasets
 #' are realized in the targetDatastore. That supports loading the Datastore from a BaseModel, or
 #' preparing a copy of a Datastore for transmission as "bare results."
@@ -1963,6 +1966,7 @@ copyDatastore <- function( ToDir, Flatten=TRUE, DatastoreType=NULL, envir=modelE
     initDatastoreGeography(envir=writeDS) # Create basic geography tables
 
     for ( path in paths ) {
+      writeLog(paste("Copying Datastore from path:",path),Level="info")
 
       # Open ModelState$Datastore from the source path
       readDS <- new.env()
@@ -1978,6 +1982,7 @@ copyDatastore <- function( ToDir, Flatten=TRUE, DatastoreType=NULL, envir=modelE
       # Copy the datasets
       indices <- which(sapply(gtn,length,simplify=TRUE)==3) # Get Dataset entries
       for ( i in indices ) {
+        writeLog(paste("Reading Dataset:",ds$groupname[i]),Level="info")
         item <- gtn[[i]]
         names(item) <- c("Group","Table","Name")
         Attr_ <- ds$attributes[[i]]
@@ -1995,6 +2000,8 @@ copyDatastore <- function( ToDir, Flatten=TRUE, DatastoreType=NULL, envir=modelE
         }
 
         # Write to target Datastore
+        writeLog(paste("Writing dataset to Group",item["Group"]),Level="info")
+        writeLog(paste("Spec:",paste(names(attributes(dataset)),collapse=",")),Level="info")
         writeToTable(dataset,attributes(dataset),item["Group"],envir=writeDS)
       }
     }

@@ -197,5 +197,28 @@ test_load_datastore <- function(modelName="Staged",clear=FALSE) {
   invisible(NULL)
 }
 
+test_deep_copy <- function(modelName="Classic",log="info") {
+  testStep("Setting up Datastore to copy (do test_classic first)")
+  initLog(Save=FALSE,Threshold=log,Clear=TRUE)
+  modelPath <- normalizePath(file.path("models",modelName),winslash="/",mustWork=TRUE)
+  ModelStateFile <- getRunParameter("ModelStateFile",Param_ls=list()) # Default "ModelState.Rda"
+  envir <- modelEnvironment(Clear="")
+  envir$ModelStatePath <- file.path(modelPath,ModelStateFile)
+  RunParam_ls <- loadModelState(envir$ModelStatePath,envir=envir)
+  ToDir <- file.path(modelPath,"TestDeepCopy")
+  testStep("Creating target directory...")
+  if ( dir.exists(ToDir) ) {
+    unlink(ToDir,recursive=TRUE)
+  }
+  dir.create(ToDir)
+  testStep("Copying Datastore, forcing Flatten")
+  owd <- setwd(modelPath) # so we can find the datastore to copy
+  on.exit(setwd(owd))     # return to original directory even on failure
+  visioneval::copyDatastore(ToDir,Flatten=c(TRUE,TRUE))
+  setwd(owd)
+  testStep("Resulting directories...")
+  print(list.dirs(modelPath,recursive=TRUE))
+}
+
 # Now set it all up
 rewind()

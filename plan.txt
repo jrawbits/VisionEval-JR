@@ -1,7 +1,19 @@
 The path to completion:
 
-Do not use the datastore path for the current (under construction)
-Datastore.
+Check running VERPAT and VERSPM-classic. Check that the framework
+can still perform a model run (are we too closely tied to DatastorePath?).
+
+Then start again with the VERSPM-year and VERSPM-pop versions to ensure
+that we can reach back into earlier stage Datastores.
+
+Check that we can run successfully (and copy) a LoadDatastore when
+we're using an earlier stage (using StartFrom).
+
+Build the function to do the debug dump (should use CopyDatastore
+function, same as loading and perhaps archiving).
+
+Handle the BaseModel LoadDatastore as well (can try that with a
+debug version of a model). 
 
 Run the staged models (using LoadDatastore - VE-State-Staged)
 Run without LoadDatastore (DatastorePath)
