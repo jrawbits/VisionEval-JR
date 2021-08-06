@@ -2,6 +2,9 @@ The path to completion:
 
 1. Can we get the virtual stages models to work?
 
+  Hung up trying to deal with missing groups/tables for a new stage.
+  Trouble getting the table length to check how many rows...
+
 2. Can we add LoadDatastore to the RunParams_ls and also have that work
    (Datastore from startFrom is copied to current Datastore)
 

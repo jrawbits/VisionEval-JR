@@ -133,7 +133,6 @@ readFromTable <- function(Name, Table, Group, Index = NULL, ReadAttr = TRUE, env
     # If failed to find, then try upstream Datastore locations
     # DatastorePath holds absolute path to Datastore
     msPaths <- getModelStatePaths(envir) # Does not return first element (currently writable Datastore)
-    msPaths <- msPaths
 
     # Iterate over additional ModelStates in prior model stages
     # ms.env contains an upstream ModelState_ls
@@ -142,8 +141,10 @@ readFromTable <- function(Name, Table, Group, Index = NULL, ReadAttr = TRUE, env
       table <- ms.env$readFromTable(Name, Table, Group, Index, ReadAttr, envir=ms.env)
       if ( ! is.null(attributes(table)) ) {
         writeLog(
-          paste0("Found ",file.path(Name,Table,Group)," in ",ms.env$ModelStatePath),
-          Level="info"
+          paste0(
+            "Found ",file.path(Name,Table,Group)," in ",
+            file.path(ms.env$ModelState_ls$ModelStatePath, ms.env$ModelState_ls$DatastoreName)
+          ), Level="info"
         )
         break
       }
@@ -705,14 +706,9 @@ writeToTableRD <- function(Data_, Spec_ls, Group, Index = NULL, envir=modelEnvir
   }
 
   if (!DatasetExists) {
-
-    # TODO: Problem creating a Dataset here (not yet in G$Datastore$groupname)
-    # Means we need to initialize the Table if that happens. See "SetInDatastore"
-    #   for sample code we might want to pull out as a function
-
     # Add to Datastore listing
     GroupName <- paste(Group, Spec_ls$TABLE, sep = "/")
-    Length <-
+    Length <- 
       try(G$Datastore$attributes[G$Datastore$groupname == GroupName][[1]]$LENGTH)
     browser(expr=!is.numeric(Length))
     Dataset <-
@@ -1625,11 +1621,13 @@ setInDatastore <- function(Data_ls, ModuleSpec_ls, ModuleName, Year, Geo = NULL,
   
   #Get the model state
   G <- getModelState(envir=envir)
-  #Make any specified tables
-  # TODO: current strategy of looking at ModuleSpec_ls fails with virtual data stores since
-  #   the table and group may not exist yet in the current stage, and that won't have been
-  #   diagnosed necessarily ModuleSpec_ls. Need to backstop here to make sure the tables
-  #   requested actually exist. Perhaps as an "else"...
+  BaseYear <- G$BaseYear
+
+  # Make any specified tables
+  # This strategy saves work in a single-stage model but won't work for a multi-stage
+  #   model where tables may have been created in an earlier stage (when we first saw
+  #   NewSetTable) but have not yet been created in the new stage. Checking the table
+  #   with each Dataset happens below.
   if (!is.null(ModuleSpec_ls$NewSetTable)) {
     TableSpec_ls <- ModuleSpec_ls$NewSetTable
     for (i in 1:length(TableSpec_ls)) {
@@ -1639,35 +1637,41 @@ setInDatastore <- function(Data_ls, ModuleSpec_ls, ModuleName, Year, Geo = NULL,
       if (Group == "Year") DstoreGroup <- Year
       # Note: do not pass envir to checkTableExistence: look only in current
       #  G$Datastore where the Table will be written.
-      TableExists <- checkTableExistence(Table, DstoreGroup, G$Datastore)
-      if (!TableExists) {
+      if (! checkTableExistence(Table, DstoreGroup, G$Datastore) ) {
         Length <- attributes(Data_ls[[Group]][[Table]])$LENGTH
         initTable(Table, DstoreGroup, Length, envir=envir) # DO pass envir here (place to write)
-        rm(Table, Group, DstoreGroup, TableExists, Length)
-      } else {
-        rm(Table, Group, DstoreGroup, TableExists)
       }
     }
   }
+
   #Process module Set specifications
   SetSpec_ls <- ModuleSpec_ls$Set
-  for (i in 1:length(SetSpec_ls)) {
-    #Identify datastore save location from specifications
-    Spec_ls <- SetSpec_ls[[i]]
+  for (Spec_ls in SetSpec_ls) {
+    # This strategy may moot out the NewSetTable strategy (which too closely couples the
+    #   modules to what may have come before in the current model stage).
     Spec_ls$MODULE <- ModuleName
     Group <- Spec_ls$GROUP
+    if (Group == "Global") DstoreGroup <- "Global"
+    if (Group == "Year") DstoreGroup <- Year
     Table <- Spec_ls$TABLE
     Name <- Spec_ls$NAME
     Type <- Spec_ls$TYPE
-    if (Group == "Global") DstoreGroup <- "Global"
-    if (Group == "Year") DstoreGroup <- Year
+    if ( ! checkTableExistence( Table, DstoreGroup, getModelState(envir=envir)$Datastore ) ) {
+      Length <- attributes(Data_ls[[Group]][[Table]])$LENGTH
+      initTable(Table, DstoreGroup, Length, envir=envir) # DO pass envir here (place to write)
+    }
+
+    #Identify datastore save location from specifications
     #Make an index to the data
-    DoCreateIndex <-
-    !is.null(Geo) &
-    !(Group == "Global" & !(Table %in% c("Marea", "Azone", "Bzone", "Czone")))
+    DoCreateIndex <- (
+      ! is.null(Geo) &&
+      ! (
+        Group == "Global" &&
+        ! (Table %in% c("Marea", "Azone", "Bzone", "Czone"))
+      )
+    )
     if (DoCreateIndex) {
-      Index <-
-      createGeoIndex(Table, DstoreGroup, ModuleSpec_ls$RunBy, Geo, GeoIndex_ls)
+      Index <- createGeoIndex(Table, DstoreGroup, ModuleSpec_ls$RunBy, Geo, GeoIndex_ls)
     } else {
       Index <- NULL
     }
@@ -1677,7 +1681,7 @@ setInDatastore <- function(Data_ls, ModuleSpec_ls, ModuleName, Year, Geo = NULL,
       #Convert currency
       if (Type == "currency") {
         FromYear <- Spec_ls$YEAR
-        ToYear <- G$BaseYear
+        ToYear <- BaseYear
         if (FromYear != ToYear) {
           Data_ <- deflateCurrency(Data_, FromYear, ToYear)
           rm(FromYear, ToYear)
@@ -1711,7 +1715,6 @@ setInDatastore <- function(Data_ls, ModuleSpec_ls, ModuleName, Year, Geo = NULL,
     }
     # Do pass envir here: write to first element of DatastorePath
     writeToTable(Data_, Spec_ls, DstoreGroup, Index, envir=envir)
-    rm(Spec_ls, Group, Table, Name, Data_)
   }
   TRUE
 }
