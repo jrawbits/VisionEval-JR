@@ -144,7 +144,7 @@ readFromTable <- function(Name, Table, Group, Index = NULL, ReadAttr = TRUE, env
           paste0(
             "Found ",file.path(Name,Table,Group)," in ",
             file.path(ms.env$ModelState_ls$ModelStatePath, ms.env$ModelState_ls$DatastoreName)
-          ), Level="info"
+          ), Level="trace"
         )
         break
       }
@@ -621,7 +621,10 @@ readFromTableRD <- function(Name, Table, Group, Index = NULL, ReadAttr = TRUE, e
   loadEnv <- new.env()
   load(DatasetPath,envir=loadEnv)
   Dataset <- loadEnv$Dataset
-  # TODO: trap error if ( is.null(Dataset) )
+  if ( is.null(Dataset) ) {
+    msg <- writeLog(paste("Failed to load",DatasetPath),Level="error")
+    stop(msg)
+  }
 
   #Convert NA values
   # This happens with H5, but not RD (where we can save suitable NA values directly)
@@ -632,7 +635,6 @@ readFromTableRD <- function(Name, Table, Group, Index = NULL, ReadAttr = TRUE, e
   if (!is.null(Index)) {
     #Save the attributes
     Attr_ls <- attributes(Dataset)
-    # TableAttr_ should be identical to Attr_ls !!
     TableAttr_ <-
       unlist(G$Datastore$attributes[G$Datastore$groupname == file.path(Group, Table)])
     AllowedLength <- TableAttr_["LENGTH"]
@@ -654,9 +656,10 @@ readFromTableRD <- function(Name, Table, Group, Index = NULL, ReadAttr = TRUE, e
     }
   }
   #Return results
-  # TODO: Caution that non-null attributes are how the standard read table wrapper detects
+  # WARNING: Non-null attributes are how the standard read table wrapper detects
   #   whether a Dataset exists in the Datastore Group/Table. Only set ReadAttr=FALSE when
-  #   reaching for unadorned data vector.
+  #   reaching for unadorned data vector (i.e. you're sure it exists, or don't care if it
+  #   doesn't)
   if (!ReadAttr) {
     attributes(Dataset) <- NULL
   }
@@ -707,10 +710,12 @@ writeToTableRD <- function(Data_, Spec_ls, Group, Index = NULL, envir=modelEnvir
 
   if (!DatasetExists) {
     # Add to Datastore listing
-    GroupName <- paste(Group, Spec_ls$TABLE, sep = "/")
-    Length <- 
-      try(G$Datastore$attributes[G$Datastore$groupname == GroupName][[1]]$LENGTH)
-    browser(expr=!is.numeric(Length))
+    GroupName <- file.path(Group, Spec_ls$TABLE)
+    Length <- G$Datastore$attributes[G$Datastore$groupname == GroupName][[1]]$LENGTH
+    if ( !is.numeric(Length) ) {
+      msg <- writeLog(paste("WriteTableRD: Table",GroupName,"has not been created in the current Datastore"),Level="error")
+      stop(msg)
+    }
     Dataset <-
       switch(Types()[[Spec_ls$TYPE]]$mode,
              character = character(Length),
@@ -1040,7 +1045,6 @@ initDatasetH5 <- function(Spec_ls, Group, envir=modelEnvironment()) {
 #' @export
 #' @import rhdf5
 readFromTableH5 <- function(Name, Table, Group, Index = NULL, ReadAttr = TRUE, envir=envir) {
-  # TODO: change DstoreLoc / ModelState_ls to parallel ReadFromTableRD
   #Expects to find the Datastore in the working directory
   #Load the model state file
   G <- getModelState(envir)
@@ -1088,11 +1092,11 @@ readFromTableH5 <- function(Name, Table, Group, Index = NULL, ReadAttr = TRUE, e
   if (ReadAttr) {
     #If single value array, convert to vector but preserve attributes
     if (all(dim(Data_) == 1)) dim(Data_) <- NULL
-    Data_
   } else {
     #Remove attributes
-    as.vector(Data_)
+    Data_ <- as.vector(Data_)
   }
+  return(Data_)
 }
 
 #WRITE TO TABLE
@@ -1226,15 +1230,22 @@ findDataset <- function(DatasetName, DstoreListing_df=NULL, envir=modelEnvironme
     dsPaths <- list(dsPath=DstoreListing_df)
   }
 
-  DstoreListing_df <- NULL
+  FoundIn_df <- NULL
   for ( ds in dsPaths ) {
+    browser(
+      expr=(
+        class(DatasetName)!= "character" ||
+        class(ds$groupname)!="character" ||
+        length(ds$groupname) == 0 || length(DatasetName)==0
+      )
+    )
     if ( DatasetName %in% ds$groupname ) {
-      DstoreListing_df <- ds
+      FoundIn_df <- ds
       break
     }
   }
-  if ( is.null(DstoreListing_df) ) writeLog(paste("Could not find",DatasetName),Level="trace")
-  return(DstoreListing_df)
+  if ( is.null(FoundIn_df) ) writeLog(paste("Could not find",DatasetName),Level="trace")
+  return(FoundIn_df)
 }
 
 #CHECK DATASET EXISTENCE
@@ -1294,10 +1305,18 @@ checkDataset <- function(Name, Table, Group, DstoreListing_df=NULL, envir=modelE
 #' @param envir Alternate source for ModelState_ls / Model State Paths
 #' @return A named list of the dataset attributes.
 #' @export
-getDatasetAttr <- function(Name, Table, Group, DstoreListing_df=NULL, envir=modelEnvironment()) {
+getDatasetAttr <- function(Name=NULL, Table=NULL, Group=NULL, DstoreListing_df=NULL, envir=modelEnvironment()) {
   # Warning: should call checkDataset first if the missing Dataset error needs to
   #   be accepted.
-  DatasetName <- file.path(Group, Table, Name)
+
+  if ( missing(Table) || is.null(Table) || missing(Group) || is.null(Group) ) {
+    stop(writeLog("getDatasetAttr: must provide Group and Table",Level="error"))
+  }
+  if ( missing(Name) || is.null(Name) ) {
+    DatasetName <- file.path(Group, Table)
+  } else {
+    DatasetName <- file.path(Group, Table, Name)
+  }
   DstoreListing_df <- findDataset(DatasetName, DstoreListing_df, envir)
   if ( !is.null(DstoreListing_df) ) {
     DatasetIdx <- which(DstoreListing_df$groupname == DatasetName)
@@ -1316,7 +1335,7 @@ getDatasetAttr <- function(Name, Table, Group, DstoreListing_df=NULL, envir=mode
   } else {
     browser()
     stop(
-      writeLog(paste("Dataset",DatasetName,"does not exist for attributes."),Level="error") # Log an error but don't stop..
+      writeLog(paste("Dataset",DatasetName,"does not exist for attributes."),Level="error")
     )
   }
 }
@@ -1339,7 +1358,6 @@ getDatasetAttr <- function(Name, Table, Group, DstoreListing_df=NULL, envir=mode
 #' @param envir Alternate source for ModelState_ls / Model State Paths
 #' @return A logical identifying whether a table is present in the datastore.
 #' @export
-
 checkTableExistence <- function(Table, Group, DstoreListing_df=NULL,envir=modelEnvironment()) {
   DatasetName <- file.path(Group, Table)
   DstoreListing_df <- findDataset(DatasetName, DstoreListing_df, envir)
@@ -1522,13 +1540,18 @@ getFromDatastore <- function(ModuleSpec_ls, RunYear, Geo = NULL, GeoIndex_ls = N
     #Add table component to list if does not exist
     if (is.null(L[[Group]][[Table]])) {
       L[[Group]][[Table]] <- list()
-      # attributes(L[[Group]][[Table]]) <-
-      #   list(LENGTH = getTableLength(Table, DstoreGroup, G$Datastore))
+      Length <- getDatasetAttr(Name=NULL, Table, DstoreGroup, envir=envir)$LENGTH
+      if ( ! is.numeric(Length) ) {
+        msg <- writeLog(paste("getFromDatastore: Table length not available for",file.path(Group,Table)),Level="error")
+        stop(msg)
+      }
+      attributes(L[[Group]][[Table]]) <- list(LENGTH = Length)
     }
     #Make an index to the data
-    DoCreateIndex <-
-    !is.null(Geo) &
-    !(Group == "Global" & !(Table %in% c("Marea", "Azone", "Bzone", "Czone")))
+    DoCreateIndex <- (
+      !is.null(Geo) &&
+      !(Group == "Global" && !(Table %in% c("Marea", "Azone", "Bzone", "Czone")))
+    )
     if (DoCreateIndex) {
       Index <-
       createGeoIndex(Table, DstoreGroup, ModuleSpec_ls$RunBy, Geo, GeoIndex_ls)
@@ -1614,7 +1637,7 @@ getFromDatastore <- function(ModuleSpec_ls, RunYear, Geo = NULL, GeoIndex_ls = N
 #' @param envir An environment from which to extract G / ModelState_ls
 #' @return A logical value which is TRUE if the data are successfully saved to
 #' the datastore.
-#' @export
+#' @exports
 setInDatastore <- function(Data_ls, ModuleSpec_ls, ModuleName, Year, Geo = NULL, GeoIndex_ls = NULL, envir=modelEnvironment()) {
   # Note: since we're writing, we'll look directly at G$Datastore rather than environment in
   # functions like checkTableExistence... DatastorePath is only used when reading...
@@ -1626,17 +1649,15 @@ setInDatastore <- function(Data_ls, ModuleSpec_ls, ModuleName, Year, Geo = NULL,
   # Make any specified tables
   # This strategy saves work in a single-stage model but won't work for a multi-stage
   #   model where tables may have been created in an earlier stage (when we first saw
-  #   NewSetTable) but have not yet been created in the new stage. Checking the table
-  #   with each Dataset happens below.
+  #   NewSetTable) but have not yet been created in the new stage.
   if (!is.null(ModuleSpec_ls$NewSetTable)) {
+    # First time table creation
     TableSpec_ls <- ModuleSpec_ls$NewSetTable
     for (i in 1:length(TableSpec_ls)) {
       Table <- TableSpec_ls[[i]]$TABLE
       Group <- TableSpec_ls[[i]]$GROUP
       if (Group == "Global") DstoreGroup <- "Global"
       if (Group == "Year") DstoreGroup <- Year
-      # Note: do not pass envir to checkTableExistence: look only in current
-      #  G$Datastore where the Table will be written.
       if (! checkTableExistence(Table, DstoreGroup, G$Datastore) ) {
         Length <- attributes(Data_ls[[Group]][[Table]])$LENGTH
         initTable(Table, DstoreGroup, Length, envir=envir) # DO pass envir here (place to write)
@@ -1647,8 +1668,6 @@ setInDatastore <- function(Data_ls, ModuleSpec_ls, ModuleName, Year, Geo = NULL,
   #Process module Set specifications
   SetSpec_ls <- ModuleSpec_ls$Set
   for (Spec_ls in SetSpec_ls) {
-    # This strategy may moot out the NewSetTable strategy (which too closely couples the
-    #   modules to what may have come before in the current model stage).
     Spec_ls$MODULE <- ModuleName
     Group <- Spec_ls$GROUP
     if (Group == "Global") DstoreGroup <- "Global"
@@ -1656,8 +1675,13 @@ setInDatastore <- function(Data_ls, ModuleSpec_ls, ModuleName, Year, Geo = NULL,
     Table <- Spec_ls$TABLE
     Name <- Spec_ls$NAME
     Type <- Spec_ls$TYPE
+    # Table has not been created in current stage - get table length from earlier stage
     if ( ! checkTableExistence( Table, DstoreGroup, getModelState(envir=envir)$Datastore ) ) {
-      Length <- attributes(Data_ls[[Group]][[Table]])$LENGTH
+      Length <- getDatasetAttr( Name=NULL, Table, DstoreGroup, envir=envir )$LENGTH
+      if ( ! is.numeric(Length) ) { # Table is not created anywhere up the DatastorePath
+        msg <- writeLog(paste(file.path(DstoreGroup,Table),"has not been created in any model stage"),Level="error")
+        stop(msg)
+      }
       initTable(Table, DstoreGroup, Length, envir=envir) # DO pass envir here (place to write)
     }
 

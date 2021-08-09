@@ -1743,6 +1743,10 @@ ve.model.run <- function(run="continue",stage=NULL,log="warn") {
   for ( ms in runStages ) { # iterate over names of stages to run
     writeLog(paste("Running stage:",ms),Level="warn")
     self$modelStages[[ms]]$run(log=LogLevel)
+    if ( self$modelStages[[ms]]$RunStatus != codeStatus("Run Complete") ) {
+      msg <- writeLog(paste("Model failed with status ",self$modelStages[[ms]]$RunStatus),Level="error")
+      stop(msg)
+    }
   }
 
   # Update overall model status
