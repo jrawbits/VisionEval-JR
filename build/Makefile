@@ -7,7 +7,7 @@ VE_RUNTESTS?=Default
 VE_EXPRESS?=YES # should be NO, or unset, for standard use
 VE_BRANCH?=$(shell git branch --show-current 2>/dev/null || echo visioneval)
 ifeq ($(OS),Windows_NT)
-  VE_R_VERSION?=4.1.0
+   VE_R_VERSION?=4.1.1
   RTERM:="$(shell scripts/find-R.bat $(VE_R_VERSION))"
   WINDOWS=TRUE
 else
@@ -132,8 +132,8 @@ configure-clean build-clean: build-reset # Resets the built status of all the ta
 
 modules-clean: $(VE_MAKEVARS) modules-reset # Reset all VE modules for complete rebuild
 	[[ -n "$(VE_REPOS)" ]] && rm -rf "$(VE_REPOS)"/*
-	[[ -n "$(VE_SRC)" ]] && rm -rf "$(VE_SRC)"/VE*
-	[[ -n "$(VE_LIB)" ]] && rm -rf "$(VE_LIB)"/VE*
+	[[ -n "$(VE_SRC)" ]] && rm -rf "$(VE_SRC)"/*
+	[[ -n "$(VE_LIB)" ]] && rm -rf "$(VE_LIB)"/VE* "$(VE_LIB)"/visioneval
 
 lib-clean: $(VE_MAKEVARS) lib-reset # Reset installed package library for complete rebuild
 	[[ -n "$(VE_LIB)" ]] && rm -rf "$(VE_LIB)"/*
@@ -210,7 +210,9 @@ modules: modules-reset modules-build
 
 modules-build: $(VE_LOGS)/modules.built
 
-$(VE_LOGS)/modules.built: $(VE_LOGS)/repository.built $(VE_LOGS)/velib.built scripts/build-modules.R
+$(VE_LOGS)/modules.built: $(VE_LOGS)/repository.built $(VE_LOGS)/velib.built \
+        scripts/build-modules.R scripts/build-framework.R
+	$(RSCRIPT) scripts/build-framework.R
 	$(RSCRIPT) scripts/build-modules.R
 	@touch $(VE_LOGS)/modules.built
 
@@ -231,7 +233,7 @@ docs: docs-reset docs-build
 docs-build: $(VE_LOGS)/docs.built
 
 $(VE_LOGS)/docs.built: $(VE_LOGS)/modules.built $(VE_LOGS)/runtime.built\
-        $(VE_LOGS)/velib.built scripts/build-docs.R scripts/build-inventory.R
+	$(VE_LOGS)/velib.built scripts/build-docs.R scripts/build-inventory.R
 	$(RSCRIPT) scripts/build-docs-framework.R
 	$(RSCRIPT) scripts/build-docs-visual.R
 	$(RSCRIPT) scripts/build-inventory.R
