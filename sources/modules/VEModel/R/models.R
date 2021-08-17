@@ -1723,7 +1723,6 @@ ve.model.setting <- function(setting=NULL,stage=NULL,defaults=TRUE,shorten=TRUE,
 # Report the model results path (used to creat a VEResults object and
 # to retrieve the LogFile)
 ve.model.findstage <- function(stage=NULL) {
-  # TODO: Update to new model stage structure
   if ( ! private$p.valid ) return( NULL )
 
   if ( missing(stage) || !is.character(stage) ) {

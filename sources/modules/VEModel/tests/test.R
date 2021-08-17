@@ -640,7 +640,7 @@ test_results <- function (log="info") {
   cp$clear(force=TRUE,outputOnly=FALSE)
   cat("Directory after clearing...\n")
   print(cp$dir())
-  cat("Results after clearing...\n")
+  cat("Results after clearing... (Generates error)\n")
   rs <- cp$results()
   print(rs)
   cat("Selection after clearing...\n")
@@ -648,7 +648,7 @@ test_results <- function (log="info") {
   print(sl)
   rm(cp)
 
-  testStep("Pull out results and selection (head 12)...")
+  testStep("Pull out results and selection from jr (head 12)...")
   cat("Results...\n")
   rs <- jr$results()  # Gets results for final Reportable stage (only)
 

@@ -563,17 +563,20 @@ ve.query.run <- function(
   log        = "error"  # Only show errors during run...
   )
 {
+  OutputRoot <- character(0)
   if ( ! missing(Results) ) {
-    # TODO: Add VEScenario class for new scenario API
     if ( "VEModel" %in% class(Results) ) {
-      Results <- list(Results$results())
+      OutputRoot <- Results$results()$resultsPath
+      Results <- list(Results$results()) # Expect a single result
     } else if ( "VEResults" %in% class(Results) ) {
+      OutputRoot <- Results$resultsPath
       Results <- list(Results)
     } else if ( is.character(Results) ) {
       # Assume it's a list of directories, which must exist
       ExistingResults <- Results[dir.exists(Results)] # Trim to existing files
+      
       if ( length(ExistingResults)==0 ) {
-        ExistingResults <- Results[Results %in% openModel()]
+        ExistingResults <- Results[Results %in% openModel()] # Do ALL the models (CAUTION!!!)
         if ( length(ExistingResults)>0 ) {
           Results <- lapply(ExistingResults,
             function(m) {
@@ -586,21 +589,20 @@ ve.query.run <- function(
           Results <- Results[ ! sapply(Results,is.na) ]
           if ( length(Results)==0 ) {
             Results <- NULL
+          } else {
+            OutputRoot <- dirname(Results[[1]]$resultsPath)
           }
         } else {
           Results <- NULL
         }
       } else {
+        OutputRoot <- dirname(ExistingResults[1])
         Results <- lapply( ExistingResults, function(r) VEResults$new(r) )
       }
     } else if ( is.list(Results) ) {
       if ( "VEModel" %in% class(Results[[1]]) ) {
         Results <- lapply( Results, function(m) m$results() )
-      } else if ( is.character(Results) ) {
-        # TODO: support this - just make a VEResults object from each
-        # element of Results
-        writeLog(msg<-"Unsupported: character list of result paths",Level="error")
-        stop(msg)
+        OutputRoot <- dirname(Results[[1]]$resultsPath)
       } else if ( ! "VEResults" %in% class(Results[[1]]) ) {
         Results <- NULL
       }
@@ -612,6 +614,7 @@ ve.query.run <- function(
     stop( writeLog("No results provided to query",Level="error") )
   }
 
+  # TODO: review Brian Gregor's example of grouping by Bzone - may also be legitimate
   if ( ! is.character(Geography) || ! Geography %in% c("Region", "Azone","Marea") )
   {
     writeLog("Geography must be one of 'Region','Marea' or 'Azone'",Level="error")
@@ -651,22 +654,22 @@ ve.query.run <- function(
   # Construct the OutputFile name
   # Default QueryOutputTemplate = "%queryname%_Results_%timestamp%.csv"
   if ( save ) {
+    if ( ! dir.exists(OutputRoot) ) {
+      writeLog(paste("Creating OutputRoot:",OutputRoot),Level="info")
+      dir.create(OutputRoot)
+    }
     OutputFileToWrite <- stringr::str_replace(OutputFile,"%queryname%",self$QueryName)
     TimeStamp <- visioneval::fileTimeStamp(Sys.time())
     OutputFileToWrite <- stringr::str_replace(OutputFileToWrite,"%timestamp%",TimeStamp)
-    OutputFileToWrite <- normalizePath(file.path(OutputDir,OutputFileToWrite),mustWork=FALSE)
-
+    OutputFileToWrite <- normalizePath(file.path(OutputRoot,OutputDir,OutputFileToWrite),mustWork=FALSE)
     # Save measure results into a file
-    writeLog(paste("Saving measures in",basename(dirname(OutputFileToWrite)),"as",basename(OutputFileToWrite),"..."),Level="warn")
+    writeLog(paste("Saving measures to",OutputFileToWrite,"..."),Level="warn")
     utils::write.csv(Measures_df, row.names = FALSE, file = OutputFileToWrite)
 
     # Save query itself adjacent to measure results
     self$save(saveTo=sub("\\.csv$",".VEqry",OutputFileToWrite))
 
     writeLog("Saved\n",Level="warn")
-
-    # TODO: save the query specification as metadata (as a .VEqry file in the output, with the same
-    # basename as the results .csv - should be "openable").
   }
 
   return(invisible(Measures_df))
@@ -1298,11 +1301,11 @@ doQuery <- function (
     # Scenario Name for reporting / OutputFile
     # TODO: If Results is a named list, use the name from the list
     #       Then do the $ModelState$Scenario as a fallback
-    ScenarioName <- results$ModelState$Scenario;
+    ScenarioName <- results$ModelState()$Scenario;
     writeLog(paste("Building measures for Scenario",ScenarioName,"\n"),Level="warn")
 
     # Gather years from the results
-    Years <- results$ModelState$Years
+    Years <- results$ModelState()$Years
 
     # Set up model state and datastore for query processing
     QPrep_ls <- results$queryprep()
