@@ -67,12 +67,11 @@ ve.results.index <- function() {
   if ( file.exists(FileName) ) {
     ms <- try(visioneval::readModelState(FileName=FileName,envir=new.env()))
   } else {
-    writeLog(paste("Missing:",FileName),Level="error")
     ms <- NULL
   }
   if ( ! is.list(ms) ) {
     self$ModelState(list())
-    writeLog(Level="error",paste("No ModelState:",FileName))
+    writeLog(Level="info",paste("No ModelState:",FileName))
     return(list())
   }
   self$ModelState(ms) # save ModelState
@@ -479,9 +478,9 @@ ve.results.queryprep <- function() {
   )
 }
 
-ve.results.print <- function(details=FALSE) {
+ve.results.print <- function(name="",details=FALSE) {
   # Update for output
-  cat("VEResults object for these results:\n")
+  cat("VEResults object for",if(nzchar(name)) name else self$Name,":\n")
   print(self$resultsPath)
   cat("Output is valid:",self$valid(),"\n")
   if ( self$valid() ) {
