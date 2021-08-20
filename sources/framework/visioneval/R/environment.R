@@ -572,6 +572,8 @@ mergeParameters <- function(Param_ls,Keep_ls) {
     }
     row.names(param.source) <- param.source$Name
     attr(Param_ls,"source") <- param.source
+    # propagate any file attribute
+    if ( ! is.null( keepFile <- attr(Keep_ls,"FILE") ) ) attr(Param_ls,"FILE") <- keepFile
   }
  return(Param_ls)
 }
