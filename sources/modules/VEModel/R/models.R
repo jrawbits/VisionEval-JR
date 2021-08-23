@@ -137,6 +137,7 @@ NULL
 self=private=NULL # To avoid R6 class "undefined global" errors
 
 ## Helper
+# Do a simple command line confirmation prompt
 confirmDialog <- function(msg) {
   conf <- utils::askYesNo(msg,prompts="y/n/c")
   if ( is.na(conf) ) conf<-FALSE # Cancel is the same as No
@@ -234,7 +235,6 @@ findModel <- function( modelDir, Param_ls=getSetup() ) {
 }
 
 # configure installs the model parameters (initializing or re-initializing)
-# TODO: 
 ve.model.configure <- function(modelPath=NULL, Param_ls=getSetup()) {
 
   if ( missing(modelPath) || ! is.character(modelPath) ) {
@@ -429,7 +429,7 @@ ve.model.configure <- function(modelPath=NULL, Param_ls=getSetup()) {
   return(self)
 }
 
-ve.model.initstages( modelStages ) {
+ve.model.initstages <- function( modelStages ) {
   # Loop through modelStages, completing initialization using "StartFrom" stages
   writeLog("Finding runnable stages",Level="info")
   runnableStages <- list()
@@ -862,11 +862,11 @@ ve.stage.init <- function(stageParam_ls=list(),modelParam_ls=list(),stageConfig_
   #     default is ModelDir/Dir (or Dir itself if absolute path)
   #   Config is alternative path/name for "visioneval.cnf" for stage
   #     default is Path/visioneval.cnf
-  # stageConfig_ls is merged as a Param_ls into Config (either explicit or implied)
+  # stageConfig_ls is merged as a Param_ls into Config (either explicit or implied)d
   #   and can be used to do an "in-memory" configuration. Note that stageParam_ls
   #   is added to the LOADED configuration as if it came from the config file. The
   #   FILE attribute of the loaded configuration will be updated if (and only if) it
-  #   does not already have a file to the source (which is "stageDonfig_ls"
+  #   does not already have a file attached to it
   #
   if ( "ModelDir" %in% names(modelParam_ls) ) {
     ModelDir <- modelParam_ls$ModelDir
@@ -925,12 +925,12 @@ ve.stage.init <- function(stageParam_ls=list(),modelParam_ls=list(),stageConfig_
     # if no explicit Config, and the Stage directory exists, load "visioneval.cnf" from stage directory
     self$loadedParam_ls <- visioneval::loadConfiguration(ParamDir=self$Path)
   }
-  if ( stageConfig_ls ) {
+  if ( length(stageConfig_ls)>1 ) {
     # Live updates to any Config file
     # All of this is to support programmatic construction of a model stage
     stageConfig_ls <- visioneval::addParameterSource(stageConfig_ls,"stageConfig_ls")
     self$loadedParam_ls <- visioneval::mergeParameters(self$loadedParam_ls,stageConfig_ls)
-    if ( is.null(attr(self$loadParam_ls,"FILE")) ) attr(self$loadParam_ls,"FILE") <- "stageConfig_ls"
+    if ( is.null(attr(self$loadedParam_ls,"FILE")) ) attr(self$loadedParam_ls,"FILE") <- "stageConfig_ls"
   }
   self$RunParam_ls <- visioneval::mergeParameters(modelParam_ls,self$loadedParam_ls)
 
@@ -1231,36 +1231,6 @@ ve.stage.print <- function(details=FALSE) {
     cat(paste0("     ",uniqueSources(self$RunParam_ls)),sep="\n") # Generates one row for each unique source
   }
 }
-
-VEModelStage <- R6::R6Class(
-  "VEModelStage",
-  public = list(
-    # Public data
-    Name = NULL,                 # Name of stage (used e.g. in another stage's StartFrom)
-    # May not need to save some of the following (build into RunParam_ls)
-    Dir = NULL,                  # basename of stage subdirectory (for inputs and results)
-    Path = NULL,                 # Normalized path to folder holding InputDir and ParamDir
-    Config = NULL,               # File relative to ModelDir (optional); 
-    StartFrom = "",              # Name of another model stage to extend
-    RunParam_ls = list(),        # RunParameters to initialize the stage
-    loadedParam_ls = NULL,       # Loaded parameters (if any) present in stage configuration file
-    ModelState_ls = NULL,        # ModelState constructed from RunParam_ls
-    Reportable = NULL,           # If TRUE, include in default result set for extract and queries
-    RunPath = NULL,              # Typically ModelDir/ResultsDir/StageDir
-    RunStatus = 1, # "Unknown"   # Indicates whether results are available
-    Results = NULL,              # A VEResults object (create on demand)
-    
-    # Methods
-    initialize=ve.stage.init,    # Create a stage and set its Runnable flag
-    runnable=ve.stage.runnable,  # Does the stage have all it needs to run?
-    print=ve.stage.print,        # Print stage summary
-    load=ve.stage.load,          # Read existing ModelState.Rda if any
-    run=ve.stage.run             # Run the stage (build results)
-  ),
-  private=list(
-    complete = NULL              # set to TRUE/FALSE when self$runnable() is executed
-  )
-)
 
 ################################################################################
 #                              Model Information                               #
@@ -1679,7 +1649,7 @@ ve.model.run <- function(run="continue",stage=NULL,log="warn") {
 #   list of parameters that are considered to be part of the StageConfig (e.g. InputPath for the
 #   stage) - anything that might go into a stage's visioneval.cnf. The combination of stageParam_ls
 #   and ... must add up to a runnable stage (errors identified in self$initstages)
-ve.model.addstage(stageParam_ls, ...) {
+ve.model.addstage <- function(stageParam_ls, ...) {
   stageName <- stageParam_ls$Name
   # Check for a Name in stageParam_ls and abort if none or duplicated
   if ( is.null(stageName) || stageName %in% names(self$modelStages) ) {
@@ -1690,25 +1660,28 @@ ve.model.addstage(stageParam_ls, ...) {
   stageConfig_ls <- visioneval::addParameterSource(list(...),"addstage")
 
   # Merge the stage into the list of modelStages
-  stage <- VEModelStage$new(stageParam_ls=stageParam_ls,stageConfig_ls=stageConfig_ls)
+  stage <- VEModelStage$new(
+    stageParam_ls=stageParam_ls,
+    modelParam_ls=self$RunParam_ls,
+    stageConfig_ls=stageConfig_ls
+  )
   self$modelStages[[stageName]] <- stage
   self$modelStages <- self$initstages(self$modelStages)
 
   # Report runnability error...
-  if ( ! self$modelStages[[stageName]]$runnable() ) {
+  if ( ! self$modelStages
+    [[stageName]]$runnable() ) {
     writeLog("The stage you tried to add cannot run and will be ignored!",Level="error")
   }
 
   return(self)
 }
-  
 
 # Manipulate parameter file (runtime, model, stage)
 #    getSetup() # runtime
 #    self$RunParam_ls # model or stage
 # Build around an inner helper function that is not attached to a model
 # List the contents of a specific file and add parameters to it
-# Save the modified file back out again (warning: trashes comments)
 
 # The following function is probably obsolete/undesirable
 # List locally defined parameters, list a specific file, list "cascaded" parameters
@@ -1731,7 +1704,7 @@ ve.model.params <- function(stage=NULL,modelState=FALSE,Source="Interactive",Par
         paste0("Changing stage RunParam_ls elements for ",paste(stage,collapse=", ")),
         Level="info"
       )
-      is ( is.numeric(stage) ) stage <- names(self$modelStages)[stage]
+      if ( is.numeric(stage) ) stage <- names(self$modelStages)[stage]
       for ( stgname in stage ) {
         # In the stage, change both the RunParams_ls and (if modelState is TRUE)
         #   also change the ModelState_ls (intended for things like Scenario or
@@ -1892,57 +1865,6 @@ ve.model.query <- function(QueryName=NULL,FileName=NULL,load=TRUE) {
     )
   )
 }
-
-################################################################################
-#                           VEModel Class Definition                           #
-################################################################################
-
-# Here is the VEModel R6 class
-# One of these objects is returned by "openModel"
-
-VEModel <- R6::R6Class(
-  "VEModel",
-  public = list(
-    # Public Data
-    modelName=NULL,                         # Model identifier
-    modelPath=NULL,                         # Also as RunParam_ls$ModelDir
-    modelStages=NULL,                       # list of VEModelStage objects
-    modelResults=NULL,                      # Absolute path == modelPath/ResultsDir
-    RunParam_ls=NULL,                       # Run parameters for the model (some constructed by $configure)
-    loadedParam_ls=NULL,                    # Loaded parameters (if any) present in model configuration file
-    specSummary=NULL,                       # List of inputs, gets and sets from master module spec list  
-    status=codeStatus("Uninitialized"),     # Where are we in opening or running the model?
-
-    # Methods
-    initialize=ve.model.init,               # initialize a VEModel object
-    configure=ve.model.configure,           # load or re-load VEModel from its disk location
-    valid=function() private$p.valid,       # report valid state
-    load=ve.model.load,                     # load the model state for each stage (slow - defer until needed)
-    run=ve.model.run,                       # run a model (or just a subset of stages)
-    print=ve.model.print,                   # provides generic print functionality
-    printStatus=ve.model.printStatus,       # turn integer status into text representation
-    updateStatus=ve.model.updateStatus,     # fill in overall status based on individual stage status
-    list=ve.model.list,                     # interrogator function (script,inputs,outputs,parameters
-    dir=ve.model.dir,                       # list model elements (output, scripts, etc.)
-    clear=ve.model.clear,                   # delete results or outputs (current or past)
-    log=ve.model.log,                       # report the log file path (use e.g. file.show to display it)
-    setting=ve.model.setting,               # report the values of parameter settings (for environment, model or stage)
-    params=ve.model.params,                 # manipulate model configuration files
-    copy=ve.model.copy,                     # copy a self$modelPath to another path (ignore results/outputs)
-    archive=ve.model.archive,               # apply framework archive function if results exist
-    results=ve.model.results,               # Create a VEResults object (if model is run); option to open a past result
-    findstages=ve.model.findstages,         # Report the path to the model results for a stage
-    query=ve.model.query                    # Create a VEQuery object (or show a list of queries).
-  ),
-  active = list(                            # Object interface to "set" function; "set" called explicitly has additional options
-    settings=function(Param_ls) {
-      if ( missing(Param_ls) ) return(self$set()) else return(self$set(Param_ls=Param_ls))
-    }),
-  private = list(
-    # Private Members
-    p.valid=FALSE
-  )
-)
 
 ################################################################################
 #                          Exported Helper Functions                           #
@@ -2212,3 +2134,90 @@ installModel <- function(modelName=NULL, modelPath=NULL, variant="base", confirm
     return( model ) # should be a character vector of information about standard models
   }
 }
+
+################################################################################
+#                           VEModel Class Definition                           #
+################################################################################
+
+# Here is the VEModel R6 class
+# One of these objects is returned by "openModel"
+
+VEModel <- R6::R6Class(
+  "VEModel",
+  public = list(
+    # Public Data
+    modelName=NULL,                         # Model identifier
+    modelPath=NULL,                         # Also as RunParam_ls$ModelDir
+    modelStages=NULL,                       # list of VEModelStage objects
+    modelResults=NULL,                      # Absolute path == modelPath/ResultsDir
+    RunParam_ls=NULL,                       # Run parameters for the model (some constructed by $configure)
+    loadedParam_ls=NULL,                    # Loaded parameters (if any) present in model configuration file
+    specSummary=NULL,                       # List of inputs, gets and sets from master module spec list  
+    status=codeStatus("Uninitialized"),     # Where are we in opening or running the model?
+
+    # Methods
+    initialize=ve.model.init,               # initialize a VEModel object
+    configure=ve.model.configure,           # load or re-load VEModel from its disk location
+    initstages=ve.model.initstages,         # Complete stage setup
+    addstage=ve.model.addstage,             # Add a stage programmatically
+    valid=function() private$p.valid,       # report valid state
+    load=ve.model.load,                     # load the model state for each stage (slow - defer until needed)
+    run=ve.model.run,                       # run a model (or just a subset of stages)
+    print=ve.model.print,                   # provides generic print functionality
+    printStatus=ve.model.printStatus,       # turn integer status into text representation
+    updateStatus=ve.model.updateStatus,     # fill in overall status based on individual stage status
+    list=ve.model.list,                     # interrogator function (script,inputs,outputs,parameters
+    dir=ve.model.dir,                       # list model elements (output, scripts, etc.)
+    clear=ve.model.clear,                   # delete results or outputs (current or past)
+    log=ve.model.log,                       # report the log file path (use e.g. file.show to display it)
+    setting=ve.model.setting,               # report the values of parameter settings (for environment, model or stage)
+    params=ve.model.params,                 # manipulate model configuration files
+    copy=ve.model.copy,                     # copy a self$modelPath to another path (ignore results/outputs)
+    archive=ve.model.archive,               # apply framework archive function if results exist
+    results=ve.model.results,               # Create a VEResults object (if model is run); option to open a past result
+    findstages=ve.model.findstages,         # Report the path to the model results for a stage
+    query=ve.model.query                    # Create a VEQuery object (or show a list of queries).
+  ),
+  active = list(                            # Object interface to "set" function; "set" called explicitly has additional options
+    settings=function(Param_ls) {
+      if ( missing(Param_ls) ) return(self$set()) else return(self$set(Param_ls=Param_ls))
+    }),
+  private = list(
+    # Private Members
+    p.valid=FALSE
+  )
+)
+
+################################################################################
+#                         VEModelStage Class Definition                        #
+################################################################################
+
+VEModelStage <- R6::R6Class(
+  "VEModelStage",
+  public = list(
+    # Public data
+    Name = NULL,                 # Name of stage (used e.g. in another stage's StartFrom)
+    # May not need to save some of the following (build into RunParam_ls)
+    Dir = NULL,                  # basename of stage subdirectory (for inputs and results)
+    Path = NULL,                 # Normalized path to folder holding InputDir and ParamDir
+    Config = NULL,               # File relative to ModelDir (optional); 
+    StartFrom = "",              # Name of another model stage to extend
+    RunParam_ls = list(),        # RunParameters to initialize the stage
+    loadedParam_ls = NULL,       # Loaded parameters (if any) present in stage configuration file
+    ModelState_ls = NULL,        # ModelState constructed from RunParam_ls
+    Reportable = FALSE,          # If TRUE, include in default result set for extract and queries
+    RunPath = NULL,              # Typically ModelDir/ResultsDir/StageDir
+    RunStatus = 1, # "Unknown"   # Indicates whether results are available
+    Results = NULL,              # A VEResults object (create on demand)
+    
+    # Methods
+    initialize=ve.stage.init,    # Create a stage and set its Runnable flag
+    runnable=ve.stage.runnable,  # Does the stage have all it needs to run?
+    print=ve.stage.print,        # Print stage summary
+    load=ve.stage.load,          # Read existing ModelState.Rda if any
+    run=ve.stage.run             # Run the stage (build results)
+  ),
+  private=list(
+    complete = NULL              # set to TRUE/FALSE when self$runnable() is executed
+  )
+)
