@@ -36,7 +36,7 @@ required.files <- unique(file.path(input.dir,inputs[,"FILE"]))
 print(vr$modelStages)  # list of stage objects - only one in "base" model
 
 vr <- openModel("VERSPM-run") # pre-created and run in setup.R
-print(vrs$modelStages) # Three stages - we'll get back to stages
+print(vr$modelStages) # Three stages - we'll get back to stages
 
 # running models
   # reset
