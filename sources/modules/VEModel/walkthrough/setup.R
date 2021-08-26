@@ -68,14 +68,18 @@ print(vr)
 logLevel <- function(log="warn") visioneval::initLog(Save=FALSE,Threshold=log)
 
 # Define a function to make a mini-model (adapted from tests/test.R)
-makeMiniModel <- function(baseModel,log="warn") {
+makeMiniModel <- function(baseModel,log="warn" ) {
+
   logLevel(log)
-  bare.dir <- file.path(getwd(),"models","BARE")
-  message("Making mini model in ",bare.dir)
-  if ( dir.exists(bare.dir) ) {
-    cat("Blowing away existing bare model.\n")
-    unlink(bare.dir,recursive=TRUE)
+
+  message("Cleaning up previous mini models.")
+  models.dir <- file.path(getwd(),"models")
+  obsolete <- dir(models.dir,pattern="^bare",ignore.case=TRUE,full.names=TRUE)
+  for ( oo in obsolete ) {
+    if ( dir.exists(oo) ) unlink(oo,recursive=TRUE)
   }
+
+  message("Making mini model in ",bare.dir)
   bare.script <- file.path(bare.dir,visioneval::getRunParameter("ScriptsDir"))
   bare.inputs <- file.path(bare.dir,visioneval::getRunParameter("InputDir"))
   bare.defs   <- file.path(bare.dir,visioneval::getRunParameter("ParamDir"))
@@ -87,12 +91,13 @@ makeMiniModel <- function(baseModel,log="warn") {
 
   message("Create the model configuration")
   runConfig_ls <-  list(
-      Model       = jsonlite::unbox("Mini Model Test"),
-      Scenario    = jsonlite::unbox("MiniModel"),
-      Description = jsonlite::unbox("Minimal model constructed programmatically"),
-      Region      = jsonlite::unbox("RVMPO"),
-      BaseYear    = jsonlite::unbox("2010"),
-      Years       = c("2010") #, "2038")
+      Model       = "Mini Model Test",
+      Scenario    = "MiniModel",
+      Description = "Minimal model constructed programmatically",
+      Region      = "RVMPO",
+      State       = "OR",
+      BaseYear    = "2010",
+      Years       = c("2010")
     )
   viewSetup(Param_ls=runConfig_ls)
 
@@ -105,7 +110,10 @@ makeMiniModel <- function(baseModel,log="warn") {
   runModelFile <- file.path(bare.script,"run_model.R")
   runModel_vc <- c(
     '', # Don't ask why, but without this line the script gets written wrong...
-    'runModule("CreateHouseholds","VESimHouseholds",RunFor = "AllYears",RunYear = "2010")'
+    'for(Year in getYears()) {',
+    'runModule("CreateHouseholds","VESimHouseholds",RunFor = "AllYears",RunYear = Year)',
+    'runModule("PredictWorkers","VESimHouseholds",RunFor = "AllYears",RunYear = Year)',
+    '}'
   )
   cat(runModelFile,paste(runModel_vc,collapse="\n"),sep="\n")
   writeLines(runModel_vc,con=runModelFile)

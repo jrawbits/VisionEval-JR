@@ -104,46 +104,173 @@ viewSetup(mini$modelStages[[1]])
 mini$run("save")
 mini$dir(results=TRUE,archive=TRUE)
 
-# stages
-  # inspecting stages (in memory)
-  # defining stages
-    # implicitly as a model subfolder
-    # explicitly in model visioneval.cnf
-  # stage visioneval.cnf
+# Add stages to the mini model
+mini$modelStages # list the one stage constructed from the root folder
 
-# StartFrom stages
-  # structure of configuration
-  # options
-    # stage meta-parameters
-    # stage directory
-    # stage visioneval.cnf (via Config)
-    # stage inputs
-    # stage results
-    # stage descriptors
+# Recreate the mini model with two stages, for base and future years
+mini.1 <- Mini$copy("BARE-Stages",results=FALSE)
 
-# Copying Datastores
-  # Flattening
-  # Converting DatastoreType
-# LoadModel
-  # Building stages across "models"
-  # Using LoadModel for post-mortem debugging
-# Extracting results
+# Two ways to make stages. First, just with configuration files
+# The model script will be run once for each stage, using the same input
+#   files. Stage specific information can be placed in a model subdirectory
+#   (Next to "inputs" and "defs") or it can be gathered in other places.
+# Items like "defs" will be found if they are set for the model. In the
+#   mini.1 model, all the "inputs" are also located at the model level.
+
+# Just make two more configurations for the stages (base and future year)
+# We'll put them in a directory of their own
+config.dir <- file.path(mini.1$modelPath,"config")
+if ( dir.exists(config.dir) ) unlink(config.dir,recursive=TRUE)
+create.dir( config.dir )
+
+StageParam_ls <- list(
+  Scenario    = "MiniModel Base Year",
+  Description = "Minimal model base year, construted programatically",
+  Years       = c("2010"),
+  Reportable  = TRUE # need this to extract/query if a later stage starts from this one
+)
+yaml::write_yaml(StageParam_ls,file.path(config.dir,"BaseYear.cnf"))
+
+StageParam_ls <- list(
+  Scenario    = "MiniModel Future Year",
+  Description = "Minimal model future year, construted programatically",
+  Years       = c("2038"),
+  StartFrom   = "BaseYear" # match name of earlier stage in ModelStages (see below)
+  # Standard VERSPM future year requires access to BaseYear results.
+)
+yaml::write_yaml(StageParam_ls,file.path(config.dir,"FutureYear.cnf"))
+
+# Now we'll update the base model configuration to connect the stages
+modelParam_ls <- list(
+  Model       = "Staged Mini Model Test",
+  Region      = "RVMPO",
+  State       = "OR",
+  BaseYear    = "2010",
+  ModelStages = list(
+    "BaseYear" = list( 
+      Dir = "BaseYear",
+      Config = "config/BaseYear.cnf"
+    ),
+    "FutureYear" = list(
+      Dir = "FutureYear",
+      Config = "config/FutureYear.cnf"
+    )
+  )
+)
+yaml::write_yaml(modelParam_ls,file.path(mini.1$modelPath,"visioneval.cnf"))
+
+# Reload the updated model configuration
+mini.1$configure()
+
+# Let's see what we've got
+print(mini.1)
+print(unique(mini.1$list(inputs=TRUE,details=c("STAGE","FILE","INPUTDIR"))))
+
+mini.1$run("reset")
+mini.1$dir()
+
+# Now let's go back and do "implicit stages" from the original mini
+mini.2 <- mini.1$copy("BARE-Imp-Stages")
+
+dir.create( stage1.dir <- file.path(mini.2$modelPath,"BaseYear") )
+StageParam_ls <- list(
+  Scenario    = "MiniModel Base Year",
+  Description = "Minimal model base year, construted programatically",
+  Years       = c("2010"),
+  Reportable  = TRUE # need this to extract/query if a later stage starts from this one
+)
+yaml::write_yaml(StageParam_ls,file.path(stage1.dir,"visioneval.cnf"))
+
+dir.create( stage2.dir <- file.path(mini.2$modelPath,"FutureYear") )
+StageParam_ls <- list(
+  Scenario    = "MiniModel Future Year",
+  Description = "Minimal model future year, construted programatically",
+  Years       = c("2038"),
+  StartFrom   = "BaseYear" # match name of earlier stage in ModelStages (see below)
+  # Standard VERSPM future year requires access to BaseYear results.
+)
+yaml::write_yaml(StageParam_ls,file.path(stage2.dir,"visioneval.cnf"))
+
+modelParam_ls <- list(
+  Model       = "Implicit Staged Mini Model Test",
+  Region      = "RVMPO",
+  State       = "OR",
+  BaseYear    = "2010"
+  ModelStages = list(
+    "BaseYear" = list  ( Dir = "BaseYear"   ), # Dir need not match name of stage
+    "FutureYear" = list( Dir = "FutureYear" )
+  )
+)
+yaml::write_yaml(modelParam_ls,file.path(mini.2$modelPath,"visioneval.cnf"))
+
+# Now re-run implicit stages
+mini.2$configure()
+mini.2$run("reset")
+mini.2$dir()
+
+# Finally, let's add a stage to mini.2 with a different scenario
+# Note that this stage is added IN MEMORY ONLY - if we configure (reload)
+#  the model, the extra stage will be lost.
+# The use case is for doing a quick test as we are here, and also for
+#  programatically injecting a new scenario into a base model based on
+#  combinations of inputs
+mini.2$addstage(
+    list(
+      Name="AltFuture",
+      Dir="AltFuture"
+    ),
+    Scenario="Mini-Model Alternative Future",
+    Description="Scramble an input file",
+    StartFrom="BaseYear",
+    BaseYear=mini.2$setting("BaseYear"),
+    Years=mini.2$setting("Years",stage="FutureYear")
+  )
+dir.create( stage3.dir   <- file.path(mini.2$modelPath,"AltFuture") )
+dir.create( stage3.input <- file.path( stage3.dir,mini.2$setting("InputDir") ) )
+
+# Create an alternate future input (extra 3% on hh_pop distributions)
+# For a real "in memory" stage, this scenario file would exist somewhere else, and we would
+#   locate it by setting an InputPath parameter saying where to find an InputDir with the
+#   updated files in it.
+mini.files <- unique(mini.2$list(reset=TRUE,inputs=TRUE,shorten=FALSE,details=c("FILE","INPUTDIR")))
+mini.files <- file.path(mini.files$INPUTDIR,mini.files$FILE)
+scenario.input <- grep(
+  "hh_pop",
+  mini.files,
+  value=TRUE
+)
+adj.input <- read.csv(scenario.input)
+adj.names <- grep("^Age",names(adj.input),value=TRUE)
+adj.input[adj.input$Year="2038", adj.names] <- adj.input[adj.input$Year="2038", adj.names] * 1.03
+write.csv(adj.input,row.names=FALSE,file=file.path(stage3.input,basename(scenario.input)))
+
+# Show the input files again:
+mini.files <- unique(mini.2$list(reset=TRUE,inputs=TRUE,shorten=TRUE,details=c("FILE","INPUTDIR","STAGE")))
+
+# TODO: Use the pre-run full version of VERSPM and a few query tweaks
+
+# Extracting results (straight from the test suite)
   # Basic extraction
   # Setting display_units
   # Filtering Group/Table/Name
   # Setting OutputDir (sub-directory of model's results)
-# Querying results
+
+# Querying results (from the test suite; using the long query list for the model)
   # Defining query specifications
     # Writing a file
     # Building in memory and saving
   # Running a query (set of specifications)
   # What comes up (summary of scenarios)
   # Using a different geography
-# Using model stages to make scenarios
-  # Adding a scenario stage to a model
-    # StartFrom
-    # InputDir
-    # run_model.R
-    # Years, Scenario, Description
-  # Where do scenario results to?
-  # How to extract or query scenario results
+
+# TODO: Haven't had time to test out converting DatastoreType (unclear if H5 is even working)
+# Copying Datastores
+  # Flattening
+  # Converting DatastoreType
+
+# TODO: LoadModel
+  # Building stages across "models"
+  # Using LoadModel for post-mortem debugging
+# From the original BaseYear bare model, create an entirely separate model copy
+#  in which we specify LoadModel
+

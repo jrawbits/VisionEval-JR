@@ -856,7 +856,7 @@ ve.model.clear <- function(force=FALSE,outputOnly=NULL,archives=FALSE,stage=NULL
 ve.stage.init <- function(stageParam_ls=list(),modelParam_ls=list(),stageConfig_ls=list()) {
   # modelParam_ls is the base list of parameters from the Model
   # stageParam_ls has the following elements (it's not really a RunParam_ls,
-  #   just a regular named list):
+  #   just a regular named list with stage "metadata"):
   #
   #   Dir is the subdirectory for the stage, holding InputDir/ParamDir
   #     default of NULL becomes "."
@@ -864,11 +864,11 @@ ve.stage.init <- function(stageParam_ls=list(),modelParam_ls=list(),stageConfig_
   #     default of NULL becomes modelParam_ls$ModelDir and if not provided, then "."
   #   Name is how we refer to the stage
   #     default is basename(Dir)
-  #   Path is the path to directory holding InputDir/ParamDir
+  #   Path is the path to directory holding stage-specific InputDir/ParamDir
   #     default is ModelDir/Dir (or Dir itself if absolute path)
   #   Config is alternative path/name for "visioneval.cnf" for stage
   #     default is Path/visioneval.cnf
-  # stageConfig_ls is merged as a Param_ls into Config (either explicit or implied)d
+  # stageConfig_ls is merged as a Param_ls into Config (either explicit or implied)
   #   and can be used to do an "in-memory" configuration. Note that stageParam_ls
   #   is added to the LOADED configuration as if it came from the config file. The
   #   FILE attribute of the loaded configuration will be updated if (and only if) it
@@ -1312,7 +1312,7 @@ summarizeSpecs <- function(AllSpecs_ls,stage) {
 }
 
 # List the model contents
-ve.model.list <- function(inputs=FALSE,outputs=FALSE,details=NULL,stage=character(0)) {
+ve.model.list <- function(inputs=FALSE,outputs=FALSE,details=NULL,stage=character(0),reset=FALSE) {
   # "inputs" lists the input files (Inp) by package and module (details = field attributes)
   # "outputs" lists the fields that are Set in the Datastore (details = field attributes)
   # if both are true, we also liet the Get elements
@@ -1331,7 +1331,7 @@ ve.model.list <- function(inputs=FALSE,outputs=FALSE,details=NULL,stage=characte
   }
 
   # Update specSummary
-  if ( is.null(self$specSummary) ) {
+  if ( reset || is.null(self$specSummary) ) {
     writeLog("Loading model specifications (may take some time)...",Level="warn")
     self$load(onlyExisting=FALSE) # Create new model states if they are not present in the file system
     for ( stage in self$modelStages ) {
