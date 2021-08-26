@@ -29,7 +29,7 @@ local( {
   if ( is.na(ve.runtime) ) {
     # Create a walkthrough directory within the current working directory
     message("Setting up walkthrough in ",getwd())
-    ve.runtime <- grep("runtime.*",list.dirs(),value=TRUE)[1]
+    ve.runtime <- grep("runtime.nohup make *",list.dirs(),value=TRUE)[1]
     if ( ! dir.exists(ve.runtime) ) {
       ve.runtime <- normalizePath(tempfile(pattern="runtime",tmpdir="."),winslash="/",mustWork=FALSE)
       dir.create(ve.runtime)
@@ -105,7 +105,7 @@ makeMiniModel <- function(baseModel,log="warn") {
   runModelFile <- file.path(bare.script,"run_model.R")
   runModel_vc <- c(
     '', # Don't ask why, but without this line the script gets written wrong...
-    'runModule("CreateHouseholds","VESimHouseholds",RunFor = "AllYears",RunYear = "2010")',
+    'runModule("CreateHouseholds","VESimHouseholds",RunFor = "AllYears",RunYear = "2010")'
   )
   cat(runModelFile,paste(runModel_vc,collapse="\n"),sep="\n")
   writeLines(runModel_vc,con=runModelFile)
@@ -128,8 +128,7 @@ makeMiniModel <- function(baseModel,log="warn") {
   inputs <- bare$list(inputs=TRUE,details=c("FILE"))
   required.files <- unique(file.path(base.inputs,c(inputs[,"FILE"],"model_parameters.json")))
   required.files <- required.files[which(file.exists(required.files))]
-  file.copy(from=from,to=bare.inputs) # or copy to bare.defs...
-  cat(bare.inputs,paste(dir(bare.inputs,full.names=TRUE),collapse="\n"),sep="\n")
+  file.copy(from=required.files,to=bare.inputs) # or copy to bare.defs...
 
   message("Re-open BARE model and review input files")
   bare$configure()
