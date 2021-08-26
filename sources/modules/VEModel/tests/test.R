@@ -395,11 +395,15 @@ test_model <- function(modelName="JRSPM", oldstyle=FALSE, reset=FALSE, log="info
   print(bare.inputs)
   print(dir(bare.inputs,full.names=TRUE))
 
-  testStep("Re-open the bare model and list its inputs again (should have fulle path)")
-  bare <- openModel("BARE",log=log)
+  testStep("Re-open the bare model")
+  bare$configure()
+
+  testStep("List the inputs again: this time showing directory")
   inputs <- bare$list(inputs=TRUE,details=c("FILE","INPUTDIR"))
-  required.files <- file.path(ifelse(is.na(inputs$INPUTDIR),"",inputs$INPUTDIR),inputs$FILE)
-  required.files <- data.frame(EXISTS=ifelse(is.na(inputs$INPUTDIR),FALSE,file.exists(required.files)),FILE=required.files)
+  print(inputs)
+  required.files <- file.path(inputs$INPUTDIR,inputs$FILE)
+  print(unique(required.files))
+  required.files <- data.frame(EXISTS=file.exists(required.files),FILE=required.files)
   cat("Required Files (all should EXIST):\n")
   print(unique(required.files))
 

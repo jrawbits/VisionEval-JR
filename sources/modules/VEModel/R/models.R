@@ -428,6 +428,7 @@ ve.model.configure <- function(modelPath=NULL) {
   self$modelStages <- self$initstages( modelStages )
 
   # Update the model status
+  self$specSummary <- NULL # regenerte when ve.model.list is next called
   self$updateStatus()
 
   return(self)
@@ -1925,6 +1926,9 @@ findStandardModel <- function( model, variant="" ) {
 #     # The following is for testing purposes...
 #     standardModels <- getOption("VEStandardModels",default=normalizePath("inst/models"))
 #   }
+  # Covid Joke
+  if ( toupper(variant)=="DELTA" ) return( "Cough, Cough!" )
+
   if ( missing(model) || is.null(model) || ! nzchar(model)) {
     available.models <- dir(standardModels)
     class(available.models) <- "VEAvailableModels"

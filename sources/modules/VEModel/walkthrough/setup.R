@@ -29,7 +29,7 @@ local( {
   if ( is.na(ve.runtime) ) {
     # Create a walkthrough directory within the current working directory
     message("Setting up walkthrough in ",getwd())
-    ve.runtime <- grep("walkthrough.*",list.dirs(),value=TRUE)[1]
+    ve.runtime <- grep("runtime.*",list.dirs(),value=TRUE)[1]
     if ( ! dir.exists(ve.runtime) ) {
       ve.runtime <- normalizePath(tempfile(pattern="runtime",tmpdir="."),winslash="/",mustWork=FALSE)
       dir.create(ve.runtime)
@@ -65,3 +65,79 @@ message("Making sure model '",model.path,"' has been run...")
 vr$run() # default "continue" will not re-run model if already "Run Complete"
 print(vr)
 
+logLevel <- function(log="warn") visioneval::initLog(Save=FALSE,Threshold=log)
+
+# Define a function to make a mini-model (adapted from tests/test.R)
+makeMiniModel <- function(baseModel,log="warn") {
+  logLevel(log)
+  bare.dir <- file.path(getwd(),"models","BARE")
+  message("Making mini model in ",bare.dir)
+  if ( dir.exists(bare.dir) ) {
+    cat("Blowing away existing bare model.\n")
+    unlink(bare.dir,recursive=TRUE)
+  }
+  bare.script <- file.path(bare.dir,visioneval::getRunParameter("ScriptsDir"))
+  bare.inputs <- file.path(bare.dir,visioneval::getRunParameter("InputDir"))
+  bare.defs   <- file.path(bare.dir,visioneval::getRunParameter("ParamDir"))
+  dir.create(bare.dir)
+  dir.create(bare.script)
+  dir.create(bare.inputs)
+  dir.create(bare.defs)
+  print( dir(bare.dir,full.names=TRUE) )
+
+  message("Create the model configuration")
+  runConfig_ls <-  list(
+      Model       = jsonlite::unbox("Mini Model Test"),
+      Scenario    = jsonlite::unbox("MiniModel"),
+      Description = jsonlite::unbox("Minimal model constructed programmatically"),
+      Region      = jsonlite::unbox("RVMPO"),
+      BaseYear    = jsonlite::unbox("2010"),
+      Years       = c("2010") #, "2038")
+    )
+  viewSetup(Param_ls=runConfig_ls)
+
+  message("Save the model configuration")
+  configFile <- file.path(bare.dir,"visioneval.cnf")
+  yaml::write_yaml(runConfig_ls,configFile)
+  cat(configFile,paste(readLines(configFile),collapse="\n"),sep="\n")
+
+  message("Make the ModelScript")
+  runModelFile <- file.path(bare.script,"run_model.R")
+  runModel_vc <- c(
+    '', # Don't ask why, but without this line the script gets written wrong...
+    'runModule("CreateHouseholds","VESimHouseholds",RunFor = "AllYears",RunYear = "2010")',
+  )
+  cat(runModelFile,paste(runModel_vc,collapse="\n"),sep="\n")
+  writeLines(runModel_vc,con=runModelFile)
+
+  message("Create model geography (copying from base VERSPM)")
+  base.defs <- baseModel$setting("ParamPath",shorten=FALSE)
+  from <- file.path(base.defs,c("units.csv","deflators.csv","geo.csv"))
+  file.copy(from=from,to=bare.defs)
+  print(bare.defs)
+  print(dir(bare.defs,full.names=TRUE))
+
+  message("Now open the bootstrapped mini model")
+  bare <- openModel(basename(bare.dir))
+  print(bare)
+
+  message("Copy over input files from baseModel (including model_parameters.json)")
+  # Note this strategy won't work if the baseModel has a complex InputPath
+  #   (files in stage folders or otherwise distributed)
+  base.inputs <- unique(baseModel$dir(inputs=TRUE,shorten=FALSE))
+  inputs <- bare$list(inputs=TRUE,details=c("FILE"))
+  required.files <- unique(file.path(base.inputs,c(inputs[,"FILE"],"model_parameters.json")))
+  required.files <- required.files[which(file.exists(required.files))]
+  file.copy(from=from,to=bare.inputs) # or copy to bare.defs...
+  cat(bare.inputs,paste(dir(bare.inputs,full.names=TRUE),collapse="\n"),sep="\n")
+
+  message("Re-open BARE model and review input files")
+  bare$configure()
+  inputs <- bare$list(inputs=TRUE,details=c("FILE","INPUTDIR"))
+  required.files <- file.path(ifelse(is.na(inputs$INPUTDIR),"",inputs$INPUTDIR),inputs$FILE)
+  required.files <- data.frame(EXISTS=ifelse(is.na(inputs$INPUTDIR),FALSE,file.exists(required.files)),FILE=required.files)
+  cat("Required Files (all should EXIST):\n")
+  print(unique(required.files))
+
+  return(bare)
+}

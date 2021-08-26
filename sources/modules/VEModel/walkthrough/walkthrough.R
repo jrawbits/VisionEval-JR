@@ -1,20 +1,18 @@
 # Run initial setup
 source("Setup.R")
+# Loads VEModel (creating a VisionEval runtime environment)
+# also defines "makeMiniModel" function, used below
 
 # install models
 # Show available models
 installModel()
 
 # Show avaialble variants for one of the models
-installModel("VERSPM",var="") # "var" is short vor "variant" - you can spell it out
+installModel("VERSPM",var="") # "var" is short for "variant" - you can spell it out
 
 # Install the base variant as "VERSPM" (with a confirm dialog)
 installModel("VERSPM") # default if running interactively is to ask for a "y" to confirm installation
 dir("models") # Note that installed name includes the variant: VERSPM-base
-
-# Install a different variant under another name (without interactive confirmation)
-# (we'll work with this one below to examine how to run scenarios)
-installModel("VERSPM",modelPath="VERSPM-staged",variant="pop",confirm=FALSE)
 
 # Can try VERPAT too
 installModel("VERPAT",modelPath="VERPAT",confirm=FALSE) # base variant, but with name we chose
@@ -24,7 +22,7 @@ dir("models")
 
 # opening models
 vrb <- openModel("VERSPM-base")
-print(vr)
+print(vrb)
 
 # inspecting model inputs
 inputs <- vrb$list(inputs=TRUE,details=c("FILE","INPUTDIR"))
@@ -33,28 +31,27 @@ input.dir <- unique(vrb$dir(inputs=TRUE,shorten=FALSE))
 required.files <- unique(file.path(input.dir,inputs[,"FILE"]))
 
 # inspecting model stages
-print(vr$modelStages)  # list of stage objects - only one in "base" model
+print(vrb$modelStages)  # list of stage objects - only one in "base" model
 
-vr <- openModel("VERSPM-run") # pre-created and run in setup.R
-print(vr$modelStages) # Three stages - we'll get back to stages
+vrs <- openModel("VERSPM-run") # pre-created and run in setup.R
+print(vrs$modelStages) # Three stages - we'll get back to stages
 
-# running models
-  # reset
-  # save
-  # continue
-vr$dir()              # List the contents of the model
-vr$dir(inputs=TRUE)   # List just the model input directories
-vr$dir(inputs=TRUE,all.files=TRUE) # List all the input files...
+# Use a mini-model to illustrate run operations
+mini <- makeMiniModel(vrb)
 
-vr$run("reset")    # throw away existing results and re-run
-vr$dir()           # notice presence of results directory
-vr$dir(results=T,all.files=TRUE)
+mini$dir()              # List the contents of the model
+mini$dir(inputs=TRUE)   # List just the model input directories
+mini$dir(inputs=TRUE,all.files=TRUE) # List all the input files...
 
-vr$run("save")     # move existing results into an archive and re-run
-vr$dir()
+mini$run("reset")    # throw away existing results and re-run
+mini$dir()           # notice presence of results directory
+mini$dir(results=T,all.files=TRUE)
 
-vr$run("continue") # re-run any stage that is not "Run Complete" - does nothing here
-vr$run()           # same as vr$run("continue")
+mini$run("save")     # move existing results into an archive and re-run
+mini$dir()
+
+mini$run("continue") # re-run any stage that is not "Run Complete" - does nothing here
+mini$run()           # same as vr$run("continue")
 
 # examine model parameters
 # default visioneval and VEModel parameters
@@ -71,22 +68,41 @@ viewSetup(vrs$modelStages[[2]],fromFile=TRUE)
 
 # Let's change the overall runtime configuration for the base VERSPM, altering the Seed parameter
 # NOTE: VERSPM-base does not define Seed - it will use the runtime or the VE default
-print(vr$setting("Seed"))
+viewSetup(mini$modelStages[[1]]) # Runtime settings for mini model
+print(mini$setting("Seed"))
+print(mini$setting("Seed",source=TRUE))
 
 viewSetup(fromFile=TRUE)
+
 updateSetup(inFile=TRUE,Seed=2.3) # if inFile==FALSE, just update working set of parameters in memory
 writeSetup(overwrite=TRUE)
-viewSetup(fromFile=TRUE)
+viewSetup(fromFile=TRUE) # changes not yet recorded
+
+getSetup(reload=TRUE)
+viewSetup(fromFile=TRUE) # changes reloaded from master file
 
 # To apply the new setting, we need to re-open the model
-vr$reopen()
-print(vr$setting("Seed"))
+mini$configure()
+print(mini$setting("Seed"))
+print(mini$setting("Seed",source=TRUE))
+
+# Now put the settings back:
+getwd() # should be walkthrough runtime
+dir() # should have a visioneval.cnf
+unlink("visioneval.cnf") # get rid of configuration
+getSetup(reload=TRUE) # reload runtime setup
 
 # Probably the Seed should be set in the model not the runtime, so do this:
-updateSetup(vr,inFile=TRUE,Seed=1.5)
-writeSetup(vr,overwrite=TRUE)
-viewSetup(vr$reopen())
-print(vr$setting("Seed"))
+updateSetup(mini,inFile=TRUE,Seed=1.5)
+writeSetup(mini,overwrite=TRUE)
+mini$configure()
+print(mini$setting("Seed")) # Show value of runtime setting
+print(mini$setting("Seed",source=TRUE)) # show where the setting came from
+viewSetup(mini$modelStages[[1]])
+
+# Run the model again, saving the values one more time
+mini$run("save")
+mini$dir(results=TRUE,archive=TRUE)
 
 # stages
   # inspecting stages (in memory)
