@@ -281,10 +281,7 @@ ve.model.configure <- function(modelPath=NULL, fromFile=TRUE) {
       if ( ! "LoadStage" %in% names(modelParam_ls) ) {
         loadStage <- names(baseModel$modelStages)[length(baseModel$modelStages)]
       } else loadStage <- modelParam_ls$LoadStage
-      runPath <- baseModel$modelStages[[loadStage]]$ModelState_ls$ModelStatePath
-      if ( is.null(runPath) || ! dir.exists(runPath) ) {
-        writeLog("LoadModel has not yet been run!",Level="error")
-      }
+      runPath <- baseModel$modelStages[[loadStage]]$RunPath
       modelParam_ls[["LoadDatastoreName"]] <- file.path (
         runPath,
         baseModel$setting("DatastoreName",stage=loadStage)

@@ -205,8 +205,8 @@ makeMiniModel <- function(baseModel,log="warn" ) {
   yaml::write_yaml(runConfig_ls,configFile)
 
   message("Reload model with LoadDatastore")
-  browser()
-  loadModel <- openModel(basename(loadModel$modelPath),log=log)
+  debug(loadModel$configure)
+  loadModel$configure()
 
   message("Copy additional inputs")
   base.inputs <- file.path(
@@ -214,6 +214,8 @@ makeMiniModel <- function(baseModel,log="warn" ) {
     baseModel$setting("InputDir")
   )
   cat("Base Inputs",base.inputs,"\n")
+  print(loadModel$setting("LoadDatastoreName"))
+  browser()
   inputs <- loadModel$list(inputs=TRUE,details=c("FILE"))
   required.files <- unique(file.path(base.inputs,inputs[,"FILE"]))
   required.files <- required.files[which(file.exists(required.files))]
@@ -237,4 +239,4 @@ makeMiniModel <- function(baseModel,log="warn" ) {
   print(dir(load.inputs))
 
   return(bare)
-
+}

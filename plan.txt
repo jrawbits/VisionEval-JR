@@ -1,22 +1,6 @@
 The path to completion:
 
-display settings:
-  Level:
-    ve.runtime
-    model
-    stage
-  Parameter Set:
-    defaults (independent of level)
-    constructed (RunParam_ls at that level)
-    file (loadedParam_ls at that level, if present)
-      Report parameters and full file path
-  Modify loadedParam_ls and write back (make a .cnf.bak file from any existing)
-  Modify the RunParam_ls in memory (to try something out)
-
-Testing:
-  Scenario/Stage input files changed (make sure correct file is read)
-    Model parse should figure out where the input file would come from
-    Listing out required/optional inputs from parsing run_model.R for the stage
+Complete the walkthrough (working on loadModel...)
 
 VEModel workflow:
 
