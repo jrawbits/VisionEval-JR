@@ -235,7 +235,7 @@ findModel <- function( modelDir, Param_ls=getSetup() ) {
 }
 
 # configure installs the model parameters (initializing or re-initializing)
-ve.model.configure <- function(modelPath=NULL) {
+ve.model.configure <- function(modelPath=NULL, fromFile=TRUE) {
 
   if ( missing(modelPath) || ! is.character(modelPath) ) {
     modelPath <- self$modelPath
@@ -245,7 +245,10 @@ ve.model.configure <- function(modelPath=NULL) {
 
   # Load any configuration available in modelPath (on top of ve.runtime base configuration)
   Param_ls <- getSetup() # runtime configuration
-  self$loadedParam_ls <- visioneval::loadConfiguration(ParamDir=modelPath)
+  if ( fromFile || is.null(self$loadedParam_ls) ) {
+    self$loadedParam_ls <- visioneval::loadConfiguration(ParamDir=modelPath)
+  } # if NOT fromFile, use existing loadedParam_ls to rebuild (may have in-memory changes)
+
   modelParam_ls <- visioneval::mergeParameters(Param_ls,self$loadedParam_ls) # override runtime parameters
   if ( "Model" %in% modelParam_ls ) {
     self$modelName <- modelParam_ls$Model
@@ -277,10 +280,10 @@ ve.model.configure <- function(modelPath=NULL) {
     if ( baseModel$valid() ) {
       if ( ! "LoadStage" %in% names(modelParam_ls) ) {
         loadStage <- names(baseModel$modelStages)[length(baseModel$modelStages)]
-      }
+      } else loadStage <- modelParam_ls$LoadStage
       runPath <- baseModel$modelStages[[loadStage]]$ModelState_ls$ModelStatePath
-      if ( ! dir.exists(runPath) ) {
-        writeLog("LoadModel has no RunPath!",Level="error")
+      if ( is.null(runPath) || ! dir.exists(runPath) ) {
+        writeLog("LoadModel has not yet been run!",Level="error")
       }
       modelParam_ls[["LoadDatastoreName"]] <- file.path (
         runPath,
@@ -368,59 +371,66 @@ ve.model.configure <- function(modelPath=NULL) {
   }
 
   # Locate model stages
-  writeLog("Locating model stages",Level="info")
-  if ( ! "ModelStages" %in% names(modelParam_ls) ) {
-    # In general, to avoid errors with random sub-directories becoming stages
-    #  it is best to explicitly set ModelStages in the model's main visioneval.cnf
-    stages <- list.dirs(modelPath,full.names=FALSE,recursive=FALSE)
-    structuralDirs <- c(
-      visioneval::getRunParameter("DatastoreName",Param_ls=modelParam_ls),
-      visioneval::getRunParameter("QueryDir",Param_ls=modelParam_ls),
-      visioneval::getRunParameter("ScriptsDir",Param_ls=modelParam_ls),
-      visioneval::getRunParameter("InputDir",Param_ls=modelParam_ls),
-      visioneval::getRunParameter("ParamDir",Param_ls=modelParam_ls),
-      visioneval::getRunParameter("ResultsDir",Param_ls=modelParam_ls)
-    )
-    stages <- stages[ ! stages %in% structuralDirs ]
-    stages <- stages[ grep(paste0("^",visioneval::getRunParameter("ArchiveResultsName",Param_ls=modelParam_ls)),stages,invert=TRUE) ]
-    stages <- c(".",stages) # Add model root directory
-    writeLog(paste0("Stage directories:\n",paste(stages,collapse=",")),Level="info")
-    modelStages <- lapply(stages,
-      function(stage) {
-        stageParam_ls <- list(
-          Dir=stage,                           # Relative to modelPath
-          Name=sub("^\\.$",basename(modelParam_ls$ModelDir),stage),  # Will only change root directory
-          Path=modelParam_ls$ModelDir          # Root for stage
-        )
-        VEModelStage$new(
-          stageParam_ls=stageParam_ls,
-          modelParam_ls=modelParam_ls          # Base parameters from model
-        )
-      }
-    )
-  } else {
-    modelStages <- lapply(modelParam_ls$ModelStages, # Use pre-defined structures
-      # At a minimum, must provide Dir or Config
-      function(stage) {
-        VEModelStage$new(
-          stageParam_ls=stage,
-          modelParam_ls=modelParam_ls        # Base parameters from model
-        )
-      }
-    )
-  }
-  # If no stages remain, model is invalid
-  if ( !is.list(modelStages) || length(modelStages)==0 ) {
-    writeLog("No model stages found!",Level="error")
-    self$RunParam_ls <- modelParam_ls
-    return(self)
-  }
 
-  # Call the modelStages by their Names
-  stageNames <- sapply(modelStages,function(s)s$Name)
-  if ( length(stageNames) > 0 ) {
-    writeLog("Model Stages:",Level="info")
-    for ( s in stageNames ) writeLog(s,Level="info")
+  if ( fromFile || is.null(self$modelStages) ) {
+    writeLog("Locating model stages",Level="info")
+    if ( ! "ModelStages" %in% names(modelParam_ls) ) {
+      # In general, to avoid errors with random sub-directories becoming stages
+      #  it is best to explicitly set ModelStages in the model's main visioneval.cnf
+      stages <- list.dirs(modelPath,full.names=FALSE,recursive=FALSE)
+      structuralDirs <- c(
+        visioneval::getRunParameter("DatastoreName",Param_ls=modelParam_ls),
+        visioneval::getRunParameter("QueryDir",Param_ls=modelParam_ls),
+        visioneval::getRunParameter("ScriptsDir",Param_ls=modelParam_ls),
+        visioneval::getRunParameter("InputDir",Param_ls=modelParam_ls),
+        visioneval::getRunParameter("ParamDir",Param_ls=modelParam_ls),
+        visioneval::getRunParameter("ResultsDir",Param_ls=modelParam_ls)
+      )
+      stages <- stages[ ! stages %in% structuralDirs ]
+      stages <- stages[ grep(paste0("^",visioneval::getRunParameter("ArchiveResultsName",Param_ls=modelParam_ls)),stages,invert=TRUE) ]
+      stages <- c(".",stages) # Add model root directory
+      writeLog(paste0("Stage directories:\n",paste(stages,collapse=",")),Level="info")
+      modelStages <- lapply(stages,
+        function(stage) {
+          stageParam_ls <- list(
+            Dir=stage,                           # Relative to modelPath
+            Name=sub("^\\.$",basename(modelParam_ls$ModelDir),stage),  # Will only change root directory
+            Path=modelParam_ls$ModelDir          # Root for stage
+          )
+          VEModelStage$new(
+            stageParam_ls=stageParam_ls,
+            modelParam_ls=modelParam_ls          # Base parameters from model
+          )
+        }
+      )
+    } else {
+      modelStages <- lapply(modelParam_ls$ModelStages, # Use pre-defined structures
+        # At a minimum, must provide Dir or Config
+        function(stage) {
+          VEModelStage$new(
+            stageParam_ls=stage,
+            modelParam_ls=modelParam_ls        # Base parameters from model
+          )
+        }
+      )
+    }
+    # If no stages remain, model is invalid
+    if ( !is.list(modelStages) || length(modelStages)==0 ) {
+      writeLog("No model stages found!",Level="error")
+      self$RunParam_ls <- modelParam_ls
+      return(self)
+    }
+
+    # Call the modelStages by their Names
+    stageNames <- sapply(modelStages,function(s)s$Name)
+    if ( length(stageNames) > 0 ) {
+      writeLog("Model Stages:",Level="info")
+      for ( s in stageNames ) writeLog(s,Level="info")
+    }
+  } else {
+    # all stage edits in memory should be made to stage$RunParam_ls, not stage$loadedParam_ls
+    # stages changes mediated through their files should be reloaded with fromFile=TRUE
+    modelStages <- self$modelStages
   }
 
   # Save the model RunParam_ls and link the stages
@@ -701,21 +711,26 @@ ve.model.dir <- function(
     if ( ResultsInRoot ) {
       rootFiles <- setdiff(rootFiles,resultFiles) # Drop Log and ModelState
     }
-    stageDirs <- file.path(rootPath,sapply(stages,function(s) s$Dir))
     rootFiles <- setdiff(rootFiles, inputPath)    # need to specify "inputs=TRUE" to get inputPaths...
     rootFiles <- setdiff(rootFiles, baseResults)  # If we want those, they'll arrive via resultFiles
-    rootFiles <- setdiff(rootFiles, stageDirs)    # Leave out Stage result sub-directories
     rootFiles <- setdiff(rootFiles, archiveDirs)
+
+    stageDirs <- file.path(rootPath,sapply(stages,function(s) s$Dir))
+    if ( length(stageDirs)>1 || normalizePath(stageDirs) != rootPath ) {
+      rootFiles <- setdiff(rootFiles, stageDirs)    # Leave out Stage sub-directories; TODO: is that correct?
+      # TODO: probably want to identify the stage directories and show their contents...
+    }
 
     if ( all.files ) {
       paramPaths <- self$setting("ParamPath",shorten=FALSE)
       for ( st in stages ) paramPaths <- c(paramPaths,self$setting("ParamPath",stage=st$Name,shorten=FALSE))
       paramPaths <- unique(paramPaths)
       rootFiles <- c( rootFiles, dir(paramPaths,full.names=TRUE) )
+      rootFiles <- c( rootFiles, self$setting("ModelScriptPath",shorten=FALSE) )
+      queryPath <- file.path(rootPath,self$setting("QueryDir")) # QueryDir is always "shortened"
+      rootFiles <- c( rootFiles, dir(queryPath,full.names=TRUE) )
     }
-    
-    # TODO: get parameter paths from stages, collapse to unique subset
-    # if all.files, list the contents of those directories
+    # TODO: give better results for model stages...
   } else rootFiles <- character(0)
 
   files <- sort(unique(c(
@@ -1580,7 +1595,7 @@ ve.model.run <- function(run="continue",stage=NULL,log="warn") {
     alreadyRun <- ( sapply( self$modelStages, function(s) s$RunStatus ) == codeStatus("Run Complete") )
     if ( all(alreadyRun) ) {
       self$status <- codeStatus("Run Complete")
-      writeLog("Model has been run.",Level="warn")
+      writeLog("Model Run Complete",Level="warn")
       return(invisible(self$printStatus()))
     } else {
       toRun <- which(!alreadyRun)[1] # start from first un-run stage
@@ -1713,18 +1728,20 @@ ve.model.setting <- function(setting=NULL,stage=NULL,defaults=TRUE,shorten=TRUE,
     src_df <- attr(searchParams_ls,"source")
     if ( is.character(setting) ) src_df <- src_df[ setting, ]
     if ( shorten) src_df$Source <- sub(paste0(self$modelPath,"/"),"",src_df$Source,fixed=TRUE)
-    sources <- src_df$Source
-    names(sources) <- src_df$Name
-    return(sources)
+    return(src_df[,"Source",drop=FALSE])
   } else {
     # Return values
     if ( ! is.character(setting) ) {
       return(names(searchParams_ls))
     } else {
-      if ( length(setting)<=1 ) {
+      if ( length(setting)==1 && nzchar(setting) ) {
         settings <- searchParams_ls[[setting]] # single setting
       } else {
-        settings <- searchParams_ls[setting]   # list of matching settings
+        if ( length(setting)>1 && all(nzchar(setting)) ) {
+          settings <- searchParams_ls[setting]   # list of matching settings
+        } else {
+          settings <- searchParams_ls # Warning: potentially huge!
+        }
       }
       if ( shorten) settings <- sub(paste0(self$modelPath,"/"),"",settings,fixed=TRUE)
       return(settings)

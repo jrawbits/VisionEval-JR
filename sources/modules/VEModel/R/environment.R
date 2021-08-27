@@ -172,7 +172,7 @@ loadRuntimeConfig <- function() {
 #'   file
 #' @return A list of defined run parameters (possibly empty, if no parameters are defined)
 #' @export
-getSetup <- function(paramNames=NULL,object=NULL,fromFile=FALSE,reload=FALSE) {
+getSetup <- function(object=NULL,paramNames=NULL,fromFile=FALSE,reload=FALSE) {
   if ( is.list(object) ) { # assume its a Param_ls list
     RunParam_ls <- object
   } else if ( is.null(object) ) {

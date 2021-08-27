@@ -2066,6 +2066,7 @@ copyDatastore <- function( ToDir, Flatten=TRUE, DatastoreType=NULL, envir=modelE
       }
     }
     success <- TRUE
+    setModelState(Save=TRUE,envir=writeDS) # Push out the corresponding model state
   }
   return(success)
 }

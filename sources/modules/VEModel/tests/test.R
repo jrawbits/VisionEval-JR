@@ -534,7 +534,7 @@ test_model <- function(modelName="JRSPM", oldstyle=FALSE, reset=FALSE, log="info
 test_load <- function(model=NULL, log="info" ) {
   # Tests the LoadModel functionality (pre-load Datastore and then
   #   execute additional steps from the copied data.all
-  testStep("Finding model template")
+  testStep("Finding BARE model template")
   if ( is.null(model) ) {
     model <- test_model("JRSPM",brief=TRUE,log=log) # skip the deeper tests
     model$run(log=log)                      # run it anyway (default="continue" does nothing)
@@ -577,6 +577,7 @@ test_load <- function(model=NULL, log="info" ) {
     BaseYear    = jsonlite::unbox(model$setting("BaseYear")),
     Years       = loadModel$setting("Years"),
     LoadModel   = jsonlite::unbox(model$modelPath) # could be any form accepted by openModel
+    # Can also set LoadStage...
   )
   configFile <- file.path(baseModelPath,"visioneval.cnf")
   yaml::write_yaml(runConfig_ls,configFile)
@@ -915,6 +916,7 @@ test_query <- function(log="info",reset=FALSE) {
 
   testStep("Clear test queries, if any...")
   qfiles <- jr$query()
+
   print(qfiles <- file.path(jr$modelPath,"queries",qfiles))
   unlink(qfiles)
   print(jr$query())
