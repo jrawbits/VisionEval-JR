@@ -186,6 +186,8 @@ test.dir <- file.path(getwd(),"Test-Results-Copy")
 if ( dir.exists(test.dir) ) unlink(test.dir,recursive=TRUE)
 dir.create(test.dir)
 results$copy(test.dir,Flatten=c(TRUE,TRUE)) # Force use of "Flatten" even if result is already flat
+tr <- openResults(test.dir)
+print(tr)
 
 # results$copy(test.dir,Flatten=FALSE) # exact copy of just this stage (not previous stages)
 # results$copy(test.dir,DatastoreType="H5") # convert result to H5 Datastore
