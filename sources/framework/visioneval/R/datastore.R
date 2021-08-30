@@ -383,6 +383,7 @@ listDatastoreRD <- function(DataListing_ls = NULL, ModelStateFile = NULL, envir=
 #' listDatastore function which adds a listing of the datastore contents to the
 #' model state file.
 #' @import stats utils
+#' @export
 initDatastoreRD <- function(AppendGroups = NULL, envir=modelEnvironment()) {
 
   G <- getModelState(envir)

@@ -879,7 +879,7 @@ ve.stage.init <- function(stageParam_ls=list(),modelParam_ls=list(),stageConfig_
   #   Path is the path to directory holding stage-specific InputDir/ParamDir
   #     default is ModelDir/Dir (or Dir itself if absolute path)
   #   Config is alternative path/name for "visioneval.cnf" for stage
-  #     default is Path/visioneval.cnf
+  #     default is Path/visioneval.cnf. Relative to Path
   # stageConfig_ls is merged as a Param_ls into Config (either explicit or implied)
   #   and can be used to do an "in-memory" configuration. Note that stageParam_ls
   #   is added to the LOADED configuration as if it came from the config file. The
@@ -1685,7 +1685,8 @@ ve.model.addstage <- function(stageParam_ls, ...) {
   }
 
   # Add additional configuration parameters
-  stageConfig_ls <- visioneval::addParameterSource(list(...),"addstage")
+  dotParam_ls <- list(...)
+  stageConfig_ls <- visioneval::addParameterSource(dotParam_ls,"addstage")
 
   # Merge the stage into the list of modelStages
   stage <- VEModelStage$new(
@@ -1831,7 +1832,7 @@ ve.model.query <- function(QueryName=NULL,FileName=NULL,load=TRUE) {
 #     cat("Query Directory:"); print(QueryPath)
 #     cat("Query Directory Exists:"); print(dir.exists(QueryPath))
 #     cat("Available Queries:\n")
-    queries <- dir(QueryPath,pattern="\\.VEqry$",ignore.case=TRUE)
+    queries <- dir(QueryPath,pattern="\\.(VEqry|R)$",ignore.case=TRUE)
     if ( length(queries)==0 ) queries <- "No queries defined"
     return(queries)
   }
