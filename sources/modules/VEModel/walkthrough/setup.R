@@ -7,7 +7,8 @@ checkVE <- function(lib.loc=NULL) {
 
 vePresent <- function() {
   if ( checkVE() ) return(TRUE)
-  for ( wd in c(getwd(),dirname(getwd())) ) {
+  for ( wd in c(getwd(),dirname(getwd()),dirname(dirname(getwd()))) ) {
+    message("Checking",wd)
     lib.loc <- file.path(wd,"ve-lib")
     if ( checkVE(lib.loc) ) {
       .libPaths( c( lib.loc, .libPaths() ) )
