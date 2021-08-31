@@ -60,7 +60,6 @@ loadModelSetup <- function(log="warn")
   )
   cat("Base Inputs",base.inputs,"\n")
   print(loadModel$setting("LoadDatastoreName"))
-  browser()
   inputs <- loadModel$list(inputs=TRUE,details=c("FILE"))
   required.files <- unique(file.path(base.inputs,inputs[,"FILE"]))
   required.files <- required.files[which(file.exists(required.files))]

@@ -2154,6 +2154,7 @@ installModel <- function(modelName=NULL, modelPath=NULL, variant="base", confirm
 # Here is the VEModel R6 class
 # One of these objects is returned by "openModel"
 
+#' @export
 VEModel <- R6::R6Class(
   "VEModel",
   public = list(
@@ -2203,6 +2204,7 @@ VEModel <- R6::R6Class(
 #                         VEModelStage Class Definition                        #
 ################################################################################
 
+#' @export
 VEModelStage <- R6::R6Class(
   "VEModelStage",
   public = list(

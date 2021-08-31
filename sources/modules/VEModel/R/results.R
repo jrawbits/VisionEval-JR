@@ -516,6 +516,7 @@ ve.results.print <- function(name="",details=FALSE) {
 # Here is the VEResults R6 class
 # One of these is constructed by VEModel$output()
 
+#' @export
 VEResults <- R6::R6Class(
   "VEResults",
   public = list(
@@ -776,6 +777,8 @@ as.integer.VESelection <- function(x,...) x$selection
 
 # The VESelection R6 class
 # This interoperates with VEResult to keep track of what to print
+
+#' @export
 VESelection <- R6::R6Class(
   "VESelection",
   public = list(

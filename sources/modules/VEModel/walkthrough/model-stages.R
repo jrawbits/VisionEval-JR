@@ -98,7 +98,7 @@ scenario.input <- grep(
 adj.input <- read.csv(scenario.input)
 adj.names <- grep("^Age",names(adj.input),value=TRUE)
 adj.input[adj.input$Year=="2038", adj.names] <- adj.input[adj.input$Year=="2038", adj.names] * 1.03
-Awrite.csv(adj.input,row.names=FALSE,file=file.path(stage3.input,basename(scenario.input)))
+write.csv(adj.input,row.names=FALSE,file=file.path(stage3.input,basename(scenario.input)))
 
 # Finally, run the new stage
 

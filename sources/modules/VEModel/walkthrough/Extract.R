@@ -1,4 +1,4 @@
-require(VEMODEL)
+require(VEModel)
 mwr <- openModel("VERSPM-run") # Run Install.R to install/run that model
 
 ##########################
