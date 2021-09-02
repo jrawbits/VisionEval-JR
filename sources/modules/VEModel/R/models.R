@@ -865,131 +865,148 @@ ve.model.clear <- function(force=FALSE,outputOnly=NULL,archives=FALSE,stage=NULL
 ################################################################################
 
 # Load the stage configuration
-ve.stage.init <- function(stageParam_ls=list(),modelParam_ls=list(),stageConfig_ls=list()) {
-  # modelParam_ls is the base list of parameters from the Model
-  # stageParam_ls has the following elements (it's not really a RunParam_ls,
-  #   just a regular named list with stage "metadata"):
+ve.stage.init <- function(Name=NULL,Model=NULL,stageParam_ls=list(),stageConfig_ls=list()) {
+  # TODO: pass the actual VEModel, not just its modelParam_ls (gives
+  #  access to modelStages and other built model structures)
+  #  Use that to find modelParam_ls <- model$RunParam_ls
+  # stageParam_ls has the following elements (which are explicitly provided or come from
+  #  a ModelStages specification in the model parameters):
   #
-  #   Dir is the subdirectory for the stage, holding InputDir/ParamDir
-  #     default of NULL becomes "."
-  #   ModelDir is where to seek Dir
-  #     default of NULL becomes modelParam_ls$ModelDir and if not provided, then "."
   #   Name is how we refer to the stage
   #     default is basename(Dir)
+  #   Dir is the subdirectory for the stage, holding InputDir/ParamDir
+  #     default of NULL becomes "."
   #   Path is the path to directory holding stage-specific InputDir/ParamDir
   #     default is ModelDir/Dir (or Dir itself if absolute path)
   #   Config is alternative path/name for "visioneval.cnf" for stage
   #     default is Path/visioneval.cnf. Relative to Path
-  # stageConfig_ls is merged as a Param_ls into Config (either explicit or implied)
-  #   and can be used to do an "in-memory" configuration. Note that stageParam_ls
-  #   is added to the LOADED configuration as if it came from the config file. The
-  #   FILE attribute of the loaded configuration will be updated if (and only if) it
-  #   does not already have a file attached to it
+  #   Reportable is an optional logical that says whether to include
+  #     the stage in query results or exports
+  # stageConfig_ls are runtime overrides for what is found in stageParam_ls$Config and
+  # modelParam_ls
   #
-  if ( "ModelDir" %in% names(modelParam_ls) ) {
-    ModelDir <- modelParam_ls$ModelDir
-  } else ModelDir <- "."
-  ModelDir <- normalizePath(ModelDir,winslash="/")
+  if ( ! is.character(Name) ) {
+    if ( "Name" %in% names(stageParam_ls) ) {
+      self$Name <- stageParam_ls$StageName
+    } else stop("No Name provided for model stage.")
+  } else self$Name <- Name
 
-  # Set up stage Path if available
-  if ( is.null(stageParam_ls$Path) ) {
-    if ( ! is.null(stageParam_ls$Dir) ) {
-      testPath <- normalizePath(file.path(ModelDir,stageParam_ls$Dir),winslash="/")
-      if ( file.exists(testPath) ) {
-        writeLog(paste0("Implicit Stage Path:",testPath),Level="info")
-        writeLog(paste0("Constructed from:",stageParam_ls$Dir),Level="info")
-        self$Path <- testPath
-      } # else self$Path stays NULL and we'll read from Config
-    }
-  } else {
-    self$Path <- normalizePath(stageParam_ls$Path,winslash="/")
-    writeLog(paste0("Explicit Stage Path:",self$Path),Level="info")
+  if ( is.null(Model) || ! "VEModel" %in% class(Model) ) {
+    stop("No Model provided for model stage ",Name)
+  } else self$Model <- Model
+
+  # Initialize model parameters
+  ModelName     <- Model$modelName
+  ModelDir      <- Model$modelPath # Should already be a normalized path
+  modelParam_ls <- Model$RunParam_ls
+
+  # Pull stageParam_ls from ModelStages in Model (could do that manually from outside)
+  if ( ( !is.list(stageParam_ls) || length(stageParam_ls)==0 ) && "ModelStages" %in% names(modelParam_ls) ) {
+    msp <- modelParam_ls$ModelStages[[self$Name]])
+    if ( ! is.null(msp) ) stageParam_ls <- msp
   }
-  # self$Path may still be NULL, in which case we need stageParam_ls$Config
-  #   or suitable values in stageConfig_ls.
+
+  # Warn if stage is not unique at level "info"
+  if ( Name %in% names(Model$modelStages) ) {
+    writeLog(paste0("Model name ",self$Name," is already defined in ",ModelName),Level="info")
+    # Not an error, as this object may replace the one already in the Model
+    # That error is trapped when this stage is pushed back into the model
+  }
+
+  # Parse the stageParam_ls (any of these may still be NULL)
+  self$Dir         <- stageParam_ls$Dir
+  self$Path        <- stageParam_ls$Path
+  self$Config      <- stageParam_ls$Config
+  self$Reportable  <- stageParam_ls$Reportable
+  selfStartFrom    <- stageParam_ls$StartFrom
+
+  # Merge any remaining items defined in stageParam_ls (ModelStages structure) into
+  #   stageConfig_ls (which overrides the modelParam_ls and stage Config file (if any))
+  if ( is.null(attr(stageConfig_ls,"source")) && length(stageConfig_ls) > 0 ) {
+    stageConfig_ls <- visioneval::addParameterSource(stageConfig_ls,"stageConfig_ls(...)")
+  }
+  if ( length(stageParam_ls) > 0 ) {
+    stageParam_ls <- visioneval::addParameterSource(
+      stageParam_ls[ ! names(stageParam_ls %in% c("Dir","Path","Config","Reportable","StartFrom")) ],
+      Source = paste0(ModelName,"$modelStages[[",self$Name,"]]")
+    )
+    stageConfig_ls <- visioneval::mergeParameters( stageConfig_ls, stageParam_ls )
+  }
+
+  # Set up self$Path (input location)
+  if ( ! is.null(self$Path) ) {
+    if ( isAbsolutePath(self$Path) ) {
+      if ( ! dir.exists(self$Path) ) {
+        writeLog(paste0("Stage input path does not exist: ",self$Path),Level="warn")
+        self$Path <- NULL
+      } else self$Path <- normalizePath(ModelDir,self$Path)
+      if ( self$Path == ModelDir ) self$Path <- NULL
+    }
+  }
+  if ( is.null(self$Path) ) { # attempt to construct
+    if ( is.character(self$Dir) ) {
+      self$Path <- normalizePath(file.path(ModelDir,self$Dir))
+    } else {
+      self$Path <- normalizePath(file.path(ModelDir,self$Name))
+    }
+    if ( ! dir.exists(self$Path) ) self$Path <- NULL
+  }
+  if ( ! is.null(self$Path) ) {
+    writeLog(paste("Initializing Stage",self$Name,"from",self$Path),Level="info")
+  }
+  # self$Path may still be NULL, in which case we need self$Config
+  #   or suitable values in stageConfig_ls to specify the required stage inputs
   
   # Set self$Dir (used for input and output)
-  self$Dir <- if ( is.null(stageParam_ls$Dir) ) "." else stageParam_ls$Dir
+  if ( is.null(self$Dir) ) {
+    self$Dir <- if ( is.character(self$Path) ) basename(self$Path) else self$Name
+  }
 
-  # Construct stage configuration
-  self$RunParam_ls <- list()
-  self$loadedParam_ls <- list()
-
-  # If self$Path is NULL, leave it that way until after the Config has been located
-  if ( ! is.null(stageParam_ls$Config)) {
-    # Look for Config file, if specified
-    # Generally it's a bad idea to use an absolute path, but we'll handle it
-    writeLog(paste("Locating configuration:",stageParam_ls$Config),Level="info")
-    if ( ! isAbsolutePath(stageParam_ls$Config) ) {
-      if ( ! is.null(self$Path) ) {
-        Config <- file.path(self$Path,stageParam_ls$Config)
+  ParamDir <- NULL
+  if ( is.character(self$Config) ) {
+    if ( ! isAbsolutePath(self$Config) ) {
+      if ( is.character(self$Path) ) {
+        self$Config <- file.path(self$Path,self$Config)
       } else {
-        Config <- file.path(ModelDir,stageParam_ls$Config)
+        self$Config <- file.path(ModelDir,self$Config)
       }
-      self$Config <- normalizePath(Config,winslash="/",mustWork=FALSE)
     }
-    if ( is.character(self$Config) && file.exists(self$Config) ) {
-      writeLog(paste("Loading Config:",self$Config),Level="info")
-      self$loadedParam_ls <- visioneval::loadConfiguration(ParamPath=self$Config)
-      self$RunParam_ls <- visioneval::mergeParameters(modelParam_ls,self$loadedParam_ls)
-      writeLog(paste("self$RunParam_ls contains:",paste(names(self$RunParam_ls),collapse=", ")),Level="info")
+    if ( dir.exists(self$Config) ) {
+      ParamDir <- self$Config
+      ParamFile <- NULL
+    } else if ( file.exists(self$Config) ) {
+      ParamDir <- dirname(self$Config)
+      ParamFile <- basename(self$Config)
     } else {
-      writeLog(paste("Warning: No Config for",self$Name),Level="info")
-      writeLog(paste("Looked for: ",self$Config),Level="info")
-      self$Config <- NULL
+      writeLog(paste0("Could not locate configuration file: ",self$Config),Level="warn")
+      ParamDir <- NULL
+      ParamFile <- NULL
     }
   }
-  if ( length(self$RunParam_ls) == 0 && ! is.null(self$Path) ) {
-    # if no explicit Config, and the Stage directory exists, load "visioneval.cnf" from stage directory
-    self$loadedParam_ls <- visioneval::loadConfiguration(ParamDir=self$Path)
-  }
-  if ( length(stageConfig_ls)>1 ) {
-    # Live updates to any Config file
-    # All of this is to support programmatic construction of a model stage
-    stageConfig_ls <- visioneval::addParameterSource(stageConfig_ls,"stageConfig_ls")
-    self$loadedParam_ls <- visioneval::mergeParameters(self$loadedParam_ls,stageConfig_ls)
-    if ( is.null(attr(self$loadedParam_ls,"FILE")) ) attr(self$loadedParam_ls,"FILE") <- "stageConfig_ls"
-  }
-  self$RunParam_ls <- visioneval::mergeParameters(modelParam_ls,self$loadedParam_ls)
-
-  if (length(self$RunParam_ls) == 0 ) { # Still no stage parameters 
-    writeLog("Stage has no explicit configuration.",Level="info")
-    self$RunParam_ls <- modelParam_ls
-  }
-  writeLog(paste("Stage RunParam_ls:",paste(names(self$RunParam_ls),collapse=",")),Level="info")
-
-  # Now set self$Path if it is still NULL: the Config should provide locations
-  # relative to ModelDir for the structural directories in that case (probably just
-  # the ModelScript)
-  if ( is.null(self$Path) ) self$Path <- ModelDir
-
-  # Set Stage Name if not supplied
-  self$Name <- if ( is.null(stageParam_ls$Name) ) {
-    if ( "Dir" %in% names(stageParam_ls) ) {
-      if ( stageParam_ls$Dir == "." ) {
-        basename(ModelDir)
-      } else {
-        basename(stageParam_ls$Dir)
-      }
-    }
+  # If ParamDir is defined (and perhaps ParamFile), laod the configuration file
+  if ( ! is.null(ParamDir) ) {
+    self$loadedParam_ls <- visioneval::loadConfiguration(ParamDir=ParamDir,ParamFile=ParamFile)
   } else {
-    stageParam_ls$Name
+    self$loadedParam_ls <- list()
   }
-  if ( is.null(self$Name) ) {
-    writeLog( paste(names(stageParam_ls),collapse=","),Level="info" )
-    stop( writeLog("Model stage has no Name!",Level="error") )
-  }
+  self$RunParam_ls <- visioneval::mergeParameters(modelParam_ls,self$loadedParam_ls) # config file overrides model
+  self$RunParam_ls <- visioneval::mergeParameters(self$RunParam_ls,stageConfig_ls)   # parameters in ModelStage or command line override
+  writeLog(paste("self$RunParam_ls contains:",paste(names(self$RunParam_ls),collapse=", ")),Level="info")
 
   # Stage Output
   self$RunPath <- file.path(
     ModelDir,
-    visioneval::getRunParameter("ResultsDir",Param_ls=self$RunParam_ls),
+    model$setting("ResultsDir"),
     self$Dir
   )
-  self$RunPath <- normalizePath(self$RunPath,winslash="/",mustWork=FALSE)
+  self$RunPath <- normalizePath(self$RunPath)
 
-  # Default InputPath
-  if ( ! "InputPath" %in% names(self$RunParam_ls) ) {
+  # Set stage InputPath (will be culled later if not useful)
+  if (
+    ! "InputPath" %in% names(self$RunParam_ls) &&
+    is.character(self$Path) &&
+    dir.exists(self$Path)
+  ) {
     self$RunParam_ls <- visioneval::addRunParameter(
       self$RunParam_ls,
       Source="VEModelStage$initialize",
@@ -998,24 +1015,25 @@ ve.stage.init <- function(stageParam_ls=list(),modelParam_ls=list(),stageConfig_
   }
 
   # Identify "startFrom" stage (VEModelStage$runnable will complete setup)
-  if ( "StartFrom" %in% names(self$RunParam_ls) ) {
+  # Can find StartFrom through ModelStages or from the stage configuration file/parameters
+  if (
+    ( !is.character(self$StartFrom) || length(self$StartFrom)==0 ) &&
+    "StartFrom" %in% names(self$RunParam_ls)
+  ) {
     self$StartFrom <- self$RunParam_ls$StartFrom
   } else self$StartFrom <- character(0)
 
-  # Override Reportable if present in stageParam_ls
-  # Default for the class is NULL: Gets set during model load based on whether
-  #   the stage is a base for another stage - if so then FALSE, otherwise TRUE
-  # The ModelStages setting for the model may override explicitly to FALSE or TRUE
-  if ( "Reportable" %in% names(stageParam_ls) ) {
-    self$Reportable <- stageParam_ls$Reportable
-  }
+  # Wait for "runnable" setup to unpack StartFrom and to build final InputPath and
+  # DatastorePath
 }
 
 # Prepare the stage to run in the model context
-# Can't do this because it depends on prior stages
-# Also load its ModelState if it has been run
+# Don't do this during init because it depends on prior runnable stages
+# Also load its ModelState if the stage has been run
 ve.stage.runnable <- function(priorStages) {
-  # short circuit if we did this already
+  # short circuit if we already verified the stage object
+  # Will use short circuit if new stage is being added programmatically to the model
+  # (VEModel$addstage)
   if ( ! is.null(private$complete) ) return(private$complete)
 
   # dig out the information from the StartFrom stage
@@ -2210,15 +2228,16 @@ VEModelStage <- R6::R6Class(
   public = list(
     # Public data
     Name = NULL,                 # Name of stage (used e.g. in another stage's StartFrom)
+    Model = NULL,                # VEModel to which this stage belongs
     # May not need to save some of the following (build into RunParam_ls)
     Dir = NULL,                  # basename of stage subdirectory (for inputs and results)
     Path = NULL,                 # Normalized path to folder holding InputDir and ParamDir
     Config = NULL,               # File relative to ModelDir (optional); 
+    Reportable = NULL,           # If TRUE, include in default result set for extract and queries
     StartFrom = "",              # Name of another model stage to extend
     RunParam_ls = list(),        # RunParameters to initialize the stage
     loadedParam_ls = NULL,       # Loaded parameters (if any) present in stage configuration file
     ModelState_ls = NULL,        # ModelState constructed from RunParam_ls
-    Reportable = NULL,           # If TRUE, include in default result set for extract and queries
     RunPath = NULL,              # Typically ModelDir/ResultsDir/StageDir
     RunStatus = 1, # "Unknown"   # Indicates whether results are available
     Results = NULL,              # A VEResults object (create on demand)

@@ -1,7 +1,7 @@
 Configuration for stages
 
 stageParam_ls (not strictly a configuration file):
-  StageName identifies the Stage (unique within containing Model)
+  DONE: StageName identifies the Stage (unique within containing Model)
   StageDir identifies the output location for the Stage
     RunPath is built as ResultsDir/StageDir
   StagePath is used for only for *inputs*
@@ -27,7 +27,7 @@ stageParam_ls (not strictly a configuration file):
         Else set to ModelDir/StageConfig
       If StageConfig is a directory:
         Set to StageConfig/visioneval.cnf
-      If StageConfig is not now an existing file, unset StateConfig
+      If StageConfig is not now an existing file, unset StageConfig
   If StageConfig is set
     Load it into stage$loadedParam_ls
   If StageConfig is not set
@@ -36,13 +36,7 @@ stageParam_ls (not strictly a configuration file):
     If not set in stageParam_ls:
       set to definition in stage$loadedParam_ls
     If set, must name an earlier Stage within the containing Model (error otherwise)
-  Merge additional configuration elements:
-    start with modelParam_ls (parameter to VEModelState$initialize)
-    overlay startFromParam_ls
-    overlay stage$loadedParam_ls (see above)
-    overlay modelParam_ls$ModelStages[[StageName]], if present
-    overlay stageParam_ls
-       "..." or "Param_ls" in addstage function
+  Merge configuration parameters
   Result is stageParameters_ls
 
 This to do when determining if stage is runnable (finalizes its RunParams_ls):
