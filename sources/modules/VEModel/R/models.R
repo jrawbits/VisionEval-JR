@@ -395,17 +395,22 @@ ve.model.configure <- function(modelPath=NULL, fromFile=TRUE) {
             Path=modelParam_ls$ModelDir          # Root for stage
           )
           VEModelStage$new(
+            Name = stageParam_ls$Name,
+            Model = self,
             stageParam_ls=stageParam_ls,
             modelParam_ls=modelParam_ls          # Base parameters from model
           )
         }
       )
     } else {
-      modelStages <- lapply(modelParam_ls$ModelStages, # Use pre-defined structures
+      modelStages <- lapply(names(modelParam_ls$ModelStages)), # Use pre-defined structures
         # At a minimum, must provide Dir or Config
         function(stage) {
+          obj <- modelParam_ls$ModelStages[[stage]] # Get the stageParam_ls structure
           VEModelStage$new(
-            stageParam_ls=stage,
+            Name=stage,
+            Model=self,
+            stageParam_ls=obj,
             modelParam_ls=modelParam_ls        # Base parameters from model
           )
         }
@@ -882,7 +887,7 @@ ve.stage.init <- function(Name=NULL,Model=NULL,stageParam_ls=list(),stageConfig_
   #     default is Path/visioneval.cnf. Relative to Path
   #   Reportable is an optional logical that says whether to include
   #     the stage in query results or exports
-  # stageConfig_ls are runtime overrides for what is found in stageParam_ls$Config and
+  # stageConfig_lsig_ls are runtime overrides for what is found in stageParam_ls$Config and
   # modelParam_ls
   #
   if ( ! is.character(Name) ) {
@@ -1708,12 +1713,12 @@ ve.model.addstage <- function(stageParam_ls, ...) {
 
   # Merge the stage into the list of modelStages
   stage <- VEModelStage$new(
-    stageParam_ls=stageParam_ls,
-    modelParam_ls=self$RunParam_ls,
+    Model = self,
+    stageParam_ls=stageParam_ls, # Stage Name will get elevated from here
     stageConfig_ls=stageConfig_ls
   )
   self$modelStages[[stageName]] <- stage
-  self$modelStages <- self$initstages(self$modelStages)
+  self$modelStages <- self$initstages(self$modelStages) # existing stages will be skipped
 
   # Report runnability error...
   if ( ! self$modelStages
