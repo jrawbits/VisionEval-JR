@@ -273,11 +273,14 @@ ve.model.configure <- function(modelPath=NULL, fromFile=TRUE) {
       resultsDir <- visioneval::getRunParameter("ResultsDir",Param_ls=modelParam_ls)
     )
   )
+  writeLog(paste("Model Results go in:",self$modelResults),Level="info")
 
   # Check for LoadModel and LoadStage in model parameters
   if ( "LoadModel" %in% names(modelParam_ls ) ) {
+    writeLog("Processing LoadModel directive",Level="info")
     baseModel <- VEModel$new( modelPath=modelParam_ls$LoadModel )
     if ( baseModel$valid() ) {
+      writeLog(paste("LoadModel =",baseModel$modelName),Level="info")
       if ( ! "LoadStage" %in% names(modelParam_ls) ) {
         loadStage <- names(baseModel$modelStages)[length(baseModel$modelStages)]
       } else loadStage <- modelParam_ls$LoadStage
@@ -288,7 +291,7 @@ ve.model.configure <- function(modelPath=NULL, fromFile=TRUE) {
       )
       modelParam_ls$LoadDatastore <- TRUE
     } else {
-      writeLog(paste("LoadModel is invalid:",modelParam_ls$LoadModel),Level="warn")
+      writeLog(paste("LoadModel present but invalid:",modelParam_ls$LoadModel),Level="warn")
       modelParam_ls$LoadDatastore <- FALSE
     }
   }
@@ -309,6 +312,7 @@ ve.model.configure <- function(modelPath=NULL, fromFile=TRUE) {
       InputPath=c( modelParam_ls$ModelDir, modelParam_ls$InputPath )
     )
   }
+  # Cull input paths (directory must exist and contain InputDir (default: "inputs")
   modelParam_ls <- visioneval::addRunParameter(
     Param_ls=modelParam_ls,
     Source="VEModel::findModel",
@@ -317,6 +321,10 @@ ve.model.configure <- function(modelPath=NULL, fromFile=TRUE) {
       InputDir=visioneval::getRunParameter("InputDir",Param_ls=modelParam_ls)
     )
   )
+  writeLog("Input Paths:",Level="info")
+  for ( p in modelParam_ls$InputPath ) {
+    writeLog(paste("Input Path:",p),Level="info")
+  }
 
   # Locate ParamPath for overall model
   # If it doesn't exist at the level of the model, could still set for individual stages
@@ -335,6 +343,8 @@ ve.model.configure <- function(modelPath=NULL, fromFile=TRUE) {
         Source="VEModel::findModel",
         ParamPath=ParamPath
       )
+    } else {
+      writeLog("No ParamPath set yet.",Level="info")
     }
   }
 
@@ -343,75 +353,90 @@ ve.model.configure <- function(modelPath=NULL, fromFile=TRUE) {
     ScriptName <- visioneval::getRunParameter("ModelScript",Param_ls=modelParam_ls)
     ScriptsDir <- visioneval::getRunParameter("ScriptsDir",Param_ls=modelParam_ls)
     ModelScriptPath <- visioneval::getRunParameter("ModelScriptPath",Default=character(0),Param_ls=modelParam_ls)
-    for ( sdir in c(
-      file.path(modelParam_ls$ModelDir,ScriptsDir),
-      file.path(modelParam_ls$ModelDir)
-    ) ) {
-      ScriptPath <- file.path(sdir,ScriptName)
-      if ( file.exists(ScriptPath) ) {
-        ModelScriptPath <- ScriptPath
-        break
+    if ( length(ModelScriptPath)>0 && ! nzchar(ModelScriptPath) ) {
+      # Not explicitly defined
+      writeLog("Searching for ModelScriptPath",Level="info")
+      for ( sdir in c(
+        file.path(modelParam_ls$ModelDir,ScriptsDir),
+        file.path(modelParam_ls$ModelDir)
+      ) ) {
+        ScriptPath <- file.path(sdir,ScriptName)
+        if ( file.exists(ScriptPath) ) {
+          ModelScriptPath <- ScriptPath
+          break
+        }
+      }
+      if ( length(ModelScriptPath)>0 ) {
+        writeLog(paste("Found ModelScriptPath:",ModelScriptPath),Level="info")
       }
     }
   }
-  if ( length(ModelScriptPath)>0 && nzchar(ModelScriptPath) && file.exists(ModelScriptPath) ) {
-    modelParam_ls <- visioneval::addRunParameter(
-      modelParam_ls,
-      Source="VEModel::findModel",
-      ModelScriptPath=ModelScriptPath,
-      ParsedScript=visioneval::parseModelScript(ModelScriptPath)
-    )
+  if ( !is.null(ModelScriptPath) && length(ModelScriptPath)>0 ) {
+    ModelScriptPath <- ModelScriptPath[1] # just use first found element
+    writeLog(paste("Parsing ModelScriptPath:",ModelScriptPath),Level="info")
+    if ( nzchar(ModelScriptPath) && file.exists(ModelScriptPath) ) {
+      modelParam_ls <- visioneval::addRunParameter(
+        modelParam_ls,
+        Source="VEModel::findModel",
+        ModelScriptPath=ModelScriptPath,
+        ParsedScript=visioneval::parseModelScript(ModelScriptPath)
+      )
+    }
   } else {
+    writeLog("No ModelScriptPath; Must set in stages",Level="info")
     modelParam_ls[["ModelScriptPath"]] <- NULL
     # Don't keep ModelScriptPath if there is no ModelScript there!
-    # Search for Base Model may have put in a placeholder
   }
+
+  # Save the model's RunParam_ls
+  self$RunParam_ls <- modelParam_ls
 
   # Locate model stages
 
   if ( fromFile || is.null(self$modelStages) ) {
     writeLog("Locating model stages",Level="info")
-    if ( ! "ModelStages" %in% names(modelParam_ls) ) {
+    if ( ! "ModelStages" %in% names(self$RunParam_ls) ) {
       # In general, to avoid errors with random sub-directories becoming stages
       #  it is best to explicitly set ModelStages in the model's main visioneval.cnf
+      writeLog("Implicit model stages from directories",Level="info")
       stages <- list.dirs(modelPath,full.names=FALSE,recursive=FALSE)
       structuralDirs <- c(
-        visioneval::getRunParameter("DatastoreName",Param_ls=modelParam_ls),
-        visioneval::getRunParameter("QueryDir",Param_ls=modelParam_ls),
-        visioneval::getRunParameter("ScriptsDir",Param_ls=modelParam_ls),
-        visioneval::getRunParameter("InputDir",Param_ls=modelParam_ls),
-        visioneval::getRunParameter("ParamDir",Param_ls=modelParam_ls),
-        visioneval::getRunParameter("ResultsDir",Param_ls=modelParam_ls)
+        self$setting("DatastoreName"),
+        self$setting("QueryDir"),
+        self$setting("ScriptsDir"),
+        self$setting("InputDir"),
+        self$setting("ParamDir"),
+        self$setting("ResultsDir")
       )
       stages <- stages[ ! stages %in% structuralDirs ]
-      stages <- stages[ grep(paste0("^",visioneval::getRunParameter("ArchiveResultsName",Param_ls=modelParam_ls)),stages,invert=TRUE) ]
+      stages <- stages[ grep(paste0("^",self$setting("ArchiveResultsName")),stages,invert=TRUE) ]
       stages <- c(".",stages) # Add model root directory
       writeLog(paste0("Stage directories:\n",paste(stages,collapse=",")),Level="info")
       modelStages <- lapply(stages,
         function(stage) {
           stageParam_ls <- list(
             Dir=stage,                           # Relative to modelPath
-            Name=sub("^\\.$",basename(modelParam_ls$ModelDir),stage),  # Will only change root directory
-            Path=modelParam_ls$ModelDir          # Root for stage
+            Name=sub("^\\.$",basename(self$modelPath),stage),  # Will only change root directory
+            Path=self$modelPath          # Root for stage
           )
           VEModelStage$new(
             Name = stageParam_ls$Name,
             Model = self,
-            stageParam_ls=stageParam_ls,
-            modelParam_ls=modelParam_ls          # Base parameters from model
+            stageParam_ls=stageParam_ls          # Base parameters from model
           )
         }
       )
     } else {
-      modelStages <- lapply(names(modelParam_ls$ModelStages)), # Use pre-defined structures
+      writeLog("Parsing ModelStages setting from model",Level="info")
+      modelStages <- lapply(names(self$RunParam_ls$ModelStages), # Use pre-defined structures
         # At a minimum, must provide Dir or Config
         function(stage) {
-          obj <- modelParam_ls$ModelStages[[stage]] # Get the stageParam_ls structure
+          obj <- self$RunParam_ls$ModelStages[[stage]] # Get the stageParam_ls structure
+          writeLog(paste("Model Stage:",stage),Level="info")
           VEModelStage$new(
             Name=stage,
             Model=self,
-            stageParam_ls=obj,
-            modelParam_ls=modelParam_ls        # Base parameters from model
+            stageParam_ls=obj
           )
         }
       )
@@ -419,28 +444,27 @@ ve.model.configure <- function(modelPath=NULL, fromFile=TRUE) {
     # If no stages remain, model is invalid
     if ( !is.list(modelStages) || length(modelStages)==0 ) {
       writeLog("No model stages found!",Level="error")
-      self$RunParam_ls <- modelParam_ls
       return(self)
-    }
-
-    # Call the modelStages by their Names
-    stageNames <- sapply(modelStages,function(s)s$Name)
-    if ( length(stageNames) > 0 ) {
-      writeLog("Model Stages:",Level="info")
-      for ( s in stageNames ) writeLog(s,Level="info")
     }
   } else {
     # all stage edits in memory should be made to stage$RunParam_ls, not stage$loadedParam_ls
     # stages changes mediated through their files should be reloaded with fromFile=TRUE
+    writeLog("Existing Model Stages",Level="info")
     modelStages <- self$modelStages
   }
 
+  # Call the modelStages by their Names
+  names(modelStages) <- stageNames <- sapply(modelStages,function(s)s$Name)
+  if ( length(stageNames) > 0 ) {
+    writeLog(paste("Model Stages:",stageNames,collapse=","),Level="info")
+  }
+
   # Save the model RunParam_ls and link the stages
-  self$RunParam_ls <- modelParam_ls
+  writeLog("Initializing Model Stages",Level="info")
   self$modelStages <- self$initstages( modelStages )
 
   # Update the model status
-  self$specSummary <- NULL # regenerte when ve.model.list is next called
+  self$specSummary <- NULL # regenerate when ve.model.list is next called
   self$updateStatus()
 
   return(self)
@@ -870,7 +894,7 @@ ve.model.clear <- function(force=FALSE,outputOnly=NULL,archives=FALSE,stage=NULL
 ################################################################################
 
 # Load the stage configuration
-ve.stage.init <- function(Name=NULL,Model=NULL,stageParam_ls=list(),stageConfig_ls=list()) {
+ve.stage.init <- function(Name=NULL,Model=NULL,modelParam_ls=NULL,stageParam_ls=list()) {
   # TODO: pass the actual VEModel, not just its modelParam_ls (gives
   #  access to modelStages and other built model structures)
   #  Use that to find modelParam_ls <- model$RunParam_ls
@@ -887,8 +911,6 @@ ve.stage.init <- function(Name=NULL,Model=NULL,stageParam_ls=list(),stageConfig_
   #     default is Path/visioneval.cnf. Relative to Path
   #   Reportable is an optional logical that says whether to include
   #     the stage in query results or exports
-  # stageConfig_lsig_ls are runtime overrides for what is found in stageParam_ls$Config and
-  # modelParam_ls
   #
   if ( ! is.character(Name) ) {
     if ( "Name" %in% names(stageParam_ls) ) {
@@ -897,17 +919,21 @@ ve.stage.init <- function(Name=NULL,Model=NULL,stageParam_ls=list(),stageConfig_
   } else self$Name <- Name
 
   if ( is.null(Model) || ! "VEModel" %in% class(Model) ) {
-    stop("No Model provided for model stage ",Name)
+    stop("No VEModel provided to own model stage ",Name)
   } else self$Model <- Model
 
   # Initialize model parameters
   ModelName     <- Model$modelName
   ModelDir      <- Model$modelPath # Should already be a normalized path
-  modelParam_ls <- Model$RunParam_ls
+  if ( is.null(modelParam_ls) ) {
+    modelParam_ls <- Model$RunParam_ls
+    if ( is.null(modelParam_ls) ) modelParam_ls <- list()
+  }
+  # modelParam_ls may not exist if we are building stages during model initialization...
 
   # Pull stageParam_ls from ModelStages in Model (could do that manually from outside)
   if ( ( !is.list(stageParam_ls) || length(stageParam_ls)==0 ) && "ModelStages" %in% names(modelParam_ls) ) {
-    msp <- modelParam_ls$ModelStages[[self$Name]])
+    msp <- modelParam_ls$ModelStages[[self$Name]]
     if ( ! is.null(msp) ) stageParam_ls <- msp
   }
 
@@ -927,15 +953,19 @@ ve.stage.init <- function(Name=NULL,Model=NULL,stageParam_ls=list(),stageConfig_
 
   # Merge any remaining items defined in stageParam_ls (ModelStages structure) into
   #   stageConfig_ls (which overrides the modelParam_ls and stage Config file (if any))
-  if ( is.null(attr(stageConfig_ls,"source")) && length(stageConfig_ls) > 0 ) {
-    stageConfig_ls <- visioneval::addParameterSource(stageConfig_ls,"stageConfig_ls(...)")
-  }
   if ( length(stageParam_ls) > 0 ) {
-    stageParam_ls <- visioneval::addParameterSource(
-      stageParam_ls[ ! names(stageParam_ls %in% c("Dir","Path","Config","Reportable","StartFrom")) ],
+    stageConfig_ls <- visioneval::addParameterSource(
+      stageParam_ls[ ! names(stageParam_ls) %in% c("Dir","Path","Config","Reportable","StartFrom") ],
       Source = paste0(ModelName,"$modelStages[[",self$Name,"]]")
     )
-    stageConfig_ls <- visioneval::mergeParameters( stageConfig_ls, stageParam_ls )
+  } else {
+    stageConfig_ls <- list()
+  }
+  if ( length(stageConfig_ls) > 0 ) {
+    writeLog(paste("Stage",self$Name,"stageConfig_ls contains:"),Level="info")
+    writeLog(paste(names(stageConfig_ls),collapse=", "),Level="info")
+  } else {
+    writeLog("stageConfig_ls has no additional parameters",Level="info")
   }
 
   # Set up self$Path (input location)
@@ -987,24 +1017,41 @@ ve.stage.init <- function(Name=NULL,Model=NULL,stageParam_ls=list(),stageConfig_
       ParamDir <- NULL
       ParamFile <- NULL
     }
+  } else if ( ! is.null(self$Path) ){
+    ParamDir <- self$Path
+    ParamFile <- NULL
+  } else {
+    writeLog("No ParamDir for stage",Level="info")
   }
   # If ParamDir is defined (and perhaps ParamFile), laod the configuration file
   if ( ! is.null(ParamDir) ) {
+    writeLog(paste("Loading configuration from",ParamDir),Level="info")
     self$loadedParam_ls <- visioneval::loadConfiguration(ParamDir=ParamDir,ParamFile=ParamFile)
   } else {
+    writeLog("No configuration file for stage",Level="info")
     self$loadedParam_ls <- list()
   }
-  self$RunParam_ls <- visioneval::mergeParameters(modelParam_ls,self$loadedParam_ls) # config file overrides model
-  self$RunParam_ls <- visioneval::mergeParameters(self$RunParam_ls,stageConfig_ls)   # parameters in ModelStage or command line override
-  writeLog(paste("self$RunParam_ls contains:",paste(names(self$RunParam_ls),collapse=", ")),Level="info")
+  if ( length(self$loadedParam_ls) > 0 ) {
+    writeLog(paste("Stage",self$Name,"loadedParam_ls contains:"),Level="info")
+    writeLog(paste(names(self$loadedParam_ls),collapse=", "),Level="info")
+    self$RunParam_ls <- visioneval::mergeParameters(modelParam_ls,self$loadedParam_ls) # config file overrides model
+  } else {
+    self$RunParam_ls <- modelParam_ls
+  }
+  if ( length(stageConfig_ls) > 0 ) { # already logged stageConfig_ls
+    self$RunParam_ls <- visioneval::mergeParameters(self$RunParam_ls,stageConfig_ls)   # parameters in ModelStage or command line override
+  }
+  writeLog(paste("Stage",self$Name,"RunParam_ls contains:"),Level="info")
+  writeLog(paste(names(self$RunParam_ls),collapse=", "),Level="info")
 
   # Stage Output
   self$RunPath <- file.path(
     ModelDir,
-    model$setting("ResultsDir"),
+    Model$setting("ResultsDir"),
     self$Dir
   )
   self$RunPath <- normalizePath(self$RunPath)
+  writeLog(paste("Stage RunPath:",self$RunPath),Level="info")
 
   # Set stage InputPath (will be culled later if not useful)
   if (
@@ -1012,6 +1059,7 @@ ve.stage.init <- function(Name=NULL,Model=NULL,stageParam_ls=list(),stageConfig_
     is.character(self$Path) &&
     dir.exists(self$Path)
   ) {
+    writeLog("Adding stage path to InputPath",Level="info")
     self$RunParam_ls <- visioneval::addRunParameter(
       self$RunParam_ls,
       Source="VEModelStage$initialize",
@@ -1026,6 +1074,7 @@ ve.stage.init <- function(Name=NULL,Model=NULL,stageParam_ls=list(),stageConfig_
     "StartFrom" %in% names(self$RunParam_ls)
   ) {
     self$StartFrom <- self$RunParam_ls$StartFrom
+    writeLog(paste("Starting From:",self$StartFrom),Level="info")
   } else self$StartFrom <- character(0)
 
   # Wait for "runnable" setup to unpack StartFrom and to build final InputPath and
@@ -1043,6 +1092,7 @@ ve.stage.runnable <- function(priorStages) {
 
   # dig out the information from the StartFrom stage
   if ( length(self$StartFrom) > 0 && nzchar(self$StartFrom) ) {
+    writeLog(paste("StartFrom:",self$StartFrom),Level="info")
     errMessage <- character(0)
     if ( ! self$StartFrom %in% names(priorStages) ) {
       writeLog(paste("priorStages: ",names(priorStages),collapse=", "),Level="info")
@@ -1078,7 +1128,6 @@ ve.stage.runnable <- function(priorStages) {
     InputPath <- self$RunParam_ls$InputPath   # May be NULL
     StartFromScriptPath <- NULL
   }
-  writeLog(paste0("InputPath for ",self$Name,": ",InputPath),Level="info")
 
   # Construct InputPath
   self$RunParam_ls <- visioneval::addRunParameter(
@@ -1089,6 +1138,7 @@ ve.stage.runnable <- function(priorStages) {
       InputDir=visioneval::getRunParameter("InputDir",Param_ls=self$RunParam_ls)
     )
   )
+  writeLog(paste0("InputPath for ",self$Name,": ",self$RunParam_ls$InputPath),Level="info")
 
   # Construct DatastorePath, prepending ModelDir/ResultsDir/StageDir as
   #   first element (writable)
@@ -1097,11 +1147,13 @@ ve.stage.runnable <- function(priorStages) {
     Source="VEModelStage$runnable",
     DatastorePath=c( self$RunPath, DatastorePath)
   )
+  writeLog(paste0("DatastorePath for ",self$Name,": ",self$RunParam_ls$DatastorePath),Level="info")
 
   # Underlay run_parameters.json from StagePath/ParamDir/ParamFile if it is out there
   # run_parameters.json is deprecated, and is expected only to provide "descriptive" parameters
   # e.g. Scenario or Description, possibly Years
   # New style model will set those in StageDir/visioneval.cnf
+  writeLog("Looking for run_parameters.json",Level="info")
   self$RunParam_ls <- visioneval::loadParamFile(Param_ls=self$RunParam_ls,ModelDir=self$Path)
 
   # Set up ModelScriptPath if current stage has different ModelScript from overall model
@@ -1132,6 +1184,7 @@ ve.stage.runnable <- function(priorStages) {
     # same script)
   }
   if ( length(stageModelScriptPath)>0 && nzchar(stageModelScriptPath) ) {
+    writeLog(paste("Parsing stage ModelScriptFile:",stageModelScriptPath),Level="info")
     self$RunParam_ls <- visioneval::addRunParameter(
       self$RunParam_ls,
       Source="VEModelStage$runnable",
@@ -1139,6 +1192,7 @@ ve.stage.runnable <- function(priorStages) {
       ParsedScript=visioneval::parseModelScript(stageModelScriptPath)
     )
   }
+  writeLog(paste("ModelScriptPath:",self$RunParam_ls$ModelScriptPath),Level="info")
 
   # Force DatastoreType to be explicit rather than default
   if ( ! "DatastoreType" %in% names(self$RunParam_ls) ) {
@@ -1148,6 +1202,7 @@ ve.stage.runnable <- function(priorStages) {
       DatastoreType=visioneval::getRunParameter("DatastoreType",Param_ls=self$RunParam_ls)
     )
   }
+  writeLog("DatastoreType:",self$RunParam_ls$DatastoreType)
 
   # Check if stage can run (enough parameters to run visioneval::loadModel and visioneval::prepareModelRun)
   missingParameters <- visioneval::verifyModelParameters(self$RunParam_ls)
@@ -1700,22 +1755,21 @@ ve.model.run <- function(run="continue",stage=NULL,log="warn") {
 #   list of parameters that are considered to be part of the StageConfig (e.g. InputPath for the
 #   stage) - anything that might go into a stage's visioneval.cnf. The combination of stageParam_ls
 #   and ... must add up to a runnable stage (errors identified in self$initstages)
-ve.model.addstage <- function(stageParam_ls, ...) {
-  stageName <- stageParam_ls$Name
-  # Check for a Name in stageParam_ls and abort if none or duplicated
-  if ( is.null(stageName) || stageName %in% names(self$modelStages) ) {
-    stop(writeLog("Name must be present in stageParam_ls and must be unique",Level="error"))
-  }
 
+# TODO: restructure with explicit stage Name (not from stageParam_ls)
+# Then just have stageParam_ls be the entire set of ... (and don't bother with
+# stageConfig_ls since the stage.init rolls anything left over from stageParam_ls
+# into stageConfig_ls.
+ve.model.addstage <- function(Name=NULL,...) {
   # Add additional configuration parameters
   dotParam_ls <- list(...)
-  stageConfig_ls <- visioneval::addParameterSource(dotParam_ls,"addstage")
+  stageParam_ls <- visioneval::addParameterSource(dotParam_ls,"addstage")
 
   # Merge the stage into the list of modelStages
   stage <- VEModelStage$new(
+    Name = Name,
     Model = self,
-    stageParam_ls=stageParam_ls, # Stage Name will get elevated from here
-    stageConfig_ls=stageConfig_ls
+    stageParam_ls=stageParam_ls
   )
   self$modelStages[[stageName]] <- stage
   self$modelStages <- self$initstages(self$modelStages) # existing stages will be skipped
