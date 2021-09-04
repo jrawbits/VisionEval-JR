@@ -1771,12 +1771,11 @@ ve.model.addstage <- function(Name=NULL,...) {
     Model = self,
     stageParam_ls=stageParam_ls
   )
-  self$modelStages[[stageName]] <- stage
+  self$modelStages[[stage$Name]] <- stage
   self$modelStages <- self$initstages(self$modelStages) # existing stages will be skipped
 
   # Report runnability error...
-  if ( ! self$modelStages
-    [[stageName]]$runnable() ) {
+  if ( ! self$modelStages[[stage$Name]]$runnable() ) {
     writeLog("The stage you tried to add cannot run and will be ignored!",Level="error")
   }
 
