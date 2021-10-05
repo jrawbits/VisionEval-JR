@@ -12,8 +12,8 @@ ve.scenario.load <- function(fromFile=TRUE) {
   if ( fromFile ) {
     # reload if requested
     self$scenarioConfig <- visioneval::loadConfiguration(
-      ParamDir=self$setting("ScenarioDir"),
-      ParamFile=self$setting("ScenarioConfig"),
+      ParamDir=self$baseModel$setting("ScenarioDir"),
+      ParamFile=self$baseModel$setting("ScenarioConfig"),
       mustWork=FALSE
     )
   }
@@ -29,7 +29,7 @@ ve.scenario.load <- function(fromFile=TRUE) {
           writeLog(paste("Scenario Stage:",stage),Level="info")
           VEModelStage$new(
             Name=stage,
-            Model=self,
+            Model=self$baseModel,
             stageParam_ls=obj
           )
         }

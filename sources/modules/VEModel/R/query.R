@@ -574,10 +574,11 @@ ve.query.run <- function(
     Results <- Results$results() # Convert model into a VEResults or list of VEResults
   }
   if ( "VEResultsList" %in% class(Results) ) {
-    if ( is.null(OutputRoot) ) OutputRoot <- Results[[1]]$resultsPath
+    if ( is.null(OutputRoot) ) OutputRoot <- Results$path
+    Results <- Results$results() # Downshift to plain list of VEResults
   } else if ( "VEResults" %in% class(Results) ) {
     if ( is.null(OutputRoot) ) OutputRoot <- Results$resultsPath
-    Results <- list(Results)
+    Results <- list(Results) # List of one VEResults object
   } else if ( is.character(Results) ) {
     # Assume it's a vector of model names, which must exist
     ExistingResults <- Results[Results %in% openModel()]
@@ -586,6 +587,8 @@ ve.query.run <- function(
         function(m) {
           model <- openModel(m)
           results <- model$results()
+          # Model results arrive "hidden" in VEResultsList if there is more than one.
+          if ( "VEResultsList" %in% class(results) ) results <- results$results()
           if ( ! all( sapply(results,function(r) r$valid()) ) ) results <- NA
           return(results)
         }
@@ -596,6 +599,8 @@ ve.query.run <- function(
       if ( length(Results)==0 ) {
         Results <- NULL
       } else {
+        # First model will receive the query results; set OutputRoot explicitly if
+        # something else is required.
         if ( is.null(OutputRoot) ) OutputRoot <- dirname(Results[[1]]$resultsPath)
       }
     } else {
@@ -605,17 +610,25 @@ ve.query.run <- function(
     modelResults <- list()
     for ( m in Results ) { # series of VEModels
       newResults <- m$results()
+      # Downshift to list of VEResults
+      if ( "VEResultsList" %in% class(results) ) newResults <- newResults$results()
       names(newResults) <- paste(m$modelName,names(newResults),sep=".")
       modelResults <- c( modelResults, newResults )
     }
     Results <- modelResults
+    # First model will receive the query results; set OutputRoot explicitly if
+    # something else is required.
     if ( is.null(OutputRoot) ) OutputRoot <- dirname(Results[[1]]$resultsPath)
   } else if ( is.list(Results) && is.character(Results[[1]]) ) {
     # convert list of paths to VEResults objects
     Results <- lapply(Results,function(resultpath) VEResults$new(resultpath))
+    if ( is.null(OutputRoot) ) OutputRoot <- dirname(Results[[1]]$resultsPath)
   }
-  if ( is.null(Results) ) { # May have been nullified...
+  if ( is.null(Results) || ! is.list(Results) || length(Results)==0 ) { # May have been nullified...
     stop( writeLog("Cannot interpret results provided to query",Level="error") )
+  }
+  if ( ! "VEResults" %in% class(Results[[1]]) ) {
+    stop( writeLog("Results list does not contain VEResults objects!",Level="error") )
   }
 
   if ( save ) {
@@ -640,7 +653,7 @@ ve.query.run <- function(
   }
   if ( Geography %in% c("Azone","Bzone","Marea") ) {
     if ( missing(GeoValue) || ! is.character(GeoValue) || length(GeoValue)>1 || ! nzchar(GeoValue) ) {
-      writeLog(paste0("Not supported: Breaking measures by ",Geography," including all values"),Level="error")
+      writeLog(paste0("Evaluating measures for ",Geography),Level="warn")
       # TODO: need to assemble proper combinations of By/GeoValues when unpacking results from
       # summarizeDatasets in makeMeasure: we end up with a 2-D matrix, not a vector or scalar, and
       # we need to transform that to a long form with suitable names for each element
@@ -649,7 +662,6 @@ ve.query.run <- function(
       # against original dim)
       # NOTE: the resulting array/matrix has dimension names reflecting the "By" element values;
       # Use those by default (but we can override the break descriptions)
-      return(character(0))
     } else {
       writeLogMessage(paste0("Evaluating measures for this ",Geography,": ",GeoValue))
     }
@@ -1148,6 +1160,7 @@ VEQuerySpec <- R6::R6Class(
 #
 makeMeasure <- function(measureSpec,thisYear,Geography,QPrep_ls,measureEnv) {
   if ( Geography["Type"] != "Region" ) {
+    # TODO: Let GeoValue be NA, which will return one measure per GeoValue
     GeoValue <- Geography["Value"]
     byRegion <- FALSE
   } else {
@@ -1200,31 +1213,44 @@ makeMeasure <- function(measureSpec,thisYear,Geography,QPrep_ls,measureEnv) {
         Group = thisYear,
         QueryPrep_ls = QPrep_ls
       )
-    if ( ! byRegion && ! usingBreaks ) {
-      # For now, GeoValue must be present and just a single value
-      # TODO: if measure is a vector, its elements will have names of the
-      # values that were applied (all value of Geography, but if By was breaks
-      # at a regional level, it will be the default break names)
-      measure <- measure[GeoValue]  # reduce to scalar value (one geographical unit)
-      names(measure) <- measureName
-    } else {
-      # TODO: base the following on the dimensions of measure and whether or not
-      # we have GeoValue. Rows are the first dimension, columns are the second dimension
-      # Using as.vector() to flatten the matrix will do (though it removes names)
-      # for each column; within column, for each row. Assign the names first,
-      # then name the elements - names do not have to be unique, so we can build
-      # one dimension at a time.
-      if ( ! byRegion ) { # need to reduce to vector for GeoValue
-        measure <- measure[,GeoValue]
+    if ( ! byRegion && ! usingBreaks ) { # By is a single geography
+      if ( nzchar(GeoValue) ) {  # As written, this supports GeoValue as a vector of GeoType names
+        measure <- measure[GeoValue]
       }
+      if ( length(measure) > 1 ) {
+        names(measure) <- paste(measureName,GeoType,names(measure),sep="_")
+      } else {
+        names(measure) <- measureName
+      }
+    } else {
+      if ( ! byRegion ) { # using breaks and small geography
+        if ( is.null(dim(measure)) || ! dim(measure)==2 ) {
+          stop( writeLog("Unsupported: By has more than 2 dimensions (Breaks, Geography)",Level="error") )
+        }
+        GeoNames <- dimnames(measure)[[2]]
+        if ( ! nzchar(GeoValue) ) {
+          GeoValue <- GeoNames
+        } else if ( ! all( GeoValue %in% GeoNames ) ) {
+          stop( writeLog(paste("Invalid GeoValue:",paste(GeoValue[ ! GeoValue %in% GeoNames ],collapse=", ")),Level="error") )
+        }
+        measure <- measure[,GeoValue,drop=FALSE] # don't drop if GeoValue is length 1
+      } else {
+        # TODO: If we are doing by region, measure should be a vector (no dimension)
+        # and we should just use the breakNames on that vector
+      }
+      # TODO: process the resulting array (which may just have one column for a single GeoValue)
+      # Visit each column in turn, get all its rows, append to resulting measure vector, and add
+      # break names (plus GeoType plus current GeoValue)
       if ( usingBreaks ) {
         if ( "BreakNames" %in% names(sumSpec) ) {
           breakNames <- sumSpec$BreakNames[[sumSpec$By[1]]]
         } else {
           breakNames <- as.character(sumSpec$Breaks[[sumSpec$By[1]]])
         }
+        breakNames <- c("min",breakNames)
         names(measure) <- paste(measureName,c("min",breakNames),sep=".")
       } else {
+        # TODO: If length > 1, then attach the GeoValue names
         if ( length(measure) != 1 ) {
           writeLogMessage("Processing measure: ",measureName)
           stop(writeLogMessage("Program error: expected scalar measure, got vector:",measure))
