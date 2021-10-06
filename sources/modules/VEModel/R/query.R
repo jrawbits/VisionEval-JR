@@ -1159,7 +1159,8 @@ VEQuerySpec <- R6::R6Class(
 # are placed into measureEnv (whence they will later be summarized)
 #
 makeMeasure <- function(measureSpec,thisYear,Geography,QPrep_ls,measureEnv) {
-  if ( Geography["Type"] != "Region" ) {
+  GeoType <- Geography["Type"] # Geography needs to be validated before calling makeMeasure
+  if ( GeoType != "Region" ) {
     # TODO: Let GeoValue be NA, which will return one measure per GeoValue
     GeoValue <- Geography["Value"]
     byRegion <- FALSE
@@ -1184,19 +1185,20 @@ makeMeasure <- function(measureSpec,thisYear,Geography,QPrep_ls,measureEnv) {
   }
 
   # Compute the measure based on the measureSpec
+  # For now, Function-type specifications can only produce a single value
+  # They should be computed from Region values or for a single GeoValue
   if ( "Function" %in% names(measureSpec) ) {
     measure <- try( eval(parse(text=measureSpec$Function), envir=measureEnv) )
     browser(expr=!is.numeric(measure))
     names(measure) <- measureName
   } else if ( "Summarize" %in% names(measureSpec) ) {
     sumSpec <- measureSpec$Summarize;
-    ## TODO: Push the following checks up to evaluate the query spec earlier
     if ( ! byRegion ) {
       if ( ! "By" %in% names(sumSpec) ||
-           ! Geography["Type"] %in% sumSpec$By ) {
+           ! GeoType %in% sumSpec$By ) {
         stop(
           writeLogMessage(
-            paste("Script wants Geography Type ",Geography["Type"]," in 'By' but got ",sumSpec$By,"",sep="'")
+            paste("Query wants Geography Type ",GeoType," in 'By' but got ",sumSpec$By,"",sep="'")
           )
         )
       }
@@ -1213,46 +1215,107 @@ makeMeasure <- function(measureSpec,thisYear,Geography,QPrep_ls,measureEnv) {
         Group = thisYear,
         QueryPrep_ls = QPrep_ls
       )
-    if ( ! byRegion && ! usingBreaks ) { # By is a single geography
-      if ( nzchar(GeoValue) ) {  # As written, this supports GeoValue as a vector of GeoType names
+    if ( ! byRegion && ! usingBreaks ) {
+      # Vector with measure values named for each value of GeoType
+      GeoNames <- names(measure)
+      if ( ! nzchar(GeoValue) ) {
+        # GeoValue is not set: return all values of GeoType
+        GeoValue <- GeoNames
+      } else if ( ! all( GeoValue %in% GeoNames ) ) {
+        # GeoValue includes names that are not in the measure (part of GeoType)
+        stop(
+          writeLog(
+            Level="error",
+            paste(
+              "Invalid GeoValue:",
+              paste(GeoValue[ ! GeoValue %in% GeoNames ],collapse=", ")
+            )
+          )
+        )
+      } else {
+        # GeoValue is a subset of GeoNames
         measure <- measure[GeoValue]
       }
-      if ( length(measure) > 1 ) {
-        names(measure) <- paste(measureName,GeoType,names(measure),sep="_")
-      } else {
-        names(measure) <- measureName
-      }
+      # Append the selected GeoValue (possibly all) to the measure name
+      names(measure) <- paste(measureName,GeoValue,sep="_")
     } else {
-      if ( ! byRegion ) { # using breaks and small geography
-        if ( is.null(dim(measure)) || ! dim(measure)==2 ) {
-          stop( writeLog("Unsupported: By has more than 2 dimensions (Breaks, Geography)",Level="error") )
-        }
-        GeoNames <- dimnames(measure)[[2]]
-        if ( ! nzchar(GeoValue) ) {
-          GeoValue <- GeoNames
-        } else if ( ! all( GeoValue %in% GeoNames ) ) {
-          stop( writeLog(paste("Invalid GeoValue:",paste(GeoValue[ ! GeoValue %in% GeoNames ],collapse=", ")),Level="error") )
-        }
-        measure <- measure[,GeoValue,drop=FALSE] # don't drop if GeoValue is length 1
-      } else {
-        # TODO: If we are doing by region, measure should be a vector (no dimension)
-        # and we should just use the breakNames on that vector
-      }
-      # TODO: process the resulting array (which may just have one column for a single GeoValue)
-      # Visit each column in turn, get all its rows, append to resulting measure vector, and add
-      # break names (plus GeoType plus current GeoValue)
+      # We're either doing the region or using breaks or both
       if ( usingBreaks ) {
+        # Set up break name vector ("MeasureName.BreakName")
         if ( "BreakNames" %in% names(sumSpec) ) {
           breakNames <- sumSpec$BreakNames[[sumSpec$By[1]]]
         } else {
           breakNames <- as.character(sumSpec$Breaks[[sumSpec$By[1]]])
         }
         breakNames <- c("min",breakNames)
-        names(measure) <- paste(measureName,c("min",breakNames),sep=".")
+        breakNames <- paste(measureName,breakNames,sep=".")
+
+        # Apply breakNames to requested results
+        if ( ! byRegion ) {
+          # using breaks and small geography (2-dimensional result array)
+          if ( is.null(dim(measure)) || ! dim(measure)==2 ) {
+            stop(
+              writeLog(
+                Level="error",
+                paste(
+                  "Unsupported: Measure does not have 2 dimensions (Breaks, Geography):"
+                  ifelse(is.null(dim(measure)),"1-D Vector",paste("dim",dim(measure)))
+                )
+              )
+            )
+          }
+          GeoNames <- dimnames(measure)[[2]]
+          if ( ! nzchar(GeoValue) ) {
+            GeoValue <- GeoNames
+          } else if ( ! all( GeoValue %in% GeoNames ) ) {
+            stop(
+              writeLog(
+                Level="error",
+                paste(
+                  "Invalid GeoValue:",
+                  paste(GeoValue[ ! GeoValue %in% GeoNames ],collapse=", ")
+                )
+              )
+            )
+          }
+          measure <- measure[,GeoValue]
+          measure <- as.vector(measure) # Need to drop to vector if length(GeoValue)>1
+          # Measure is then a set of Break values repeated length(GeoValue) times
+          buildNames <- character(0)
+          for ( nm in GeoValue ) {
+            buildNames <- c(buildNames,paste(breakNames,nm,sep="_"))
+          }
+          if ( length(buildNames) != length(measure) ) {
+            stop(
+              writeLog(
+                Level="error",
+                paste(
+                  "2-Dimensional names not same length as measure:",
+                  length(buildNames),"(expecting",length(measure),")"
+                )
+              )
+            )
+          }
+          names(measure) <- buildNames
+        } else {
+          # Using breaks on Region measure - measure should be a vector of break values
+          if ( length(measure) != length(breakNames) ) {
+            stop(
+              writeLog(
+                Level="error",
+                paste(
+                  "Break names have incorrect length:",
+                  length(breakNames),"(expecting",length(measure),")"
+                )
+              )
+            )
+          }
+          names(measure) <- breakNames
+        }
       } else {
-        # TODO: If length > 1, then attach the GeoValue names
+        # Region measure, not using breaks (single value)
         if ( length(measure) != 1 ) {
-          writeLogMessage("Processing measure: ",measureName)
+          writeLogMessage("Processing measure for Region: ",measureName)
           stop(writeLogMessage("Program error: expected scalar measure, got vector:",measure))
         }
         names(measure) <- measureName
@@ -1366,16 +1429,18 @@ doQuery <- function (
 
       # Iterate over the measures, computing each one
       for ( measureSpec in Specifications ) {
-        cat( paste("Processing",measureSpec$Name,"...") )
+        writeLog(paste("Processing",measureSpec$Name,"..."),Level="warn")
         measure <- makeMeasure(measureSpec,thisYear,Geography,QPrep_ls,result.env)
         if ( length(measure)>1 ) {
           subm <- character(0)
           for ( m in measure ) {
             subm <- c(subm,m)
           }
-          cat(subm,collapse="||")
+          subm <- paste(subm,collapse="||")
+        } else {
+          subm <- names(measure)
         }
-        cat("..Processed\n")
+        writeLog(paste0("Processed: ",subm),Level="warn")
       }
 
       # Add this Year's measures to the output data.frame

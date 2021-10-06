@@ -449,15 +449,25 @@ ve.model.configure <- function(modelPath=NULL, fromFile=TRUE) {
         }
       )
     }
-    # If no stages remain, model is invalid
-    if ( !is.list(modelStages) || length(modelStages)==0 ) {
-      writeLog("No model stages found!",Level="error")
-      return(self)
-    }
-
+      
     # Load scenarios and add scenario stages to modelStages (if scenarios are configured)
     scenarios <- self$scenarios()
-    modelStages <- c( modelStages, scenarios$stages() ) # scenario stages may be an empty list
+    scenarioStages <- scenarios$stages() ) # scenario stages may be an empty list
+
+    # It is possible for a model to ONLY have scenarios (if they are "manually" created)
+    # Each "scenario" in that case must be a complete model run
+    # Usually in such cases, it is better just to make them Reportable modelStages
+    if ( ! is.list(modelStages) ) {
+      if ( length(scenarioStages) > 0 ) {
+        modelStages <- scenarioStages
+      } else {
+        # If no stages remain, model is invalid
+        writeLog("No model stages found!",Level="error")
+        return(self)
+      }
+    } else {
+      modelStages <- c( modelStages, scenarioStages )
+    }
 
   } else {
     # all stage edits in memory should be made to stage$RunParam_ls, not stage$loadedParam_ls
