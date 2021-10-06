@@ -2,6 +2,25 @@
 #' @include environment.R
 #' @include results.R
 #' @import visioneval
+NULL
+
+# Documentation for VEQuery
+#' VEQuery class for managing scenarios within a model
+#'
+#' Documentation yet to come for various functions (plus some
+#' implementation).
+#'
+#' @name VEQuery
+NULL
+
+# Documentation for VEQuerySpec
+#' VEQuerySpec class for managing scenarios within a model
+#'
+#' Documentation yet to come for various functions (plus some
+#' implementation).
+#'
+#' @name VEQuerySpec
+NULL
 
 self=private=NULL
 
@@ -611,7 +630,7 @@ ve.query.run <- function(
     for ( m in Results ) { # series of VEModels
       newResults <- m$results()
       # Downshift to list of VEResults
-      if ( "VEResultsList" %in% class(results) ) newResults <- newResults$results()
+      if ( "VEResultsList" %in% class(newResults) ) newResults <- newResults$results()
       names(newResults) <- paste(m$modelName,names(newResults),sep=".")
       modelResults <- c( modelResults, newResults )
     }
@@ -1188,9 +1207,16 @@ makeMeasure <- function(measureSpec,thisYear,Geography,QPrep_ls,measureEnv) {
   # For now, Function-type specifications can only produce a single value
   # They should be computed from Region values or for a single GeoValue
   if ( "Function" %in% names(measureSpec) ) {
-    measure <- try( eval(parse(text=measureSpec$Function), envir=measureEnv) )
-    browser(expr=!is.numeric(measure))
-    names(measure) <- measureName
+    # TODO: Function specs only work if the measure name is "bare".
+    # Need to figure out how to elaborate to multiple GeoValues...
+    if ( ! byRegion || length(GeoValue)>1 ) {
+      writeLog("Not supported: multiple geographic area values",Level="error")
+      return(character(0))
+    } else {
+      measure <- try( eval(parse(text=measureSpec$Function), envir=measureEnv) )
+      browser(expr=!is.numeric(measure))
+      names(measure) <- measureName
+    }
   } else if ( "Summarize" %in% names(measureSpec) ) {
     sumSpec <- measureSpec$Summarize;
     if ( ! byRegion ) {
@@ -1218,7 +1244,7 @@ makeMeasure <- function(measureSpec,thisYear,Geography,QPrep_ls,measureEnv) {
     if ( ! byRegion && ! usingBreaks ) {
       # Vector with measure values named for each value of GeoType
       GeoNames <- names(measure)
-      if ( ! nzchar(GeoValue) ) {
+      if ( is.na(GeoValue) || ! nzchar(GeoValue) ) {
         # GeoValue is not set: return all values of GeoType
         GeoValue <- GeoNames
       } else if ( ! all( GeoValue %in% GeoNames ) ) {
@@ -1258,7 +1284,7 @@ makeMeasure <- function(measureSpec,thisYear,Geography,QPrep_ls,measureEnv) {
               writeLog(
                 Level="error",
                 paste(
-                  "Unsupported: Measure does not have 2 dimensions (Breaks, Geography):"
+                  "Unsupported: Measure does not have 2 dimensions (Breaks, Geography):",
                   ifelse(is.null(dim(measure)),"1-D Vector",paste("dim",dim(measure)))
                 )
               )
@@ -1431,16 +1457,20 @@ doQuery <- function (
       for ( measureSpec in Specifications ) {
         writeLog(paste("Processing",measureSpec$Name,"..."),Level="warn")
         measure <- makeMeasure(measureSpec,thisYear,Geography,QPrep_ls,result.env)
-        if ( length(measure)>1 ) {
-          subm <- character(0)
-          for ( m in measure ) {
-            subm <- c(subm,m)
-          }
-          subm <- paste(subm,collapse="||")
+        if ( length(measure) == 0 ) {
+          writeLog(paste0("Not processed: ",measureSpec$Name),Level="warn")
         } else {
-          subm <- names(measure)
+          if ( length(measure)>1 ) {
+            subm <- character(0)
+            for ( m in measure ) {
+              subm <- c(subm,m)
+            }
+            subm <- paste(subm,collapse="||")
+          } else {
+            subm <- paste(names(measure),collapse="||")
+          }
+          writeLog(paste0("Processed: ",subm),Level="warn")
         }
-        writeLog(paste0("Processed: ",subm),Level="warn")
       }
 
       # Add this Year's measures to the output data.frame

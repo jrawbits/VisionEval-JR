@@ -134,6 +134,15 @@ NULL
 #' @name VEModel
 NULL
 
+# Documentation for VEModelStage
+#' VEModelStage class for managing scenarios within a model
+#'
+#' Documentation yet to come for various functions (plus some
+#' implementation).
+#'
+#' @name VEModelStage
+NULL
+
 self=private=NULL # To avoid R6 class "undefined global" errors
 
 ## Helper
@@ -452,7 +461,7 @@ ve.model.configure <- function(modelPath=NULL, fromFile=TRUE) {
       
     # Load scenarios and add scenario stages to modelStages (if scenarios are configured)
     scenarios <- self$scenarios()
-    scenarioStages <- scenarios$stages() ) # scenario stages may be an empty list
+    scenarioStages <- scenarios$stages() # scenario stages may be an empty list
 
     # It is possible for a model to ONLY have scenarios (if they are "manually" created)
     # Each "scenario" in that case must be a complete model run

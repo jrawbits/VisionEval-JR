@@ -1,5 +1,17 @@
 # scenarios.R
-#' @include environment.R models.R
+#' @include environment.R
+#' @include models.R
+NULL
+
+# Documentation for VEModelScenarios
+#' VEModelScenarios class for managing scenarios within a model
+#'
+#' Documentation yet to come for various functions (plus some
+#' implementation).
+#'
+#' @name VEModelScenarios
+NULL
+
 self=private=NULL
 
 ve.scenario.init <- function( baseModel=NULL ) {
