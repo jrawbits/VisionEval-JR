@@ -69,7 +69,7 @@ ve.scenario.categories <- function() {
 }
 
 ve.scenario.list <- function() {
-  # TODO
+  # TODO: list scenarios
 }
 
 ve.scenario.build <- function() {

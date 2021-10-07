@@ -467,14 +467,14 @@ ve.model.configure <- function(modelPath=NULL, fromFile=TRUE) {
     # Each "scenario" in that case must be a complete model run
     # Usually in such cases, it is better just to make them Reportable modelStages
     if ( ! is.list(modelStages) ) {
-      if ( length(scenarioStages) > 0 ) {
+      if ( is.list(scenarioStages) && length(scenarioStages) > 0 ) {
         modelStages <- scenarioStages
       } else {
         # If no stages remain, model is invalid
         writeLog("No model stages found!",Level="error")
         return(self)
       }
-    } else {
+    } else if ( is.list(scenarioStages) ) {
       modelStages <- c( modelStages, scenarioStages )
     }
 
