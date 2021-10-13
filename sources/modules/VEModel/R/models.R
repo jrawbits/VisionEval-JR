@@ -1341,6 +1341,11 @@ ve.stage.run <- function(log="warn") {
   self$ModelState_ls <- NULL
   self$Results       <- NULL
 
+  # TODO: borrow VEScenario::RunScenarios mechanism for setting up and
+  # asynchronously running the scenarios and tracking where they are.
+  # TODO: Principal thing to change is to use the model stage elements
+  # rather than sourcing run_model.R to run the stage.
+
   # Construct and change to working directory
   if ( ! dir.exists(self$RunPath) ) dir.create(self$RunPath)
   owd <- setwd(self$RunPath)
