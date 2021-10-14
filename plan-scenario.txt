@@ -64,7 +64,7 @@ Create a VEScenarioCategory class?
       RemoveFiles: list of files to remove from Category
   Copying files to the Levels is done in VEModelScenarios$build
 
-The model's "$scenarios" function returns a VEModelScenarios object
+[DONE] The model's "$scenarios" function returns a VEModelScenarios object
   Pointer to the BaseModel
   StartFrom stage
   ScenarioDir (relative to model$modelPath, snapshot of BaseModel$setting("ScenarioDir"))
@@ -72,8 +72,9 @@ The model's "$scenarios" function returns a VEModelScenarios object
   ScenarioConfig (snapshot of BaseModel$setting("ScenarioConfig") name)
     NULL if ScenarioConfig does not exist
   Option to create ScenarioDir and blank ScenarioConfig (create=TRUE)
+  Option to force reload (fromFile) or skip file reload
 Printing the scenarios object will say if scenarios are defined.
-  VEModelScenarios$initialize(BaseModel,create=FALSE,startFrom=NULL)
+  [DONE] VEModelScenarios$initialize(BaseModel,create=FALSE,startFrom=NULL)
     BaseModel is required (search for ScenarioDir)
     Populate the scenario structure
       BaseModel, StartFrom, ScenarioDir, ScenarioConfig (nail it down at the moment of creation)
@@ -81,13 +82,8 @@ Printing the scenarios object will say if scenarios are defined.
       Pull startFrom from BaseModel if create==TRUE and not provided (last Reportable stage)
     If create==FALSE, just consider what is (not) there
     Does $load if ScenarioDir exists or got created (ScenarioConfig may or may not exist)
-  VEModelScenarios$print()
-    Indicate type of scenarios (manual, category-based)
-    Indicate how many scenarios are defined
-    If manual, list the scenarios
-    If category-based report Category/Level/File, plus the number of generated scenarios
-  VEModelScenarios$load(StartFrom=NULL,build=TRUE,save=TRUE)
-    Option to (re)set "StartFrom" if provided
+  [DONE] VEModelScenarios$load(StartFrom=NULL,build=TRUE,scenarioPath=NULL)
+    Option to (re)set "StartFrom" if provided (forces build to TRUE)
     Will load "scenarios.cnf" if it exists in ScenarioDir and extract "Scenarios" key
     If "Scenarios" key does not exist, create it and resave scenarios.cnf
       Contains ScenarioDir, StartFrom (may be reset during loading)
@@ -97,35 +93,34 @@ Printing the scenarios object will say if scenarios are defined.
       If $build fails, report what is missing
       If $build succeeds, replace ModelStages
     Otherwise note in print/status that ModelStages have not been built
-    If Save==TRUE, rewrite ScenarioDir/ScenarioConfig with any built changes.
-  VEModelScenarios$files(CategoryFile_df=NULL,Save=TRUE,CSVFile=FALSE)
-    Report the table of input files from StartFrom stage
-    Save is ignored if CategoryFile_df is not provided.
-    If Categories are present in the scenario, report the Category (if any) to which the input file attaches
-      But still report the full list of available files as the (invisible) return value, just with NA next
-      to files that have not been assigned to a category
-    Allow providing a data.frame (file category table) with file and Category and optional Description
-      Description defaults to Category name
-      Create Categories from unique values in file category table if Categories do not exist in scenario.cnf
-      Otherwise, check Categories in file category table against those in scenario.cnf
-      Make updates to the Files key in each Category (wipe and replace)
-      Verify that files are only listed in one Category (otherwise things will get really broken!)
-      Resave scenario.cnf unless Save==FALSE, in which case just update the scenario configuration in memory
+    If build==TRUE, also rewrite ScenarioDir/ScenarioConfig with any built changes.
+  [DONE] VEModelScenarios$save()
+    Save the in-memory scenario configuration back to ScenarioDir/ScenarioConfig
+    Use as an alternative (and perhaps call from within) to the Save=TRUE option on $load, $files, $build
+  [DONE] VEModelScenarios$stages()
+    Return the built list of stages (or an empty list)
+  VEModelScenarios$print()
+    Indicate type of scenarios (manual, category-based)
+    Indicate how many scenarios are defined
+    If manual, list the scenarios
+    If category-based report Category/Level/File, plus the number of generated scenarios
+  VEModelScenarios$inputs(scenario or category name; default all of them)
+    Return StartFrom inputs that have been defined in the requested (default: ALL) scenario or categories
+    Option to show all files (default for full scenario - looks at BaseModel/StartFrom inputs)
+      or just those defined in the scenario/category (looks at files named in the category)
+      For categories, will say if the file belongs to the category (perhaps also report levels in which the file actually exists)
+      For scenarios, will say if the file exists in the scenario directory
+    Validate category inputs - file can only occur in one category
+    For directory based scenarios
+  VEModelScenarios$fromCSV(CSVFile,overwrite=FALSE) # implies Save==TRUE
+    # Simpler function just to parse CSV files set up the "old way" (see VEScenario)
     If CSVFile is provided (TRUE = "scenario_categories.csv", or an alternate name):
       Read that file to determine categories to attach to the Input files
       Flag any inputs in the CSV that are not in the StartFrom Stage
       Return the Category_df from the CSV file
       If Save is true and Category_df is provided, save Category_df to CSVFile
-    If manual scenarios are configured
-      ModelStages present, but no Categories, generate an index of input files associated
-        with each Scenario (and ideally do a file-diff to see which have been modified
-        relative to StartFrom)
-      Consider WSDOT style setup: where the scenarios are each free-standing models - we still
-        develop a list of input files for the BaseModel and then indicate which differ in the
-        scenario stages...
-  VEModelScenarios$save()
-    Save the in-memory scenario configuration back to ScenarioDir/ScenarioConfig
-    Use as an alternative (and perhaps call from within) to the Save=TRUE option on $load, $files, $build
+    Don't change anything if the CSV does not have a valid configuration
+    Only replace an existing configuration if the scenarios have nto yet been built
   VEModelScenarios$build(Source=NULL,FileNames=NULL,Reset=FALSE,Save=TRUE)
     Main activity of "build" is to construct ModelStages from the scenarios identified in scenario.cnf
     If Save==TRUE

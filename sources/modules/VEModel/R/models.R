@@ -460,7 +460,7 @@ ve.model.configure <- function(modelPath=NULL, fromFile=TRUE) {
     }
       
     # Load scenarios and add scenario stages to modelStages (if scenarios are configured)
-    scenarios <- self$scenarios()
+    scenarios <- self$scenarios(fromFile=fromFile) # re-create VEModelScenario object from file
     scenarioStages <- scenarios$stages() # scenario stages may be an empty list
 
     # It is possible for a model to ONLY have scenarios (if they are "manually" created)
@@ -1852,9 +1852,22 @@ ve.model.run <- function(run="continue",stage=NULL,log="warn") {
 #                              Model Configuration                             #
 ################################################################################
 
-ve.model.scenarios <- function( fromFile=TRUE ) {
+ve.model.scenarios <- function( fromFile=FALSE, create=FALSE, startFrom=NULL ) {
   if ( is.null(self$modelScenarios) || fromFile ) {
-    self$modelScenarios <- VEModelScenarios$new(baseModel=self)
+    if ( is.logical(startFrom) && startFrom ) {
+      startFrom <- self$modelStages[ which(self$modelStages$Reportable) ]
+      startFrom <- startFrom[length(startFrom)] # last Reportable stage
+    } else if ( is.character(startFrom) ) {
+      startFrom <- startFrom[1]
+      if ( ! startFrom %in% names(self$modelStages) ) {
+        # In principle, self$modelStages only has "natural" stages at this point, not scenarios
+        stop(
+          writeLog(paste("Cannot locate StartFrom stage:",startFrom),Level="error")
+        )
+      }
+    }
+    # create will create ScenarioDir/ScenarioConfig if they do not already exist
+    self$modelScenarios <- VEModelScenarios$new(baseModel=self,create=create,startFrom=startFrom)
   }
   return( self$modelScenarios )
 }
