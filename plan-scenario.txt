@@ -33,6 +33,21 @@ Basic scenario operation:
         List of input files (name only) to be changed for this Category
         Each level for the category gets those files (from StartFrom stage)
 
+TODO: keep track of whether the scenarios are explicit (implemented as model stages) or
+  categories. Changes how $files works and what happens when we $build (and whether we
+  can $add a scenario).
+TODO: develop VEModelScenario$add function to add a manual scenario; creates a folder
+  and drops visioneval.cnf into it (with InputPath set) pivoting off BaseModel/StartFrom.
+TODO: add nuance to "files" function; if we're doing manual scenarios, then we need
+  to add a Files key to visioneval.cnf for the manual scenario - those will be copied
+  if present when we build the scenario (but unchanged if they already exist - eventually
+  compare the files to the BaseModel/InputPath version).
+  Files key in visioneval.cnf will be loaded and saved.
+  If the Files key exists, those are the "scenario files" - so the files function
+    should have a flag to indicate what category or scenario we're getting the files
+    for (and which levels have files, and which are different from each other and the
+    BaseModel/StartFrom stage).
+
 Create a VEScenarioCategory class?
   Would manage a Category plus its levels and files.
   Has a Name, a list of Levels, and a list of Files
@@ -50,19 +65,22 @@ Create a VEScenarioCategory class?
   Copying files to the Levels is done in VEModelScenarios$build
 
 The model's "$scenarios" function returns a VEModelScenarios object
-  Pointer to the model
+  Pointer to the BaseModel
   StartFrom stage
-  ScenarioDir (relative to model$modelPath)
-  Option to create ScenarioDir and its ScenarioConfig (create=TRUE)
+  ScenarioDir (relative to model$modelPath, snapshot of BaseModel$setting("ScenarioDir"))
+    NULL if ScenarioDir does not exist
+  ScenarioConfig (snapshot of BaseModel$setting("ScenarioConfig") name)
+    NULL if ScenarioConfig does not exist
+  Option to create ScenarioDir and blank ScenarioConfig (create=TRUE)
 Printing the scenarios object will say if scenarios are defined.
   VEModelScenarios$initialize(BaseModel,create=FALSE,startFrom=NULL)
     BaseModel is required (search for ScenarioDir)
     Populate the scenario structure
+      BaseModel, StartFrom, ScenarioDir, ScenarioConfig (nail it down at the moment of creation)
     If create==TRUE, build ScenarioDir and add ScenarioConfig
-      Use startFrom in BaseModel if create==TRUE and not provided
-      Otherwise use named stage in BaseModel as StartFrom for Scenarios
-      Otherwise just consider what is (not) there
-    Does $load if ScenarioDir exists (ScenarioConfig may or may not exist)
+      Pull startFrom from BaseModel if create==TRUE and not provided (last Reportable stage)
+    If create==FALSE, just consider what is (not) there
+    Does $load if ScenarioDir exists or got created (ScenarioConfig may or may not exist)
   VEModelScenarios$print()
     Indicate type of scenarios (manual, category-based)
     Indicate how many scenarios are defined

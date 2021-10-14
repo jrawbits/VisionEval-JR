@@ -4,25 +4,49 @@ Continue working on DVMT documentation for WSDOT.
 
 See plan-scenario.txt for details on the new scenario architecture.
 
-Consider using the future package or callr::r_bg() to run multiple stages in parallel. Future will
-probably work (possibly by spawning a separate control process to do the future` runs, with a master
-log file that explains the status). We could run that control process in the background (via r_bg)
-allowing the user to exit their GUI/RStudio; the user can peer into the process manager log file
-to see what process have started, and which have finished.
+Look closely at the multiple background process implementation for running scenarios in VEScenario.
+That strategy seems to work well, but doesn't provide much of an interactive process controller...
 
-I'm also looking at using the "future" package (or the "r_bg" function in the callr package) to do
-multiple stages in parallel based on a configurable number of processor to use. The future package
-is very simple to set up, but it will block (i.e. not let you see what is happening) if you start
-more stages than you have processors. We'll need to think better about how to do proper process
-management (with a Task Monitor interface to see what's complete, what's running, and what's
-scheduled, and to let the user start and stop the various stage runs). In the short run, the
-blocking is no different from what happens now (except all the logging goes to log files) so once
-people have a working model, they can just set it going and have it do multiple process in parallel,
-which should be fine. At any rate, setting up future is very easy (though I expect there are some
-things I'll need to do to ensure the sub-process has a complete runnable environment).
+Need to make sure the stage environment is set up suitably for stage to run - what is the minimal
+enviroment we need - .libPaths(), VEModel loaded in the process, copy over any required setup in
+the ve.model / ve.env environments that will get accessed. Ideally, we're as little subject to those
+as possible.
 
-Generalize addstage so it populates a modelstage without forcing it into the model's
-RunParam_ls: we can specify where the ModelStages definition goes.
+What happens if we just wrap each stage in a "future" - do we need to re-open the model in that
+environment, or can we pass it across?
+
+It will probably be simpler to just push the RunParams_ls into the function to run in the background
+and work at a low-level with framework functions, so the background process only uses the visioneval
+package - we have that architectural separation now (VEModel just bottles up what the framework
+needs to run in its new disaggregate fashion). models.R::1357-1377 (inside ve.stage.run).
+
+We don't need the try-catch - that will be handled by the runner (trapping what comes back from the
+"future").
+
+Should we keep the runner structure (future, status, etc.) in the VEModelStage object? Then we
+just iterate over the list of stages for status updates. Need to figure out how to manage that at
+the VEModel level (running in one thread - the process manager) and then just check over the list
+of model stages in the current run group for progress.
+
+Could do a bigger structure for the run status (essentially, the runner object) that explains
+the run status. So rather than just the RunStatus text, we have the whole apparatus of the future,
+when the run was started, when it completed, etc. Pushing the run completion back into the model
+state would be good too.
+
+Report on stage groups:
+  Group 0: Starting from Nothing
+  Group 1: Starting from 'Some Stage in Group 0 or earlier'
+
+The function should return ModelState_ls (after saving it) since we'll keep track of all those
+for the background processes - let's see what the memory ramifications are for running hundreds
+of scenario combinations.
+
+The process running is all about model stages (not specifically "scenarios") - we'll use parallel
+running for all stages that have the same "StartFrom" and set up BaseModel$setting("NumWorkers")
+processes (possibly only 1) to run in parallel. Also use BaseModel$setting("ConcurrentPlan") to
+map the name of a plan to the future function implementing the plan. That gets set prior to doing
+a Model $run and controls how the stages will be processed. Default is "sequential" but can be
+set to "transparent" or to one of the multi-process plans.
 
 Process Management
 
