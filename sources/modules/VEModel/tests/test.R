@@ -235,7 +235,7 @@ test_run <- function(modelName="VERSPM-base",baseModel="VERSPM",variant="base",r
   if ( ! reset ) {
     testStep(paste("Attempting to re-open existing",modelName))
     rs <- openModel(modelName)
-    if ( rs$status != codeStatus("Run Complete") ) {
+    if ( rs$overallStatus != codeStatus("Run Complete") ) {
       print(rs)
       reset <- TRUE
       message("\nStage is not Complete; Rebuilding model")
@@ -270,7 +270,7 @@ test_model <- function(modelName="JRSPM", oldstyle=FALSE, reset=FALSE, log="info
   due.to <- "reset request"
   if ( modelName %in% openModel() ) {
     jr <- openModel(modelName)
-    if ( ! jr$status == codeStatus("Run Complete") ) {
+    if ( ! jr$overallStatus == codeStatus("Run Complete") ) {
       reset = TRUE
       due.to = paste("status",jr$printStatus())
     }

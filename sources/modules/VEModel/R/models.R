@@ -1373,6 +1373,7 @@ run.future <- function() {
     }
   } else {
     # Success: Assemble the runResults
+    # TODO: Also do RunCompleted date/time stamp in ModelState
     visioneval::setModelState(list(RunStatus=RunStatus),envir=ve.model)
   }
 
@@ -1613,6 +1614,9 @@ ve.model.print <- function(details=FALSE) {
     cat(paste("  ",uniqueSources(self$RunParam_ls)),sep="\n") # Generates one row for each unique source
   }
   cat("Status:", self$printStatus(),"\n")
+  # TODO: change for scenarios since there may be hundreds of them...
+  # Just report the number of scenarios, and only report baseModel stages
+  #   (keep scenarios separate)
   if ( private$p.valid ) {
     cat("Model Stages:\n")
     for ( s in self$modelStages ) {
@@ -1678,7 +1682,7 @@ codeStatus <- function(level) {
 # Return text representation of the status
 ve.model.printStatus <- function(status=NULL) {
   if ( is.null(status) ) {
-    status <- self$status
+    status <- self$overallStatus
   }
   return( printStatus(status) )
 }
@@ -1686,7 +1690,7 @@ ve.model.printStatus <- function(status=NULL) {
 # Show "minimum" stage status (see StatusLevelCodes)
 ve.model.updateStatus <- function() {
   private$p.valid <- is.list(self$modelStages) && length(self$modelStages)>0
-  self$status <- if ( private$p.valid ) {
+  self$overallStatus <- if ( private$p.valid ) {
     min(sapply(self$modelStages,function(s) s$RunStatus))
   } else {
     codeStatus("No Stages Defined")
@@ -1742,7 +1746,7 @@ ve.model.load <- function(onlyExisting=TRUE,reset=FALSE) {
     stage$load(onlyExisting=onlyExisting,reset=reset)
     self$modelStages[[index]] <- stage
   }
-  # Update self$status
+  # Update self$overallStatus
   self$updateStatus()
   return(self$printStatus())
 }
@@ -1769,6 +1773,18 @@ ve.model.plan <- function(strategy,...) {
   self$futurePlan <- future::plan() # Model keeps the plan, not the stages
 }
 
+# Report status of model stages
+ve.model.status <- function(stage=NULL,statusCode=NULL,limit=10) {
+  # TODO: function to check on which stages are running.
+  # Report the status of each stage
+  # stage parameter: character vector stage names to list (or numeric vector, indices in modelStages list)
+  # statusCode parameter: vector of statusCodes to list
+  # limit parameter: show first limit number of stages (only applies if other parameters are not supplied)
+  # With no parameters, only show running stages if any are running
+  # If none are running, only show completed stages if any are completed
+  # If none are completed, show all stages (but apply "limit" and report how many more there are)
+}
+
 # Run the modelStages
 ve.model.run <- function(run="continue",stage=NULL,log="warn") {
   # run parameter can be
@@ -1787,7 +1803,7 @@ ve.model.run <- function(run="continue",stage=NULL,log="warn") {
 
   if ( ! private$p.valid ) {
     writeLog(paste0("Invalid model: ",self$printStatus()),Level="error")
-    return( invisible(self$status) )
+    return( invisible(self$overallStatus) )
   }
   
   # If save, like reset, but forces SaveDatastore to be TRUE
@@ -1810,7 +1826,7 @@ ve.model.run <- function(run="continue",stage=NULL,log="warn") {
     self$load(onlyExisting=TRUE,reset=TRUE) # Open any existing ModelState_ls to see which may be complete
     alreadyRun <- ( sapply( self$modelStages, function(s) s$RunStatus ) == codeStatus("Run Complete") )
     if ( all(alreadyRun) ) {
-      self$status <- codeStatus("Run Complete")
+      self$overallStatus <- codeStatus("Run Complete")
       writeLog("Model Run Complete",Level="warn")
       return(invisible(self$printStatus()))
     } else {
@@ -1855,7 +1871,7 @@ ve.model.run <- function(run="continue",stage=NULL,log="warn") {
   if ( toRun > length(runStages) ) { # should never happen
     writeLog(paste("Stages:",runStages,collapse=","),Level="info")
     msg <- writeLog(paste("Starting stage",toRun,"comes after last stage",length(runStages)),Level="error")
-    return( invisible(self$status) )
+    return( invisible(self$overallStatus) )
   }
   runStages <- runStages[toRun:length(runStages)]
 
@@ -1887,6 +1903,8 @@ ve.model.run <- function(run="continue",stage=NULL,log="warn") {
   #   :: Use parallelly::availableCores() to see the total number of cores that are available for the current R session
   # Options for plan: multicore (Linux only - don't support), multisession, sequential, transparent, callr
 
+  # TODO: don't run any more stage futures until there is an available core (not currently in use for a future)
+
   # use ve.model.plan function to change the plan
   oplan <- plan(self$futurePlan)
   on.exit(plan(oplan), add = TRUE)
@@ -1907,7 +1925,7 @@ ve.model.run <- function(run="continue",stage=NULL,log="warn") {
   # Update overall model status
   self$updateStatus() # "Worst"/Lowest RunStatus for the overall model
 
-  return(invisible(self$status))
+  return(invisible(self$overallStatus))
 }
 
 ################################################################################
@@ -2451,9 +2469,8 @@ VEModel <- R6::R6Class(
     RunParam_ls=NULL,                       # Run parameters for the model (some constructed by $configure)
     loadedParam_ls=NULL,                    # Loaded parameters (if any) present in model configuration file
     specSummary=NULL,                       # List of inputs, gets and sets from master module spec list  
-    status=codeStatus("Uninitialized"),     # Where are we in opening or running the model?
-                                            # TODO: make status a function that examines running stages...
-    futurePlan = future::plan("default"),   # Future plan for running a stage
+    overallStatus=codeStatus("Uninitialized"), # Overall model status (worst case from stages)
+    futurePlan = future::plan("default"),   # Future strategy for running stages (sequential, callr, etc)
 
     # Methods
     initialize=ve.model.init,               # initialize a VEModel object
@@ -2464,6 +2481,7 @@ VEModel <- R6::R6Class(
     load=ve.model.load,                     # load the model state for each stage (slow - defer until needed)
     plan=ve.model.plan,                     # Set the future plan (sequential, callr, multiprocess)
     run=ve.model.run,                       # run a model (or just a subset of stages)
+    status=ve.model.status,                 # report status of running or complete stages
     print=ve.model.print,                   # provides generic print functionality
     printStatus=ve.model.printStatus,       # turn integer status into text representation
     updateStatus=ve.model.updateStatus,     # fill in overall status based on individual stage status
