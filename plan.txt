@@ -2,7 +2,48 @@ The path to completion:
 
 Continue working on DVMT documentation for WSDOT.
 
-See plan-scenario.txt for details on the new scenario architecture.
+See plan-scenario.txt and scenarios.r for details on the new scenario architecture.
+
+Elevate the priority of the multiple background process implementation.
+
+Things to do:
+  A. Set up "packages" to load VEModel
+  B. Set up "globals" (or "envir") to locate objects needed to evaluate the expression
+  C. Run f <- future(...) and use value(f) to get the result
+
+The above seems to work in a basic way. However, we don't want to run the models with dependency
+on VEModel - we just want "visioneval" itself (the framework) - the expression to evaluate in the
+future is the low-level sequence of model-running stuff.
+
+Things to happen in the run expression for the stage:
+  0. "self" is the VEModelStage object
+  1. Change to self$RunPath
+  2. Don't need to sweat the ve.model environment setup (it will be "new" for each process)
+  3. Provide the "visioneval" package for the future
+  4. Say something when the future is created
+  5. After setting up all the futures, just return to the UI
+
+From the UI, when we request the status of the model, it reports the RunStatus (which we
+set to "Running" if the future exists but is not resolved, otherwise if the future exists then to
+its value, otherwise if the future does not exist, just whatever is in RunStatus). If the future
+exists and is resolved, then update the stage run status and delete the future.
+
+So the "status" function gets a bit more complicated than just returning the number/status string.
+It should check on the futures, and if it is newly resolved, it should reload the ModelState for the
+stage.
+
+Do we want a function to wait for the futures? With the scheme above, we never wait.
+
+Do we want to reload the stage's ModelState while it might be running? Certainly we
+want that after the fact.
+
+When we run a stage, we stash a future object in the stage (initially NULL).
+The model run function will create the futures for each stage in the current run group.
+It will then loop over the stages looking for them to be complete/resolved. In sequential
+or transparent resolution, each future will block until it is complete, so we need to log
+"scheduling" or "processing" the stage (depending on the plan).
+
+Might need to take control of the plan a bit more specifically...
 
 Look closely at the multiple background process implementation for running scenarios in VEScenario.
 That strategy seems to work well, but doesn't provide much of an interactive process controller...

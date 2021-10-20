@@ -1331,47 +1331,33 @@ ve.stage.load <- function(onlyExisting=TRUE,reset=FALSE) {
   return(FALSE)
 }
 
-# Run the model stage
-ve.stage.run <- function(log="warn") {
-  # Mark local status on the stage
-  self$RunStatus <- codeStatus("Running")
-  # TODO: add PID below if running in background process
+run.future <- function() {
+  # Parameters:
+  #   runPath (directory in which to write log/ModelState/Datastore
+  #   RunParam_ls (big list structure with everything needed to run the model)
 
-  # Remove any existing ModelState and run results from this stage
-  self$ModelState_ls <- NULL
-  self$Results       <- NULL
+  # Create run path
+  if ( ! dir.exists(runPath) ) dir.create(runPath)
 
-  # TODO: borrow VEScenario::RunScenarios mechanism for setting up and
-  # asynchronously running the scenarios and tracking where they are.
-  # TODO: Principal thing to change is to use the model stage elements
-  # rather than sourcing run_model.R to run the stage.
-
-  # Construct and change to working directory
-  if ( ! dir.exists(self$RunPath) ) dir.create(self$RunPath)
-  owd <- setwd(self$RunPath)
+  owd <- setwd(runPath) # may not need inside a future
   on.exit(setwd(owd))
 
   # Take ownership of ve.model
   ve.model <- visioneval::modelEnvironment(Clear="VEModelStage::run") # add Owner
-
   RunStatus <- try (
     {
       # Initialize Log, create new ModelState
       ve.model$RunModel <- TRUE
       initLog(Threshold=log,Save=TRUE,envir=ve.model) # Log stage
-      # Create new ModelState_ls (ignore existing)
-      # TODO: These should perhaps be done in a separate pass/function when
-      # ve.model.run is called (and the need to be sequential, since we'll
-      # be looking back at the ModelState for the StartFrom stages...
-      visioneval::loadModel(self$RunParam_ls)
+      visioneval::loadModel(RunParam_ls)
       visioneval::setModelState()                       # Save ModelState.Rda
       visioneval::prepareModelRun()                     # Initialize Datastore
 
       # Run the model script
-      sys.source(self$RunParam_ls$ModelScriptPath,envir=new.env())
+      sys.source(RunParam_ls$ModelScriptPath,envir=new.env())
 
-      # If we get this far without a "stop", save the ModelState and RunStatus
-      RunStatus <- codeStatus("Run Complete")
+      # Use the following RunStatus if we got this far without error
+      codeStatus("Run Complete")
     },
     silent=TRUE
   )
@@ -1380,19 +1366,85 @@ ve.stage.run <- function(log="warn") {
   if ( ! is.numeric(RunStatus) ) {
     # Failure: stop trapped while performing run sequence
     msg <- as.character(RunStatus) # try-error (captures "stop" message)
-    writeLog(msg,Level="error") # possibly redundant with interior logging
-    self$RunStatus <- codeStatus("Run Failed")
+    writeLog(msg,Level="error")
+    RunStatus <- structure( codeStatus("Run Failed"), reason=msg ) # append an attribute
     if ( "ModelState_ls" %in% names(visioneval::modelEnvironment()) ) {
-      visioneval::setModelState(list(RunStatus=self$RunStatus),envir=ve.model)
+      visioneval::setModelState(list(RunStatus=RunStatus),envir=ve.model)
     }
   } else {
     # Success: Assemble the runResults
-    self$RunStatus <- RunStatus
-    visioneval::setModelState(list(RunStatus=self$RunStatus),envir=ve.model)
-    writeLog(printStatus(self$RunStatus),Level="warn")
+    visioneval::setModelState(list(RunStatus=RunStatus),envir=ve.model)
   }
+
+  return(RunStatus)
+}
+
+# Run the model stage
+ve.stage.run <- function(log="warn") {
+  # Mark local status on the stage
+  self$RunStatus <- codeStatus("Running")
+
+  # Remove any existing ModelState and run results from this stage
+  # Will reload later once the run is complete
+
+  self$ModelState_ls <- NULL
+  self$Results       <- NULL
+
+  self$FutureRun <- future::future(
+    run.future(),
+    globals=(runPath=self$RunPath, RunParam_ls=self$RunParam_ls),
+    packages="visioneval"
+  )
+
+  #   # Construct and change to working directory
+  #   if ( ! dir.exists(self$RunPath) ) dir.create(self$RunPath)
+  #   owd <- setwd(self$RunPath)
+  #   on.exit(setwd(owd))
+  # 
+  #   # Take ownership of ve.model
+  #   ve.model <- visioneval::modelEnvironment(Clear="VEModelStage::run") # add Owner
+  #   RunStatus <- try (
+  #     {
+  #       # Initialize Log, create new ModelState
+  #       ve.model$RunModel <- TRUE
+  #       initLog(Threshold=log,Save=TRUE,envir=ve.model) # Log stage
+  #       # Create new ModelState_ls (ignore existing)
+  #       # TODO: These should perhaps be done in a separate pass/function when
+  #       # ve.model.run is called (and the need to be sequential, since we'll
+  #       # be looking back at the ModelState for the StartFrom stages...
+  #       visioneval::loadModel(self$RunParam_ls)
+  #       visioneval::setModelState()                       # Save ModelState.Rda
+  #       visioneval::prepareModelRun()                     # Initialize Datastore
+  # 
+  #       # Run the model script
+  #       sys.source(self$RunParam_ls$ModelScriptPath,envir=new.env())
+  # 
+  #       # If we get this far without a "stop", save the ModelState and RunStatus
+  #       RunStatus <- codeStatus("Run Complete")
+  #     },
+  #     silent=TRUE
+  #   )
+  # 
+  #   # Process results (or errors)
+  #   if ( ! is.numeric(RunStatus) ) {
+  #     # Failure: stop trapped while performing run sequence
+  #     msg <- as.character(RunStatus) # try-error (captures "stop" message)
+  #     writeLog(msg,Level="error") # possibly redundant with interior logging
+  #     self$RunStatus <- codeStatus("Run Failed")
+  #     if ( "ModelState_ls" %in% names(visioneval::modelEnvironment()) ) {
+  #       visioneval::setModelState(list(RunStatus=self$RunStatus),envir=ve.model)
+  #     }
+  #   } else {
+  #     # Success: Assemble the runResults
+  #     self$RunStatus <- RunStatus
+  #     visioneval::setModelState(list(RunStatus=self$RunStatus),envir=ve.model)
+  #     writeLog(printStatus(self$RunStatus),Level="warn")
+  #   }
+
   visioneval::saveLog(LogFile="console",envir=ve.model)
-  self$ModelState_ls <- ve.model$ModelState_ls # The story of the run...
+
+  self$load(onlyExisting=TRUE, reset=TRUE)
+
   return(invisible(self$ModelState_ls))
 }
 
@@ -1705,11 +1757,17 @@ ve.model.load <- function(onlyExisting=TRUE,reset=FALSE) {
 #       parameters...
 
 # Proxy some visioneval functions (things that might get called from
-# classic run_model.R without namespace resolution.
+# classic run_model.R without namespace resolution).
 getYears <- visioneval::getYears
 runModule <- visioneval::runModule
 runScript <- visioneval::runScript
 requirePackage <- visioneval::requirePackage
+
+# Set the future plan for running model stages
+ve.model.plan <- function(strategy,...) {
+  future::plan(strategy,...)
+  self$futurePlan <- future::plan() # Model keeps the plan, not the stages
+}
 
 # Run the modelStages
 ve.model.run <- function(run="continue",stage=NULL,log="warn") {
@@ -1826,8 +1884,12 @@ ve.model.run <- function(run="continue",stage=NULL,log="warn") {
   }
 
   # Run the stages
-  # TODO: Spawn background processes to run the stages (perhaps using future package)
-  # TODO: Need to not exceed number of available processors (block until more available)
+  #   :: Use parallelly::availableCores() to see the total number of cores that are available for the current R session
+  # Options for plan: multicore (Linux only - don't support), multisession, sequential, transparent, callr
+
+  # use ve.model.plan function to change the plan
+  oplan <- plan(self$futurePlan)
+  on.exit(plan(oplan), add = TRUE)
 
   for ( rgn in names(RunGroups) ) {
     writeLog(paste("Running Stages where StartFrom =",rgn),Level="warn")
@@ -2390,6 +2452,8 @@ VEModel <- R6::R6Class(
     loadedParam_ls=NULL,                    # Loaded parameters (if any) present in model configuration file
     specSummary=NULL,                       # List of inputs, gets and sets from master module spec list  
     status=codeStatus("Uninitialized"),     # Where are we in opening or running the model?
+                                            # TODO: make status a function that examines running stages...
+    futurePlan = future::plan("default"),   # Future plan for running a stage
 
     # Methods
     initialize=ve.model.init,               # initialize a VEModel object
@@ -2398,6 +2462,7 @@ VEModel <- R6::R6Class(
     addstage=ve.model.addstage,             # Add a stage programmatically
     valid=function() private$p.valid,       # report valid state
     load=ve.model.load,                     # load the model state for each stage (slow - defer until needed)
+    plan=ve.model.plan,                     # Set the future plan (sequential, callr, multiprocess)
     run=ve.model.run,                       # run a model (or just a subset of stages)
     print=ve.model.print,                   # provides generic print functionality
     printStatus=ve.model.printStatus,       # turn integer status into text representation
@@ -2445,6 +2510,7 @@ VEModelStage <- R6::R6Class(
     loadedParam_ls = NULL,       # Loaded parameters (if any) present in stage configuration file
     ModelState_ls = NULL,        # ModelState constructed from RunParam_ls
     RunPath = NULL,              # Typically ModelDir/ResultsDir/StageDir
+    FutureRun = NULL,            # Future object for running a stage (NULL if run is not happening)
     RunStatus = 1, # "Unknown"   # Indicates whether results are available
     Results = NULL,              # A VEResults object (create on demand)
     
