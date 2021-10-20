@@ -1444,7 +1444,12 @@ ve.stage.run <- function(log="warn") {
 
   visioneval::saveLog(LogFile="console",envir=ve.model)
 
-  self$load(onlyExisting=TRUE, reset=TRUE)
+  # TODO: don't do the load here (future may not be finished)
+  # Instead, go back to model.run and do it there, but only after
+  # all the futures in the group are finished - and only load those
+  # stages that where in the group.
+  
+  # self$load(onlyExisting=TRUE, reset=TRUE)
 
   return(invisible(self$ModelState_ls))
 }
@@ -1914,6 +1919,9 @@ ve.model.run <- function(run="continue",stage=NULL,log="warn") {
     rg <- RunGroups[[rgn]]
     for ( ms in rg ) { # iterate over names of stages to run
       writeLog(paste("Running stage:",ms),Level="warn")
+      # TODO: check if there is a processor available before running the stage
+      # Or we could just let it block...
+      # We do want to report when an asynchronous stage finishes...
       self$modelStages[[ms]]$run(log=LogLevel)
       if ( self$modelStages[[ms]]$RunStatus != codeStatus("Run Complete") ) {
         msg <- writeLog(paste("Model failed with status",self$printStatus(self$modelStages[[ms]]$RunStatus)),Level="error")
