@@ -17,8 +17,8 @@ self=private=NULL
 # Build a scenario management object
 ve.scenario.init <- function( baseModel=NULL, create=FALSE, startFrom=NULL ) {
   self$baseModel <- baseModel
-  self$scenarioDir <- self$baseModel$setting("ScenarioDir"),
-  self$configFile <- self$baseModel$setting("ScenarioConfig"),
+  self$scenarioDir <- self$baseModel$setting("ScenarioDir")
+  self$configFile <- self$baseModel$setting("ScenarioConfig")
   if ( create && ! dir.exists(scenarioDir) ) {
     self$scenarioPath <- normalizePath(baseModel$modelPath,self$scenarioDir)
     dir.create(scenarioDir)
