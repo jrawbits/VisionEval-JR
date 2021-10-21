@@ -6,6 +6,11 @@ See plan-scenario.txt and scenarios.r for details on the new scenario architectu
 
 Elevate the priority of the multiple background process implementation.
 
+Start testing VEModel with the future implementation
+  1. sequential to start (should reproduce current live logging)
+  2. multisession (and callr) to use some number of workers to do parallel processing
+     Check the logic on all that
+
 Things to do:
   A. Set up "packages" to load VEModel
   B. Set up "globals" (or "envir") to locate objects needed to evaluate the expression

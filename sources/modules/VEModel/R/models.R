@@ -1376,14 +1376,50 @@ run.future <- function() {
     # TODO: Also do RunCompleted date/time stamp in ModelState
     visioneval::setModelState(list(RunStatus=RunStatus),envir=ve.model)
   }
+  # Reset log to console (in case running in "direct")
+  visioneval::saveLog(LogFile="console",envir=ve.model)
 
   return(RunStatus)
 }
 
+ve.stage.running <- function() {
+  return (
+    ! is.null( self$FutureRun ) && # not started yet
+    ! resolved( self$FutureRun )   # not resolved yet
+  )
+}
+
+# TODO: return a string indicating run status of model
+#   Name
+#   When the run started
+#   Duration from start of run to (done) completion time or (not done) Sys.time()
+#   Whether it is done
+ve.stage.pstatus <- function(start=FALSE) {
+  if ( is.null(self$RunStarted) ) {
+    status <- paste(self$Name,"has not started to run.")
+  } else {
+    status <- paste(self$Name,"Started at",self$RunStarted)
+    if ( ! start ) {
+      if ( ! is.null(self$RunCompleted) ) {
+        paste(status,"Completed at",self$RunCompleted)
+      } else {
+        paste(status,"Running at",format(Sys.time(), "%Y-%m-%d %H:%M:%S"))
+      }
+    }
+  }
+  return(status)
+}
+
 # Run the model stage
 ve.stage.run <- function(log="warn") {
+  # TODO: check that "sequential" shows the log messages in the console
+  # If not, then do run.future() directly (with logging in the current process)
+  # callr or multisession will just create the log files...
+  
   # Mark local status on the stage
   self$RunStatus <- codeStatus("Running")
+  self$RunStarted <- format(Sys.time(), "%Y-%m-%d %H:%M:%S")
+  writeLog(self$processStatus(start=TRUE),Level="warn")
 
   # Remove any existing ModelState and run results from this stage
   # Will reload later once the run is complete
@@ -1441,17 +1477,9 @@ ve.stage.run <- function(log="warn") {
   #     visioneval::setModelState(list(RunStatus=self$RunStatus),envir=ve.model)
   #     writeLog(printStatus(self$RunStatus),Level="warn")
   #   }
+  #   visioneval::saveLog(LogFile="console",envir=ve.model)
 
-  visioneval::saveLog(LogFile="console",envir=ve.model)
-
-  # TODO: don't do the load here (future may not be finished)
-  # Instead, go back to model.run and do it there, but only after
-  # all the futures in the group are finished - and only load those
-  # stages that where in the group.
-  
-  # self$load(onlyExisting=TRUE, reset=TRUE)
-
-  return(invisible(self$ModelState_ls))
+  return(self)
 }
 
 # Helper
@@ -1772,10 +1800,26 @@ runModule <- visioneval::runModule
 runScript <- visioneval::runScript
 requirePackage <- visioneval::requirePackage
 
+# Helper to get multitasking strategy name
+futureStrategyName <- function(strategy) {
+  return (
+    if ( ! is.null(strategy) && "FutureStrategy" %in% class(strategy) ) {
+      # Hack from future::print.FutureStrategy
+      # Get first class that is not one of the structural ones
+      setdiff(class(strategy), c("FutureStrategy", "tweaked", "function"))[1]
+    } else {
+      "sequential"
+    }
+  )
+}
+
 # Set the future plan for running model stages
 ve.model.plan <- function(strategy,...) {
   future::plan(strategy,...)
   self$futurePlan <- future::plan() # Model keeps the plan, not the stages
+  # Following borrowed from future::print.FutureStrategy to get name of strategy
+  
+  writeLog(paste0("Multitasking strategy: ",futureStrategyName(self$futurePlan)),Level="warn")
 }
 
 # Report status of model stages
@@ -1904,28 +1948,49 @@ ve.model.run <- function(run="continue",stage=NULL,log="warn") {
     }
   }
 
-  # Run the stages
-  #   :: Use parallelly::availableCores() to see the total number of cores that are available for the current R session
-  # Options for plan: multicore (Linux only - don't support), multisession, sequential, transparent, callr
-
-  # TODO: don't run any more stage futures until there is an available core (not currently in use for a future)
-
-  # use ve.model.plan function to change the plan
-  oplan <- plan(self$futurePlan)
-  on.exit(plan(oplan), add = TRUE)
+  # Should use self$plan(strategy,...) from interaction to set non-default future strategy
+  # Default is "sequential" (block on each stage, report its log to console)
+  # Can use "callr" or "multisession" (the latter if firewall permits) to use more processors/cores
 
   for ( rgn in names(RunGroups) ) {
     writeLog(paste("Running Stages where StartFrom =",rgn),Level="warn")
+
     rg <- RunGroups[[rgn]]
+    runningList <- list()
+    delay <- 15 # TODO: make this a run model run parameter
+
     for ( ms in rg ) { # iterate over names of stages to run
-      writeLog(paste("Running stage:",ms),Level="warn")
-      # TODO: check if there is a processor available before running the stage
-      # Or we could just let it block...
-      # We do want to report when an asynchronous stage finishes...
-      self$modelStages[[ms]]$run(log=LogLevel)
-      if ( self$modelStages[[ms]]$RunStatus != codeStatus("Run Complete") ) {
-        msg <- writeLog(paste("Model failed with status",self$printStatus(self$modelStages[[ms]]$RunStatus)),Level="error")
-        stop(msg)
+      # remove processes that are done running from runningList
+      if ( length(runningList) < future::nbrOfFreeWorkers() ) {
+        runningList <- c(
+          runningList,
+          self$modelStages[[ms]]$run(log=LogLevel)
+        )
+      } else {
+        # Wait for a stage to finish
+        while ( all(sapply(runningList,function(stg) stg$running())) ) {
+          sapply(runningList,function(stg) {
+            writeLog( stg$processStatus()), Level="warn" )
+          }
+          writeLog(paste("Waiting",delay,"seconds for free processor..."),Level="warn")
+          Sys.sleep(delay)
+        }
+
+        # Post-process finished stages
+        done <- runningList[ which( ! sapply(runningList,function(stg),stg$running()) ) ]
+        if ( length(done)>0 ) {
+          # Remove stage from running list
+          runningList <- runningList[ which(sapply(runningList,function(stg) stg$running())) ]
+          lapply( done, function(stg) {
+            # Log process completion status to console for stage no longer running
+            stg$RunCompleted <- format(Sys.time(), "%Y-%m-%d %H:%M:%S")
+            writeLog( stg$processStatus(), Level="warn")
+            # Re-load the finished stage (model state, run status)
+            stg$load(onlyExisting=TRUE)
+          } )
+        } else {
+          stop( writeLog("Program run error: done processes reported but not found",Level="error") )
+        }
       }
     }
   }
@@ -2538,6 +2603,8 @@ VEModelStage <- R6::R6Class(
     RunPath = NULL,              # Typically ModelDir/ResultsDir/StageDir
     FutureRun = NULL,            # Future object for running a stage (NULL if run is not happening)
     RunStatus = 1, # "Unknown"   # Indicates whether results are available
+    RunStarted = NULL,           # Sys.time() when model stage run started
+    RunCompleted = NULL,         # Sys.time() when model stage run completed
     Results = NULL,              # A VEResults object (create on demand)
     
     # Methods
@@ -2545,7 +2612,9 @@ VEModelStage <- R6::R6Class(
     runnable=ve.stage.runnable,  # Does the stage have all it needs to run?
     print=ve.stage.print,        # Print stage summary
     load=ve.stage.load,          # Read existing ModelState.Rda if any
-    run=ve.stage.run             # Run the stage (build results)
+    run=ve.stage.run,            # Run the stage (build results)
+    running=ve.stage.running,    # Check if stage is still running
+    processStatus=ve.stage.pstatus # Return string describing stage run process status
   ),
   private=list(
     complete = NULL              # set to TRUE/FALSE when self$runnable() is executed
