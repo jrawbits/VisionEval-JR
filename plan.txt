@@ -15,6 +15,9 @@ Start testing VEModel with the future implementation
      how long each stage has been running. The log file for the last stage in each group
      can be polled for updates (so you can see it finish "live").
 
+Start to develop the stage/scenario walkthrough (will furnish tests for scenario
+elements).
+
 Do a multi-stage model (set up a model that has "parallelizable" stages so we can see
 the parallel run working). We'll get a lot more parallelism going as scenarios emerge.
 
