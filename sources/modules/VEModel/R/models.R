@@ -462,8 +462,8 @@ ve.model.configure <- function(modelPath=NULL, fromFile=TRUE) {
     }
 
     scenarioStages <- list()
-    scenarios <- self$scenarios(fromFile=fromFile)         # re-create VEModelScenario object from file
-    scenarioStages <- scenarios$stages(fromFile=fromFile)  # scenario stages may be an empty list
+    scenarios <- self$scenarios(fromFile=fromFile)  # re-create VEModelScenario object from file
+    scenarioStages <- scenarios$stages()            # scenario stages may be an empty list
 
     # It is possible for a model to ONLY have scenarios (if they are "manually" created)
     # Each "scenario" in that case must be a complete model run
@@ -944,9 +944,10 @@ ve.model.clear <- function(force=FALSE,outputOnly=NULL,archives=FALSE,stage=NULL
 ################################################################################
 
 # Load the stage configuration
-ve.stage.init <- function(Name=NULL,Model=NULL,modelParam_ls=NULL,stageParam_ls=list(),StageIsScenario=FALSE) {
+ve.stage.init <- function(Name=NULL,Model=NULL,ScenarioDir=NULL,modelParam_ls=NULL,stageParam_ls=list(),StageIsScenario=FALSE) {
   # Name can force the stage name (otherwise use stageParam_ls)
   # Model is the model the stage is attached to
+  # ScenarioDir is the root directory to seek the stage folder (default: Model$modelPath)
   # modelParam_ls is the configuration to be used (defaults to Model$RunParam_ls)
   # StageIsScenario identifies role of stage as a core stage (FALSE) or a scenario (TRU)
   # stageParam_ls has the following elements (which are explicitly provided or come from
@@ -980,7 +981,20 @@ ve.stage.init <- function(Name=NULL,Model=NULL,modelParam_ls=NULL,stageParam_ls=
 
   # Initialize model parameters
   ModelName     <- Model$modelName
-  ModelDir      <- Model$modelPath # Should already be a normalized path
+
+  # Set root in which to seek stages
+  if ( StageIsScenario ) {
+    if ( missing(ScenarioDir) || is.null(ScenarioDir) ) {
+      stop(
+        writeLog("Program Error in VEModelStage$initialize: Must provide ScenarioDir for Scenario stage",Level="error")
+      )
+    } else {
+      ModelDir <- ScenarioDir
+    }
+  } else {
+    ModelDir <- Model$modelPath # Should already be a normalized path
+  }
+
   if ( is.null(modelParam_ls) ) {
     # We'll usually override the modelParam_ls when constructing scenario stages
     # since scenarios will overlay additional parameters on the model
@@ -1041,10 +1055,13 @@ ve.stage.init <- function(Name=NULL,Model=NULL,modelParam_ls=NULL,stageParam_ls=
     } else {
       self$Path <- normalizePath(file.path(ModelDir,self$Name))
     }
+    writeLog(paste("Stage path candidate:",self$Path),Level="info")
     if ( ! dir.exists(self$Path) ) self$Path <- NULL
   }
   if ( ! is.null(self$Path) ) {
     writeLog(paste("Initializing Stage",self$Name,"from",self$Path),Level="info")
+  } else {
+    writeLog("Stage path is NULL",Level="info")
   }
   # self$Path may still be NULL, in which case we need self$Config
   #   or suitable values in stageConfig_ls to specify the required stage inputs
@@ -1653,16 +1670,17 @@ ve.model.print <- function(details=FALSE,configs=FALSE,scenarios=FALSE) {
       s$print(details,configs)
     }
     scenarioCount <- length(which(scenarioStages))
-    if ( scenarioCount > 0 ) {
+    if ( scenarioCount > 0 || is.null(self$modelScenarios) ) {
       if ( ! scenarios ) {
-        cat(scenarioCount,"Scenario stages defined.\n")
-        if ( self$Scenarios ) cat(self$Scenarios$scenarioPath)
+        cat(scenarioCount,"Scenario stages defined in",sub(self$modelPath,"",self$modelScenarios$scenarioPath),"\n")
       } else {
-        cat("Scenario Stages from",sub(self$modelPath,"",self$Scenarios$scenarioPath),"\n")
+        cat("Scenario Stages from",sub(self$modelPath,"",self$modelScenarios$scenarioPath),"\n")
         for ( s in self$modelStages[ scenarioStages ] ) {
           s$print(details,configs=FALSE) # don't show configs for scenarios...
         }
       }
+    } else if (scenarioCount > 0 && is.null(self$modelScenarios) ) {
+      cat("Program error: scenarioCount",scenarioCount,"but modelScenarios is NULL\n")
     } else cat("No scenarios defined.\n")
   }
   private$p.valid

@@ -20,6 +20,9 @@ Basic scenario operation:
       Process any sub-folders as if they were model stages defined in the base model
       Just read their visioneval.cnf
 
+Add category, file and level interrogation (VEModelScenarios object).
+Intersect files from basemodel and categories (which files are in which categories)
+
   VEModelScenarios object
     Can manipulate visioneval.cnf for VEScenarios object using standard environment tools.
       Has a RunParam_ls and a loadedParam_ls elements

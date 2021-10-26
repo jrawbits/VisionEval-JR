@@ -18,7 +18,7 @@ self=private=NULL
 ve.scenario.init <- function( baseModel=NULL, fromFile=FALSE ) {
   self$baseModel <- baseModel
   self$scenarioDir <- self$baseModel$setting("ScenarioDir")
-  self$scenarioPath <- normalizePath(self$baseModel$modelPath,self$scenarioDir)
+  self$scenarioPath <- normalizePath(file.path(self$baseModel$modelPath,self$scenarioDir))
   if ( dir.exists(self$scenarioPath) ) {
     self$load(fromFile=fromFile)
   }
@@ -26,33 +26,31 @@ ve.scenario.init <- function( baseModel=NULL, fromFile=FALSE ) {
 
 # Load scenario's visioneval.cnf (constructing self$RunParam_ls and self$loadParam_ls)
 ve.scenario.load <- function(fromFile=FALSE) {
-  if ( ! fromFile && ! is.null(self$modelStages) return(NULL)
+  if ( ! fromFile && ! is.null(self$modelStages) ) return(NULL) # do not reload model stages
 
   # Reload scenario configuration file and then build the scenario stages
-  self$modelStages <- NULL
   if ( dir.exists(self$scenarioPath) ) {
     self$loadedParam_ls <- visioneval::loadConfiguration(ParamDir=self$scenarioPath, mustWork=FALSE)
-  } else self$loadedParam_ls <- NULL
-  if ( !is.null(self$RunParam_ls) ) {
-    modelParam_ls <- visioneval::mergeParameters(self$baseModel$RunParam_ls,self$loadedParam_ls)
-  } else {
-    modelParam_ls <- self$baseModel$RunParam_ls
-  }
+  } else self$loadedParam_ls <- list()
+
+  # Layer in the base model run parameters as basis for scenarios
+  modelParam_ls <- visioneval::mergeParameters(self$baseModel$RunParam_ls,self$loadedParam_ls)
 
   # Load different types of scenarios
   writeLog("Loading model Scenarios",Level="info")
   self$modelStages <- NULL
-  if ( "ModelStages" %in% names(self$RunParam_ls) ) {
-    writeLog(paste("Parsing explicit Scenarios from",self$ScenarioDir),Level="info")
+  if ( "ModelStages" %in% names(modelParam_ls) ) {
+    writeLog(paste("Parsing explicit Scenarios from",self$scenarioDir),Level="info")
     # TODO: overlay self$RunParam_ls on self$baseModel$RunParam_ls
-    modelStages <- lapply(names(self$RunParam_ls$ModelStages), # Use pre-defined structures
+    modelStages <- lapply(names(modelParam_ls$ModelStages), # Use pre-defined structures
       # At a minimum, must provide Dir or Config
       function(stage) {
-        obj <- self$RunParam_ls$ModelStages[[stage]] # Get the stageParam_ls structure
+        obj <- modelParam_ls$ModelStages[[stage]] # Get the stageParam_ls structure
         writeLog(paste("Model Stage:",stage),Level="info")
         VEModelStage$new(
           Name=stage,
-          Model=self,
+          Model=self$baseModel,
+          ScenarioDir=self$scenarioPath,
           modelParam_ls=modelParam_ls,
           StageIsScenario=TRUE,
           stageParam_ls=obj
@@ -62,12 +60,12 @@ ve.scenario.load <- function(fromFile=FALSE) {
   } else modelStages <- list()
   self$modelStages <- modelStages
 
-  if ( "Categories" %in% names(self$RunParam_ls) ) {
+  if ( "Categories" %in% names(modelParam_ls) ) {
     writeLog(paste("Parsing Category combination Scenarios from",self$ScenarioDir),Level="info")
 
     # Get CategorySettings if any and overlay on self$RunParam_ls
-    if ( "CategorySettings" %in% names(self$RunParam_ls) ) {
-      categoryParam_ls <- visioneval::addParameterSource(self$RunParam_ls$CategorySettings,Source="Scenario CategorySettings")
+    if ( "CategorySettings" %in% names(modelParam_ls) ) {
+      categoryParam_ls <- visioneval::addParameterSource(modelParam_ls$CategorySettings,Source="Scenario CategorySettings")
       if ( length(categoryParam_ls)>0 ) {
         modelParam_ls <- visioneval::mergeParameters(modelParam_ls,categoryParam_ls)
       }
@@ -86,8 +84,8 @@ ve.scenario.load <- function(fromFile=FALSE) {
         function(level) {
           catLevelName <- paste0(category,"-",level$Name)
           list(
-            Name=catLevelName
-            Description=paste0("(Category: ",category$Label,") ",level$Description)
+            Name=catLevelName,
+            Description=paste0("(Category: ",category$Label,") ",level$Description),
             InputPath=file.path(self$scenarioPath,catLevelName)
           )
           # TODO: check that categoryLevel exists as a subdirectory of self$scenarioPath
@@ -120,18 +118,20 @@ ve.scenario.load <- function(fromFile=FALSE) {
           )
         )
       }
+    )
     self$modelStages <- lapply(scenarioList,
       function(stage) {
         Dir <- paste(sapply(scen,function(sc) sc$Name),collapse="")
         stageParam_ls <- list(
           Dir=Dir,                    # For stage output
-          Name=Dir                    # Root for stage
-          InputPath=sapply(scen,function(sc) sc$InputPath) # character vector
+          Name=Dir,                   # Root for stage
+          InputPath=sapply(scen,function(sc) sc$InputPath), # character vector
           Description=paste(sapply(scen,function(sc) sc$Description),collapse="\n")
         )
         VEModelStage$new(
           Name = Dir,
-          Model = baseModel,
+          Model = self$baseModel,
+          ScenarioDir=self$scenarioPath,
           modelParam_ls=modelParam_ls,
           stageParam_ls=stageParam_ls
         )
@@ -141,39 +141,41 @@ ve.scenario.load <- function(fromFile=FALSE) {
   self$modelStages <- c(self$modelStages,modelStages)
   
   # Fallback if no other stage definitions to loading sub-directories of ScenarioDir
-  if ( length(self$modelStages)==0 && ! any(c("ModelStages","Categories") %in% names(self$RunParam_ls)) ) {
+  if ( length(self$modelStages)==0 && ! any(c("ModelStages","Categories") %in% names(modelParam_ls)) ) {
     # Attempt to make sub-folders of self$scenarioPath into stages
     # In general, to avoid errors with random sub-directories becoming stages
     #  it is best to explicitly set ModelStages in the model's main visioneval.cnf
     writeLog("Parsing implicit Scenarios from directories",Level="info")
     stages <- list.dirs(self$scenarioPath,full.names=FALSE,recursive=FALSE)
     structuralDirs <- c(
-      baseModel$setting("DatastoreName"),
-      baseModel$setting("QueryDir"),
-      baseModel$setting("ScriptsDir"),
-      baseModel$setting("InputDir"),
-      baseModel$setting("ParamDir"),
-      baseModel$setting("ScenarioDir"),
-      baseModel$setting("ResultsDir")
+      self$baseModel$setting("DatastoreName"),
+      self$baseModel$setting("QueryDir"),
+      self$baseModel$setting("ScriptsDir"),
+      self$baseModel$setting("InputDir"),
+      self$baseModel$setting("ParamDir"),
+      self$baseModel$setting("ScenarioDir"),
+      self$baseModel$setting("ResultsDir")
     )
     stages <- stages[ ! stages %in% structuralDirs ]
     writeLog(paste0("Scenario Stage directories:\n",paste(stages,collapse=",")),Level="info")
     self$modelStages <- lapply(stages,
       function(stage) {
         stageParam_ls <- list(
-          Dir=stage,                            # Relative to modelPath
-          Name=stage),                          # Will only change root directory
-          Path=file.path(self$scenarioPath,Dir) # Root for stage inputs
+          Dir=stage,                              # Relative to modelPath
+          Name=stage,                             # Will only change root directory
+          Path=file.path(self$scenarioPath,stage) # Root for stage inputs
         )
         VEModelStage$new(
           Name = stageParam_ls$Name,
-          Model = baseModel,
+          Model = self$baseModel,
+          ScenarioDir=self$scenarioPath,
           modelParam_ls=modelParam_ls,
           stageParam_ls=stageParam_ls
         )
       }
     )
   }
+  self$RunParam_ls <- modelParam_ls # save scenarios RunParam_ls
   # Get here with self$modelStages containg a list of VEModelStage objects
 }
 
