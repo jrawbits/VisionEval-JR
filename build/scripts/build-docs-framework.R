@@ -129,7 +129,6 @@ if ( need.new.docs ) {
     cat("Parsing file:",DocFile)
     ParsedRd_ls <- Rd2md::parseRd(tools::parse_Rd(DocFile))
     Group <- getGroup(ParsedRd_ls)
-    print(Group)
     if ( length(Group)==0 ) {
       Group <- "control"
       cat(" (default)","\n")
