@@ -1,5 +1,4 @@
-var ref = [
-{
+var refValues = {
         "CO2eTargetChange":-0.6,
         "DvmtCap":24.2,
         "BikeDvmtCap":77,
@@ -11,5 +10,4 @@ var ref = [
         "CO2eMile":159.6122,
         "HouseholdCostPct":15.1385,
         "LowIncHouseholdCostPct":33.8453
-}
-];
+};

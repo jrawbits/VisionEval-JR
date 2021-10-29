@@ -13,8 +13,6 @@ head
     <link href='css/dc.css' rel='stylesheet' type='text/css'>
     <link href='css/colorbrewer.css' rel='stylesheet' type='text/css'>
     <link href='css/style.css' rel='stylesheet' type='text/css'>
-      Contains: .stack._1 > .bar { fill:darkgray; }
-    Inline CSS styles
 
 body
   Div H2 Scenario Viewer
@@ -35,26 +33,6 @@ body
   Div container col-sm-12 Scenario Data Table
     Table id=Scenario-Results
   
-  Remainder of body is Javaascript
-    // Actual data about scenarios and categories
-    <script src='data/VERSPM/scenario-cfg.js' type='text/javascript'></script>
-    <script src='data/VERSPM/category-cfg.js' type='text/javascript'></script>
-    Javascript laying out scenarios and categories
-
-    // Actual data about outputs
-    <script src='data/VERSPM/output-cfg.js' type='text/javascript'></script>
-    Javascript constructing output bar charts
-
-    // Reference data and scenario data
-    <script src='data/VERSPM/verspm.js' type='text/javascript'></script>
-    <script src='data/VERSPM/verspm-ref.js' type="text/javascript"></script>
-    Javascript to implement visualization
-      It's hard-coded here for number of categories/output measures
-      The names for these elements are constructed programmatically earlier
-      All of this manipulation should be done iteratively
-        for each of the input categories and output measures.
-      So build a better structure...
-
 Explaining the crossfilter: https://vizdatauk.wordpress.com/2016/05/20/getting-to-know-dc-js/
 Explaining d3 + crossfilter: https://www.asynclabs.co/blog/software-development/how-to-visualize-big-data-sets-with-d3-js/
 Explaining dc.js: https://www.tutorialspoint.com/dcjs/index.htm
@@ -78,12 +56,12 @@ Data files:
       NAME
       DESCRIPTION
       LEVELS : array of level structures:
-        NAME
+        NAME : string (digit) prepended with "L" to get label
         INPUTS : array of input structures
           NAME: (of scenario element; see scenario-cfg.s)
           LEVEL: (of scenario element; see scenario-cfg.js)
   output-cfg.js       3,622
-    Could come from the query spec
+    Could come from the query spec (a number of these are present there...)
     Need to be regional specifications (or specific geography)
     Need to be scalar measures (no breaks)
     Key properties
@@ -108,11 +86,16 @@ Data files:
       Core category description also includes FILES
       Instructions could include description of file columns get adjusted
       Also have instructions for Levels to explain what is done to files
-  verspm-ref.js         254 // reference values - need to figure out how generated and what used for
+  values-ref.js         254 // reference values - need to figure out how generated and what used for
     Could provide "reduction" - generated from base scenario or base year?
     One row per metric? But has 11 rows, whereas only 8 metrics are displayed
-  verspm.js         200,425
-    "Scenario" // the literal word "Scenario"
-    "Full Name" // the Stage name for the scenario...
-    "Individual Components: Category + Level" (2 cols for each category/level)
-    "Metrics" (column name is output-cfg.COLUMN; one column for each metric)
+  vedata.js         200,425
+    "Scenario"     // the literal word "Scenario"
+    "Full Name"    // the Stage name for the scenario...
+    "Individual Components: Key(Category$NAME):Value(Level$NAME)
+      // Broken out from full stage name - we generate this list when building the scenarios.
+      // Keep them in the Scenario run parameters
+    "Metrics":
+      // Key(Metric Name from Query):Value(Metric value for this stage in query results)
+
+

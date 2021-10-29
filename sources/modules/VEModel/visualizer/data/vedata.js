@@ -1,4 +1,4 @@
-var data = [
+var VEdata = [
   {"Scenario":"B1C1D1E1F1G1I1L1P1T1V1","B":"1","C":"1","D":"1","E":"1","F":"1","G":"1","I":"1","L":"1","P":"1","T":"1","V":"1","GHGReduction":0,"DVMTPerCapita":19.6096,"WalkTravelPerCapita":0.3489,"TruckDelay":0,"AirPollutionEm":802362.5458,"FuelUse":35078019.0482,"VehicleCost":4.5443,"VehicleCostLow":23.9726},
   {"Scenario":"B1C1D1E1F1G1I1L1P1T1V2","B":"1","C":"1","D":"1","E":"1","F":"1","G":"1","I":"1","L":"1","P":"1","T":"1","V":"2","GHGReduction":0,"DVMTPerCapita":19.7694,"WalkTravelPerCapita":0.3481,"TruckDelay":0,"AirPollutionEm":747143.5295,"FuelUse":32764462.6057,"VehicleCost":4.9181,"VehicleCostLow":26.033},
   {"Scenario":"B1C1D1E1F1G1I1L2P1T2V1","B":"1","C":"1","D":"1","E":"1","F":"1","G":"1","I":"1","L":"2","P":"1","T":"2","V":"1","GHGReduction":0,"DVMTPerCapita":18.2711,"WalkTravelPerCapita":0.3589,"TruckDelay":0,"AirPollutionEm":770534.4713,"FuelUse":33825723.3276,"VehicleCost":4.3573,"VehicleCostLow":24.6553},
