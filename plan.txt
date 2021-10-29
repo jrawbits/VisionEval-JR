@@ -2,23 +2,57 @@ The path to completion:
 
 See plan-scenario.txt and scenarios.r for details on the new scenario architecture.
 
-When we run a query, we generate VEQueryResults for each VEResults object and save that out
-into the VEResults output path (query and date). Done like that, we can just save the query
-spec and add a "Value" structure into the list. The "Value" structure is just a nested
-list with a single numeric value (named after the Metric) if it is scalar, with a named
-numeric vector if there is either a set of zones or a set of breaks, and a named array if
-there is a set of zones AND a set of breaks.
+When we run a query, we generate VEQueryResults for each VEResults object and save that out into the
+VEResults output path (query and date). Done like that, we can just save the query spec and add a
+"Value" structure into the list. The "Value" structure is just a nested list with a single numeric
+value (named after the Metric) if it is scalar, with a named numeric vector if there is either a set
+of zones or a set of breaks, and a named array if there is a set of zones AND a set of breaks.
 
-So then we can just use the SummarizeDatasets at a very low level to inject the results
-directly into the QuerySpec, which we can then save out (along with metadata indicating
-that this QuerySpec contains run results). That result obeject will be written into
-VEResults$Path/OutputDir/QueryName-TimeStamp.veqry. If we load a VEQry that has run results,
-it just loads as a query. Any editing will remove all the results (and we can re-save it).
-If we visit multiple results, their query results all get the same TimeStamp, and the model
-and its scenarios get (in the Model's ResultsDir/OutputDir) a timestamp for the query run
-(present in all stages that completed). The .veqry output in that case lists ModelStage Results
-that were processed by the query run (by ModelStage Dir) as well as the QuerySpec. So if we
-load the Query object in the model results, it will assemble all the stage results.
+A VEQueryResults consists of 0 or more QuerySpecification lists. A VEQuery manages the list of such
+specifications (VEQueryResults is a sub-class of VEQuery). VEQueryResults can handle two cases: the
+results for running the query on a specific set of VEResults (a model stage), or the results for
+running the query on a model (with a set of model stages).
+
+For the single model stage, the results are stored in a named list of Value elements, which will be
+a named numeric vector (length 1 or more) or a named numeric array (with 2 dimensions). The
+VEQueryResults also has a Timestamp corresponding to when the query was run (a conventional time
+from calling VEQuery$run).
+
+For the set of model stages (full model with direct stages or scenarios), the VEQueryResults stores
+a list of ModelStages - their Name and RunPath - and the Timestamp (no Values - those are acquired
+indirectly by visiting each of the ModelStages.
+
+When a Query is run, the Query results are saved in the ResultsDir (for a Model with scenarios) or
+in the ResultsDir/StageDir (for a single model stage). The results are always saved in a file called
+Query-<QueryName>-Timestamp.Rda (an RData file).
+
+We can ask a VEModel for its query results (list of all available results) or a list of its known
+queries (which may or may not have results). Or we can ask a VEQuery for its results given a
+particular model (or run it on that model). We can open Query results directly by providing the file
+path (which implies a RunPath, a ModelState and thus a Model).
+
+With VEQueryResults, we have two options: export(data.frame return, CSV file, Tableau CSV(s),
+Visualizer) or visualize (function which uses JRC to launch the Visualizer). Exports go into
+OutputDir for the Stage or Model the VEQueryResults are associated with. If we export the
+visualizer then the system will copy the HTML tree and sub-directories to an OutputDir sub-directory
+named Query-<QueryName>-Visualizer-<Timestamp>, and inject a script command into the end of the HTML
+body that will load the visualizer.js file. The .js could include "VisualVE" function call at the
+end after the required data has been defined - so it's just one line of Javascript that we could
+insert through a template substitution into the same HTML used by the JRC "live" visualizer.
+
+The Visualizer HTML should show the Timestamp for the query run that generated the results that are being
+displayed.
+
+So then we can just use the SummarizeDatasets at a very low level to inject the results directly
+into the QuerySpec, which we can then save out (along with metadata indicating that this QuerySpec
+contains run results). That result obeject will be written into
+VEResults$Path/OutputDir/QueryName-TimeStamp.veqry. If we load a VEQry that has run results, it just
+loads as a query. Any editing will remove all the results (and we can re-save it). If we visit
+multiple results, their query results all get the same TimeStamp, and the model and its scenarios
+get (in the Model's ResultsDir/OutputDir) a timestamp for the query run (present in all stages that
+completed). The .veqry output in that case lists ModelStage Results that were processed by the query
+run (by ModelStage Dir) as well as the QuerySpec. So if we load the Query object in the model
+results, it will assemble all the stage results.
 
 Need to ponder the management a bit: a QuerySpec is rather model-independent. a QueryRun (in
 OutputDir/queries) contains the QuerySpec used to generate the results, plus the results themselves.
@@ -32,7 +66,8 @@ From there, we can export into a variety of formats:
   1. (export) Query metadata (row = metric, columns = metadata)
   2. (export) Query values as CSV (row=flattened metric (zones,breaks), column=value)
   3. (export) Query values as Tableau format (possibly multiple files, key structure)
-  4. (visualize) Query values as Visualizer javascript (single file defining Javascript data objects for
+  4. (export) Visualizer (writes an entire local HTML hierarchy like VEScenario did)
+  5. (visualize) Query values as Visualizer javascript (single file defining Javascript data objects for
      VisualVE plus function call to force the page). Visualizer uses a different base page
      depending on whether it is looking at the VEQuery result for
      a. one scenario
