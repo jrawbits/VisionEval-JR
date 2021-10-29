@@ -1,3 +1,9 @@
+TODO to support visualizer:
+  Add "ScenarioGroup" specification
+    (Otherwise each "Scenario" is a ScenarioGroup)
+    Has a Name, Label, Description, Level, just like a category
+    But each level contains one or more Category/Levels
+
 Basic scenario operation:
   Scenarios are just an alternate place/means of constructing model stages
     Look for ScenarioDir and if found, process model stages from there (tag as "Scenario" stages as they are built)

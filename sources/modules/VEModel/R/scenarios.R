@@ -60,6 +60,15 @@ ve.scenario.load <- function(fromFile=FALSE) {
   } else modelStages <- list()
   self$modelStages <- modelStages
 
+  # TODO: Add ScenarioGroups (for use by the visualizer later).
+  # ScenarioGroups (array of):
+  #   NAME
+  #   LABEL
+  #   DESCRIPTION
+  #   LEVELS (array of):
+  #     CATEGORY
+  #     LEVEL
+
   if ( "Categories" %in% names(modelParam_ls) ) {
     writeLog(paste("Parsing Category combination Scenarios from",self$ScenarioDir),Level="info")
 
