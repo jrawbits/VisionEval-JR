@@ -1,0 +1,158 @@
+Change how the queries manage their results.
+
+Run ModelStage Punch List:
+  - When we run a ModelStage, we need to save key features of the ModelStage into the ModelState.Rda
+    In particular, we want to keep the Scenario/Level list. The RunParam_ls for the ModelStage
+    (if it was built as a scenario) should include the "Scenario/Level" descriptors as
+    built when we identify scenarios.
+
+Setting up scenario ModelStages:
+  - For manual scenarios, the ModelStage should include a "Category" key, referring to the
+    "Categories" tag (which should only contain "NAME", "LABEL" and "DESCRIPTION", not "LEVELS").
+    If there is no Category key, it gets a default one called "Scenarios".
+  - If no "Scenarios" tag, but "Categories" exists, use that as below to classify any manual
+    scenarios.
+
+  - If no "Categories" and "Scenarios" are pre-defined:
+      - "Categories" and "Scenarios" tags will be created as the set of unique "Category" tags in
+        each Reportable ModelStage
+      - Each reportable ModelStage:
+        - Adds a Scenario/Level to the scenarios list (NAME=Scenario Name/Dir, LEVEL=1)
+        - Adds a Category/Level (or just a level to the Categories table)
+          - If the stage has no Category, its category is "Scenarios"
+          - If the stage category does not exist it is created in the categories table
+          - The stage is appended to the list of category levels (NAME = next available number)
+          - The Category level only has one scenario (NAME=ModelStage name, LEVEL=1)
+
+  - If there are "Categories" and "Scenarios" defined
+      - "Categories" must contain "LEVELS", which is a list of the defined NAME and LEVEL from
+        the "Scenarios" tag
+      - The Scenario Name/Level is sought as an input folder in ScenarioDir (paste0(Name,Level))
+        Input path for the Scenario/Level is the corresponding input folder. Description for
+        the Scenario/Level is placed in the "Scenarios" tag.
+      - We build model stages from combinations of Category/Level (where each Category/Level
+        supplies the vector of InputPaths for its Scenario/Level elements as well as a vector
+        of Levels for each Scenario associated with that Category).
+          - Visit all the Scenario/Levels and add InputPath (normalized) and Level NAME
+          - When building a ModelStage for a combination of Category/Level, add the InputPaths
+            of all the Scenario/Levels in the Category/Levels and accumulate a named vector of
+            Scenario/Level
+          - A special "Level 0" is added to the front of the list of Category/Levels, with
+            description "Base Conditions" and Name "0"
+      - The StartFrom stage is also tagged: it provides the last element of InputPath for all
+        the generated stages, and it is tagged with level zero for each Scenario entry.
+
+Extracting information from ModelStages:
+  - Need a function to generate the scenario descriptor for the visualizer's VEData output:
+    "Scenario":<ScenarioDir> followed by the Scenario/Level (low-level, not categories) tags.
+
+Query Punch List:
+  - Change Geography not to include specific zones (GeoValue). Just include GeoType - and only
+    process metrics compatible with that type.
+
+  - Change the VEQuery $run function to deal exclusively with a VEModel or a VEResults, and
+    drop support for any other kind of thing. We can either query a model or we can query one
+    of more VEResults (implicitly a ModelStage), which just regenerates the query results for
+    that stage.
+
+  - Basic approach is to take a VEModel object, run its $query function supplying the path of
+    a query (relative to modelPath/QueryDir or a full path) and an optional "QueryName" to use
+    in building the output files. The result of that is a VEQuery object
+
+  - From a VEquery, for which we can request $results (yields VEQueryResults) which comes from
+    opening the Query's .RData in the associated model's ResultsDir.
+  - A VEQuery object has a concept of an "attached VEModel"
+  - Each VEModelStage also has a $query function that will work just on the stage, and that
+    takes a VEQuery and returns the same VEQuery with Model/ModelStage attached.
+  - When we have a VEQuery, we can run it (removes prior results in the attached model for that
+    query, unless overwrite==FALSE in which case we report that it has already been run).
+  - Requesting query results on a query that has not been run reports an error
+    ("Query has not been run yet."). Likewise if no Model/ModelStage attached. Otherwise opens a
+    VEQueryResults object
+  - VEQueryResults will open the Query .RData in the ResultsDir of the attached Model/ModelStage
+    (is a timestamp really needed?)
+  - Can $clear VEQueryResults. Can $run VEQueryResults (which uses the specification saved
+    in the .Rdata file).
+
+  - Running just caches the raw values from SummarizeDatasets and saves them to the Query .Rdata.
+
+  - A separate $export or $visualize function will take the raw results and boil them down
+    (including looking at just a subset of Geographies - we don't do that up front, though we
+    do set the geography level).
+
+When we run a query, there's no saving or automatic data conversion. Instead, we create an .Rdata
+file with the completed query spec and place it in ResultsDir for each Stage (don't mess with
+OutputDir - that will just be for extracts).
+
+Don't use the .VEqry suffix for the query output .Rdata - just make it an .Rdata file.
+
+In the .Rdata file, The QuerySpecification list for the Query is augmented with a "Value" key which
+contains either a scalar, named vector or named matrix/array (convention for which is the first
+index of the array - see existing code). When the query is run, the results are ALWAYS placed in
+ResultsDir with the file name: QueryRun-<QueryName>-<TimeStamp>.RData.
+
+Writing out query results works like this: we process a list of VEResults. Each of those receives
+(in its ResultsPath) the QueryRun-*.Rda file with the constructed Value key. We can run for a
+specific VEResults (ModelStage) or we can run for a VEModel. When we do a VEModel, the VEQuery is
+also generated there, but the "Value" key contains the "Model" and instead of "Results", includes
+"ModelStages" which is a list of Stages into which the QueryRun results were generated. The
+<QueryName> and <Timestamp> must be the same throughout (essentially a GUID for the query run). The
+"QueryRun" .Rdata file placed in the VEModel has a different structure: in addition to the Query
+specification, it has a "ModelStages" object that is a list of reportable StageDir names for the
+ModelStages that were queried (we can create that before we do the stage queries, use it to visit
+the relevant stages). If we have any Scenario stages, then we also need to include the
+Category/Scenario/Level specification from the Model (so we have what we need to visualize that
+snapshot). Then we don't actually need to look at the model when we "visualize" the query results;
+we can just look at the QueryRun-*.Rdata file.
+
+The result query is just like the .VEqery, but has the "Value" key. We can recover the .VEqry (in
+it's text format form) by exporting the query in "metadata" format.
+
+We run "visualize" or "export" on the VEQueryResults (opened for the model from its root ResultsDir,
+and opened for a ModelStage from its Stage directory). If we just open a single VEResults, we can
+visualize it, but it's stupid: we get a bar chart with one bar for the scenario, and bar charts with
+one bar for each of the metrics. It makes more sense to export it.
+
+We can subset the visualization for a model by listing just specific categories to include - as
+if those were all that were configured. If we export (instead of visualize) a result subset, we
+get a data.frame/csv/sql for just the ModelStages that are tagged with those categories.
+
+For a VEModel (with multiple Stages, possibly constructed from Scenarios) we can export to a
+data.frame (returned), to a .csv file (filename defaults in OutputDir for the model to the name of
+the Query results .VEqry except the extension is changed to .csv), to a "visualizer" which is placed into
+a subdirectory whose name is the root of the .VEqry result name with "Visualizer" replacing
+"QueryRun" as the prefix. Filename for visualizer can also be created. Eventually, the "tableau"
+export format will be supported, and we might also support SQL with a nice definition of tables
+tracking what goes out to the visualizer (Categories, Scenarios, Metrics and Results). For "sql"
+format, need to provide a DBI connection to a database from which the target tables will be cleared.
+
+For VEResults, also improve the export: format can be "csv", "data.frame" (return), or "sql" (where
+the SQL database DBI connection is provided). The .csv export also produces a metadata file
+indicating what was selected for export, as is currently the case, and the results go into a
+timestamped sub-folder.
+
+So the only difference in exporting VEResults versus exporting a .VEqry is how the data.frame list
+is generated. We can ask for .VEqry metadata, which does a text dump of the results .Rdata file.
+
+Internally, VEResults and VEModel can use the same mechanism for generating their output. We start
+by generating data.frame(s) (a list if more than one), then use the output formatter to generate
+the return. If we ask for data.frames, they are returned visibly. If we ask for some other format,
+we get an invisible named list of data.frames (with a special class VEExport that tells "print" to
+list their names not their values) - probably do that via a class-specific "as.character" function
+(and an as.data.frame function which just removes the "VEExport" class).
+
+If we ask for .csv (either exporting a query or extracted tables) then the data.frames are written
+out to a series of time-stamp folders containing .csv files named after the data.frames. Overwriting
+is not an issue for .csv since they will just keep piling up in OutputDir.
+
+If we ask for SQL and provide a connection to a database, the data.frames are written to tables (the
+names are the data.frame names, only SQL-ized), and if those tables already exist they are first
+dropped (if overwrite=TRUE) or the transaction is cancelled with an error message (if
+overwrite=FALSE). For SQL, if instead of a dbiconnecton we provide a filename, a text .SQL file will
+be generated in a SQL dump format (dropping and recreating tables, and providing INSERT statements
+to load the data).
+
+Need to update the "dir" and "clear" functions for the model to manage queries. QueryDir contains
+query templates. Need to recognize queries in the ResultsDir and treat those like log files with
+respect to listing and clearing. Clearing results will take out the QueryRun-*.Rda along with Logs.
+
