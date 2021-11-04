@@ -61,9 +61,6 @@ ve.query.init <- function(
                      # However, if FileName is provided, use that if absolute, othewise normalize
                      # with ModelPath/QueryDir, attaching ".VEqry" if need be. See ve.query.load
 ) {
-  # Attach the Model if provided
-  self$model(Model) # Also looks up possibly existing QueryResults
-
   # Fill in useful filename default
   if ( !is.null(FileName) && is.null(QueryName) ) {
     QueryName <- sub("\\.[^.]*$","",basename(FileName))
@@ -71,7 +68,7 @@ ve.query.init <- function(
   if ( ! is.list(QuerySpec) && ! "VEQuery" %in% class(QuerySpec) ) {
     if ( "VEQuerySpec" %in% class(QuerySpec) ) {
       QuerySpec <- list(QuerySpec) # a single query spec becomes a list of one
-    } else idf ( !is.null(QuerySpec) ) {
+    } else if ( !is.null(QuerySpec) ) {
       writeLogMessage("Unrecognized QuerySpec:")
       writeLogMessage(deparse(QuerySpec))
       QuerySpec <- NULL # Invalid query spec
@@ -112,6 +109,7 @@ ve.query.init <- function(
   }
 
   # Evaluate what is present
+  self$model(Model) # Requires QueryName; also looks up possibly existing QueryResults
   self$check()
   invisible(self$valid())
 }
@@ -624,7 +622,7 @@ ve.query.results <- function(Results=NULL) {
     if ( "VEModel" %in% class(self$Model) ) {
       # update QueryResultsFile based on self$Model
       Results <- self$Model$results()
-      OutputFile = self$Model$setting("QueryOutputTemplate"),
+      OutputFile = self$Model$setting("QueryOutputTemplate")
       self$QueryResultsFile <- stringr::str_replace(OutputFile,"%queryname%",self$QueryName)
       if ( ! grepl("\\.Rda(ta)?$",self$QueryResultsFile) ) self$QueryResultsFile <- paste0(self$QueryResultsFile,".Rda")
     } else return( character(0) ) # No current results
@@ -645,7 +643,7 @@ ve.query.results <- function(Results=NULL) {
   return(self$QueryResults) # Just return the ones that are already there...
 }
 
-# Set the Model and pre-load QueryResults if present
+# Attach a Model and pre-load QueryResults if present
 ve.query.model <- function( Model ) {
   if ( ! missing(Model) ) {
     self$Model <- Model
@@ -654,9 +652,6 @@ ve.query.model <- function( Model ) {
   return(self$Model)
 }
 
-# TODO: restructure to run on Model rather than Results (Model can be
-# a VEModelStage or a list of them - their query results will be
-# update individually).
 ve.query.run <- function(
 #  Results,   # May be a vector of file locations, a VEResults or VEModel object, or a list of such objects
   Model      = NULL,  # Attached model on whose results to run (or a VEResultsList)
@@ -1277,7 +1272,7 @@ makeMeasure <- function(measureSpec,thisYear,QPrep_ls) {
     # Add GeoValue as an attribute to the measure
     measure <- structure(measure,GeoValue=GeoValue) # used during export to filter on specific zones
   } else {
-    writeLog(paste(measureName,"Invalid Measure Specification (must be 'Summarize' or 'Function')"),Level="error"))
+    writeLog(paste(measureName,"Invalid Measure Specification (must be 'Summarize' or 'Function')"),Level="error")
     measure <- as.numeric(NA)
   }
 
