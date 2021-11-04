@@ -33,19 +33,20 @@ Setting up scenario ModelStages:
 
   - For manual scenarios, the ModelStage should include a "Category" key, referring to the
     "Categories" tag (which should only contain "NAME", "LABEL" and "DESCRIPTION", not "LEVELS").
-    If there is no Category key, it gets a default one called "Scenarios".
+    If there is no Category key, it gets a default one called "Scenarios". If there are Category
+    keys but no "Categories" tag, build the latter from whatever is present (at a minimum, a
+    "Scenarios" category).
 
-  - If no "Scenarios" tag, but "Categories" exists, use that as below to classify any manual
-    scenarios - drop any Categories that are not referred to by any of the defined ModelStages.
-    If the "Levels" element of "Categories" is provided, only include the scenario ModelStages
-    listed there (by their ModelStage Name) and give it Level=1. The default is to include
-    all scenario model stages as levels in the corresponding Category if no levels are defined
-    for the Category.
+  - If no "Scenarios" tag, but "Categories" exists, use that to classify any manual scenarios - drop
+    any Categories that are not referred to by any of the defined ModelStages. If the "Levels"
+    element of "Categories" is provided, only include the scenario ModelStages listed there (by
+    their ModelStage Name) and give it Level=1. The default is to include all scenario model stages
+    as levels in the corresponding Category if no levels are defined for the Category.
 
   - If "Scenarios" tag exists but no Categories, just do a one-to-one mapping from "Scenarios"
     to "Categories". Name and Description are elevated from the Scenario Label and Description
     respectively, and the Category levels just track over to the Scenario/Level list from
-    "Scenarios".
+    "Scenarios". Amounts to renaming "Scenarios" into "Categories"
 
   - If no "Categories" and "Scenarios" are pre-defined:
       - "Categories" and "Scenarios" tags will be created as the set of unique "Category" tags in
@@ -58,9 +59,10 @@ Setting up scenario ModelStages:
           - The stage is appended to the list of category levels (NAME = next available number)
           - The Category level only has one scenario (NAME=ModelStage name, LEVEL=1)
 
-  - If there are "Categories" and "Scenarios" defined
+  - If there are both "Categories" and "Scenarios" defined
       - "Categories" must contain "LEVELS", which is a list of the defined NAME and LEVEL from
         the "Scenarios" tag
+      - FILES tag goes on "Scenarios", not "Categories" in the visualizer scheme.
       - The Scenario Name/Level is sought as an input folder in ScenarioDir (paste0(Name,Level))
         Input path for the Scenario/Level is the corresponding input folder. Description for
         the Scenario/Level is placed in the "Scenarios" tag.
@@ -282,7 +284,8 @@ indicating what was selected for export, as is currently the case, and the resul
 timestamped sub-folder.
 
 So the only difference in exporting VEResults versus exporting a .VEqry is how the data.frame list
-is generated. We can ask for .VEqry metadata, which does a text dump of the results .Rdata file.
+is generated. We can ask for .VEqry metadata, which does a text dump of the results .Rdata file,
+without the Value key.
 
 Internally, VEResults and VEModel can use the same mechanism for generating their output. We start
 by generating data.frame(s) (a list if more than one), then use the output formatter to generate
