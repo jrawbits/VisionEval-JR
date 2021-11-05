@@ -90,14 +90,6 @@ ve.scenario.load <- function(fromFile=FALSE) {
     # to run that on arbitrary stages and just get their list of inputs. We'll need that eventually
     # to ensure that the InputPath is working right and the scenarios are set up correctly.
 
-    # TODO: if a required Category/Scenario input directory is missing, verify the input
-    # directories and report scenarios or levels that are not present, or are missing files,
-    # or that have extra files. We'll still set up whatever model stages we can (and allow them to
-    # run) but we will note that we tried to define additional scenarios but were missing input
-    # files (or, for explicit ModelStages, the indicated scenario parameters were not runnable;
-    # No file checking is done for explicit ModelStages.). That could come up as a warning when we
-    # do scenarios$stages().
-
     # Once we've loaded a model with such "defective" scenarios, we can retrieve
     # BaseModel$scenarios() and use the "build" and "verify" functions to see if everything is
     # complete and present. "verify" will report inconsistent file space compared to definitions
@@ -257,9 +249,28 @@ ve.scenario.reportable <- function(stageName) {
     stageName==startFrom
   )
 }
-  
 
-# TODO: include a verify function
+# TODO: Add a "verify" function (perhaps just a flag on "build" that says to report
+# inconsistencies without doing anything to repair them). It makes sure that all listed
+# Scenarios and Categories are complete (Scenarios in each Category must be distinct - in the
+# same way a File can only appear in one Scenario, a Scenario can appear in only one Category).
+# For ModelStage scenarios, make sure that they have a Directory. All the Files in the Scenarios
+# must be physically present in the StartFrom for the Scenarios (which might be a local explicit
+# ModelStage) - that's not a physical requirement. We'll still look up the InputPath for
+# anything missing. However it is a logical requirement for successful scenario management: in
+# fact, we could make it more precise and say that the Category StartFrom must have files in its
+# local InputPath and they must be all and only the set of Files accumulated from the Scenarios
+# - at the least, generate a report on which files are missing from the base, and which files
+# are "extra" (though that's less a concern since that StartFrom stage might a have a complete
+# set of inputs including files that are not altered in scenarios.
+
+# TODO: if a required Category/Scenario input directory is missing, verify the input
+# directories and report scenarios or levels that are not present, or are missing files,
+# or that have extra files. We'll still set up whatever model stages we can (and allow them to
+# run) but we will note that we tried to define additional scenarios but were missing input
+# files (or, for explicit ModelStages, the indicated scenario parameters were not runnable;
+# No file checking is done for explicit ModelStages.). That could come up as a warning when we
+# do scenarios$stages().
 ve.scenario.verify <- function() {
   # Figure out what to verify in scenarios
   # All files in place? Files modified?

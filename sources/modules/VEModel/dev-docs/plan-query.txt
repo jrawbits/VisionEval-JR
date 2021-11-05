@@ -1,3 +1,8 @@
+TODO: queries can be done for all the years in the results, but when visualizing we typically have
+to pick one year (default, the last one in the StartFrom Stage). When exporting, we can limit to a
+year, but by default include all of them. BaseYear is not included unless it is forced to be
+Reportable.
+
 Change how the queries manage their results and make other adjustments to scenario stage building so
 all the information needed by the visualizer is available. Keep very raw results from running the
 query. Only build data.frames for the tabular export formats (csv, data.frame, sql, perhaps

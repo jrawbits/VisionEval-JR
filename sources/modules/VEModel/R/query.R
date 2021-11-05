@@ -568,6 +568,41 @@ ve.query.getlist <- function(Geography=NULL) {
   return( newSpec )
 }
   
+ve.query.visual(categories=character(0),measures=character(0),save=FALSE) {
+  # if categories is numeric, first N categories
+  # if categories is character, only categories with those names (max length)
+  # if measures is numeric, first N measures
+  # if measures is charcter, only measures with those names (max length)
+
+  # TODO: think about filtering for a particular year
+  # Can we tie a category to a year?
+  
+  # Get the model's scenarios
+  # Identify the ones against categories we want to use
+  # Identify the full set of scenarios for each included category + level
+  # Visit each reportable model stage (start from)
+  # Request scenario levels for each stage. The first one with all zero levels stays (probably the
+  # first overall - the StartFrom stage). Later stages with all zeroes are not included in the
+  # output.
+  # VEData consists of one JSON row for each result
+
+  # Build the JSON for the visualizer:
+  #   VEData           From makeExportJSON()
+  #   categoryconfig   From Model$scenarios()$categoryConfig(categories)
+  #   scenarioconfig   From Model$scenarios()$scenarioConfig(categoryconfig) # just the ones we used
+  #   outputconfig     From Query Specification filtered by "measures"
+
+  # if NOT save
+  # Start the browser with the Visualizer HTML/JS/CSS
+  # then inject visualizer.json via jrc::sendCommand
+  # then inject call to VisualVE(); via jrc::sendCommand
+  # Don't need to stay live with the page (leave it in the browser, but close
+  #  everything on our side).
+
+  # always return the JSON so the caller can write a file if desired
+  return(invisible(visualizer.json))
+}
+
 # Export query results (if any) to a .csv, visualizer or some other format
 # TODO: possibly filter by Geography (Type, Value) - only measures where Geography == Type and
 # only the elements for the corresponding value (always include Region measures).
@@ -610,10 +645,61 @@ ve.query.export <- function(format="visualizer",OutputDir="",Geography=list(),Re
   #       the data.frames.
 }
 
-# TODO: helper function to locate OutputDir given Results (VEModel or VEResults)
+# Helper function to locate OutputDir given Results (VEModel or VEResults)
+exportDir <- function(model=NULL,results=NULL) {
+  exportDir <- if ( class(model) == "VEModel" ) {
+    file.path(model$modelPath,model$setting("ResultsDir"))
+  } else if ( class(results) == "VEResults" ) {
+    dirname(dirname(normalizePath(results$resultsPath)))
+  } else {
+    stop( writeLog("Cannot export: no model or results to locate output directory.",Level="error") )
+  }
+  return(exportDir)
+}
+
+# TODO: helper function to prepare a list of metadata elements
+defautlMetadata <- c("NAME","UNITS","DESCRIPTION")
+
+makeExportJSON <- function(resultList,scenarios) {
+  # resultsList contains pathnames to query result files for this query
+  # scenarios contains a list of scenario names to populate into the JSON
+  # (it must be filtered against desired categories through the model's scenarios
+  # d
+  
 
 # TODO: helper function to build a data.frame from a sequence of query result files (with
 #       option to include metadata or not from the query specification).
+makeExportDataFrame <- function(resultList,metadata=TRUE,data=TRUE) {
+  # resultList is a character vector of file path names
+  # if metadata is TRUE (default), basic metadata will be inserted before the first
+  #   data output; if metadata is a character vector, it is treated as TRUE, but
+  #   the vector holds names of specific metadata fields to insert (e.g. just UNITS
+  #   or some other field not usually included).
+  # if data is FALSE, data columns will not be generated if metadata is TRUE
+  # if both are false, data is treated as TRUE
+
+  if ( is.character(metadata) ) {
+    wantMetadata <- TRUE
+  } else {
+    wantMetadata <- metadata
+    metadata <- if ( wantMetadata ) defaultMetadata else character(0)
+  }
+
+  results.df <- NULL
+  results <- new.env()
+  for ( resultsFile in resultList ) {
+    load(resultsFile, envir=results)
+    theseResults <- makeMeasureDataframe(results,metadata)
+    # has one column per scenario year of values
+    # plus initial columns are metadata if requested
+    results.df <- if ( is.null(results.df) ) {
+      theseResults
+    } else {
+      cbind( results.df, theseResults )
+    }
+    rm(list=ls(results,all=TRUE)) # Set up environment contents for garbarge collection
+  }
+}   
 
 # Find any existing Query Results (as a list of files)
 ve.query.results <- function(Results=NULL) {
@@ -1277,9 +1363,9 @@ makeMeasure <- function(measureSpec,thisYear,QPrep_ls) {
   }
 
   # Turn the measure into a named list of one, for inclusion in the measureEnv$Values entry
-  measure <- list(measure)
-  names(measure) <- measureName
-  return(measure)
+  measureList <- list(measure)
+  names(measureList) <- measureName
+  return(measureList)
 }
 
 #   # Linearize measure elements and names when doing export
