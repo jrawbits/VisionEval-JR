@@ -568,12 +568,16 @@ ve.query.getlist <- function(Geography=NULL) {
   return( newSpec )
 }
   
-# Generate data.frame from all query results for a model or list of VEResults
-# From there, we can write the data.frame or use it for visualizeResults
-# Option to save the data.frame in some output format (data.frame, csv, sql)
+# export function makes a data.frame of results from the VEResults list by applying the
+# query. We'll use that data.frame for all purposes (like handing it back to the VEModel to
+# visualize).
+
+# Export query results (if any) to a .csv, or some other tabular format
 # TODO: possibly filter by Geography (Type, Value) - only measures where Geography == Type and
 # only the elements for the corresponding value (always include Region measures).
-ve.query.export <- function(format="data.frame",OutputDir="",Geography=list(),Results=NULL) {
+# Possibly filter by Year (since the query will do all years in the scenario - may only want one of
+# those).
+ve.query.export <- function(format="visualizer",OutputDir="",Geography=list(),Results=NULL) {
   Results <- self$results(Results)
   if ( length(Results)==0 ) {
     stop(
@@ -582,8 +586,6 @@ ve.query.export <- function(format="data.frame",OutputDir="",Geography=list(),Re
   }
   # TODO: branch on format, locate results, iterate over result files, opening them and building the
   #       required output formats.
-  # TODO: a Query $visualize shortcut function that runs export(format="visulalize") with no
-  #       OutputDir.
   # TODO: data.frame and .csv format are identical (use the same helper function to build
   #       data.frames) but differ with respect to how (or if) those data.frames are written out.
   # TODO: data.frame generates a data.frame of flattened measures for each scenario+year in
@@ -592,7 +594,7 @@ ve.query.export <- function(format="data.frame",OutputDir="",Geography=list(),Re
   #       formulate the columns for each scenario (use the first Result file to load up the
   #       the measure names). Crap out if subsequent Results have different measure names in them.
   #       Metadata flag determines if we include Units/Description/Geography along with first
-  #       column. If OutputDir is not missing, locate OutputDir and create
+  #       column. If OutputDir is not missing, locate OutputDir (see "visualizer") and create
   #       "Export_<QueryName>_<Timestamp>.Rda" in that location. Also return the data.frames.
   # TODO: writes results of data.frame format except including metadata by default into files in
   #       timestamped subdirectory of model's ResultsDir. If no model is attached and we provide
@@ -602,7 +604,8 @@ ve.query.export <- function(format="data.frame",OutputDir="",Geography=list(),Re
   #       the data.frames.
 }
 
-# Helper function to locate OutputDir given Results (VEModel or VEResults)
+# Helper function to locate OutputDir given Results (VEModel or VEResults) for exporting query
+# data.frame
 exportDir <- function(model=NULL,results=NULL) {
   exportDir <- if ( class(model) == "VEModel" ) {
     file.path(model$modelPath,model$setting("ResultsDir"))
@@ -616,13 +619,6 @@ exportDir <- function(model=NULL,results=NULL) {
 
 # TODO: helper function to prepare a list of metadata elements
 defautlMetadata <- c("NAME","UNITS","DESCRIPTION")
-
-makeExportJSON <- function(resultList,scenarios) {
-  # resultsList contains pathnames to query result files for this query
-  # scenarios contains a list of scenario names to populate into the JSON
-  # (it must be filtered against desired categories through the model's scenarios
-  # d
-  
 
 # TODO: helper function to build a data.frame from a sequence of query result files (with
 #       option to include metadata or not from the query specification).
@@ -780,11 +776,9 @@ VEQuery <- R6::R6Class(
 
     # Methods
     # TODO: rethink using "attached model" or "attached ResultsList" variation
-    # Running the query will create a data file for each ModelStage/VEResults and an overall
-    # summary for the VEModel in its ResultsDir. We access those results for external processing
-    # by doing an "export"
-    # TODO: add a "visualize" function that does in-memory export to JSON then launches visualizer
-    # web page using "jrc" and pushes the JSON over to it.
+    # Running the query will create a data file for each ModelStage/VEResults
+    # So it really just works on a list of VEResults in all cases (we can get such a list from the
+    # VEModel)
     initialize=ve.query.init,       # initialize a new VEQuery object
     save=ve.query.save,             # With optional file name prefix (this does an R 'dump' to source)
     attach=ve.query.attach,         # Install consistent QueryName, QueryDir from request
@@ -805,7 +799,7 @@ VEQuery <- R6::R6Class(
     print=ve.query.print,           # List names of Specs in order, or optionally with details
     getlist=ve.query.getlist,       # Extract he QuerySpec list (possibly filtering geography) for $run)
     results=ve.query.results,       # report results of last run
-    export=ve.query.export,         # Export query results to .csv or something else
+    export=ve.query.export,         # Export query results to .csv, visualizer or something else
     run=ve.query.run                # Option to save; results are cached in self$QueryResults
   ),
   private = list(

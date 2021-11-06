@@ -306,7 +306,7 @@ ve.scenario.print <- function(details=FALSE) {
 # TODO: do we need this? Verify should report deviant cases
 ve.scenario.inputs <- function(scenario=NULL,category=NULL,details=TRUE) {
   # if "scenario" is a character vector, only show those folder scenarios
-  # if "category" is a character vector, only show those categories
+  # if "category" is a character vector, only show scenarios in those categories
   # Folder scenarios list/compare files from overall StartFrom (if any) else just files in folder
   #   Use baseModel$inputs(stage=StartFrom)
   #   List each folder scenario, inspect its InputPath and if the file is present there, mark it as "Used"
@@ -314,7 +314,7 @@ ve.scenario.inputs <- function(scenario=NULL,category=NULL,details=TRUE) {
   #   are associated with (from the Categories configuration, only one possible Category per file)
 }
 
-# TODO: do we need this?
+# TODO: use this list to give VEModel a subset of categories to visualize
 ve.scenario.categories <- function(category=NULL,details=FALSE) {
   # TODO: list categories
   # Show category name by default (not informative)
@@ -329,7 +329,8 @@ ve.scenario.categories <- function(category=NULL,details=FALSE) {
   #     modification date.
 }
 
-# TODO: do we need this?
+# TODO: do we need this? Lists available scenarios for getting lists of inputs or seeing what's out
+# there. should also report their category.
 ve.scenario.list <- function(scenario=NULL, details=FALSE) {
   # TODO: list scenarios
   # Show scenario names by default (character vector)
