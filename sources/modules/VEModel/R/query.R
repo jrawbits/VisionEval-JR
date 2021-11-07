@@ -568,16 +568,14 @@ ve.query.getlist <- function(Geography=NULL) {
   return( newSpec )
 }
   
-# export function makes a data.frame of results from the VEResults list by applying the
-# query. We'll use that data.frame for all purposes (like handing it back to the VEModel to
-# visualize).
-
-# Export query results (if any) to a .csv, or some other tabular format
-# TODO: possibly filter by Geography (Type, Value) - only measures where Geography == Type and
-# only the elements for the corresponding value (always include Region measures).
-# Possibly filter by Year (since the query will do all years in the scenario - may only want one of
-# those).
-ve.query.export <- function(format="visualizer",OutputDir="",Geography=list(),Results=NULL) {
+# Generate data.frame from all query results for a model or list of VEResults
+# From there, we can write the data.frame or use it for visualizeResults
+# Option to save the data.frame in some tabular output format (data.frame, csv, sql)
+# Export should be able to filter by Measure name, Year of Data (some scenarios will have more than
+# one year), and specific ModelStage name (for Results).
+# TODO: "query" function on VEModel should be able to limit to certain ModelStages (in which case
+# don't consider "Reportable").
+ve.query.export <- function(format="data.frame",OutputDir="",Geography=list(),Results=NULL) {
   Results <- self$results(Results)
   if ( length(Results)==0 ) {
     stop(
@@ -594,7 +592,7 @@ ve.query.export <- function(format="visualizer",OutputDir="",Geography=list(),Re
   #       formulate the columns for each scenario (use the first Result file to load up the
   #       the measure names). Crap out if subsequent Results have different measure names in them.
   #       Metadata flag determines if we include Units/Description/Geography along with first
-  #       column. If OutputDir is not missing, locate OutputDir (see "visualizer") and create
+  #       column. If OutputDir is not missing, locate OutputDir and create
   #       "Export_<QueryName>_<Timestamp>.Rda" in that location. Also return the data.frames.
   # TODO: writes results of data.frame format except including metadata by default into files in
   #       timestamped subdirectory of model's ResultsDir. If no model is attached and we provide
@@ -798,9 +796,9 @@ VEQuery <- R6::R6Class(
     spec=ve.query.spec,             # Return a single VEQuerySpec from the list
     print=ve.query.print,           # List names of Specs in order, or optionally with details
     getlist=ve.query.getlist,       # Extract he QuerySpec list (possibly filtering geography) for $run)
-    results=ve.query.results,       # report results of last run
-    export=ve.query.export,         # Export query results to .csv, visualizer or something else
-    run=ve.query.run                # Option to save; results are cached in self$QueryResults
+    results=ve.query.results,       # report results of last run (available stage files)
+    export=ve.query.export,         # Export query results to .csv or something else (uses $results)
+    run=ve.query.run                # results are cached in self$QueryResults
   ),
   private = list(
     QuerySpec=list(),               # access via public functions - list of VEQuerySpec objects
