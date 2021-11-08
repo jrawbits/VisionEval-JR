@@ -1443,6 +1443,12 @@ tdiff <- function(tm0,tm1,digits=3,units="mins") {
   }
 }
 
+# report whether scenario level is in this stage
+# if level is missing, report the named vector of non-zero levels
+ve.stage.levels <- function(level) {
+  return(character(0))
+}
+
 ve.stage.pstatus <- function(start=FALSE) {
   paste(
     paste0(self$Name,":"),
@@ -2930,7 +2936,7 @@ VEModelStage <- R6::R6Class(
                                     # configured, each stage becomes a single Scenario/Level and
                                     # is mapped into a single level for the "Scenarios" category.
                                     # See ve.model.visual for how it is used in that case
-    ScenarioLevels = list()         # List of Scenarios (names) and Levels (values) for this scenario
+    ScenarioLevels = list(),         # List of Scenarios (names) and Levels (values) for this scenario
 
     # Methods
     initialize=ve.stage.init,       # Create a stage and set its Runnable flag

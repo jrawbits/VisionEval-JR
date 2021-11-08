@@ -1079,13 +1079,31 @@ test_query <- function(log="info",reset=FALSE) {
   rm(runqry)
 
   testStep("Run the query on the model...")
-  qry$run(jr,OutputRoot=jr$modelResults)
+  qry$run(jr)
 
-  testStep("Run the query on the results...")
-  qry$run(rs,OutputRoot=jr$modelResults)
+  testStep("Display query result file paths...")
+  print(qry$results())
 
-  testStep("Returning test model")
-  return(jr)
+  testStep("Extract query results into data.frame")
+  df <- query.results <- qry$extract() # default format is data.frame
+  cat(paste(names(df),"\n",collapse=","))
+  print(paste("With",nrow(df),"Row(s)\n"))
+
+  testStep("Extract query results into .csv file (default name)")
+  df <- qry$export(format="csv")
+  df <- qry$export() # default format is "data.frame" so this is the same as extract
+
+  testStep("Export query results into explicitly named .csv file")
+  qry$export(format="csv",saveTo=paste0("TestQuery-",qry$Name))
+
+  testStep("Run the query again on the bare results (should do nothing)...")
+  qry$run(rs) # Won't re-run if query if up to date
+
+  testStep("Force the query to run on the bare results rather than the model...")
+  qry$run(rs,Force=TRUE) # Won't re-run if query if up to date
+
+  testStep("Returning extracted query data.frame for further exploration")
+  return(df)
 }
 
 test_multiquery <- function(reset=FALSE,log="info") {
