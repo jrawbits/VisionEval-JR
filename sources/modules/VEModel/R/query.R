@@ -580,6 +580,8 @@ ve.query.extract <- function(Results=NULL, Measures=NULL, Years=NULL,GeoType=NUL
   #  results); NOT IMPLEMENTED except for default columns
   # if "data" is true, include data columns. If false, only generate metadata
   
+  # TODO: need the scenario name for each set of results...
+
   Results <- self$results(Results) # Results will contain list of valid query results
   if ( length(Results)==0 ) {
     stop(
@@ -587,7 +589,7 @@ ve.query.extract <- function(Results=NULL, Measures=NULL, Years=NULL,GeoType=NUL
     )
   }
 
-  valueList <- lapply(Results,function(r) r$Values) 
+  valueList <- lapply(Results,function(r) structure(r$Values,ScenarioName=r$Source$Name) )
   valueList <- valueList[ ! sapply(valueList,is.null) ]
 
   if ( is.character(metadata) ) {
@@ -618,34 +620,70 @@ ve.query.extract <- function(Results=NULL, Measures=NULL, Years=NULL,GeoType=NUL
     )
   }
 
-  # Filter desired measures by Measures parameter (list of names)
-  # Also filter desired Measures by GeoType - only include measures with that explicit GeoType
-  #  based on the name in the specification.
-  # GeoValues are filtered inside makeMeasureDataFrame before unrolling measures by geography type
+  # Filter list of measure names by Measures parameter (list of names)
+  measureNames <- names(self$QuerySpec)
+  if ( ! is.character(Measures) ) {
+    seekMeasures <- measureNames
+  } else {
+    seekMeasures <- Measures[ which(Measures %in% measureNames) ]
+  }
+  if ( length(seekMeasures) == 0 ) {
+    stop(
+      writeLog(paste("Requested Measures are not in Query:",seekMeasures,collapse=", "),Level="error")
+    )
+  }
 
+  # Filter list of measure names to only those matching GeoType
+  if ( is.character(GeoType) && GeoType %in% c("Marea","Azone","Bzone") ) {
+    whichGeoMeasures <- which(
+      sapply(
+        self$QuerySpec[seekMeasures],
+        function(m) return( GeoType=="Region" || GeoType %in% m$By )
+      )
+    )
+    if ( length(whichGeoMeasures)==0 ) {
+      stop(
+        writeLog(paste("Requested GeoType is not found in requested Measures:",GeoType),Level="error")
+      )
+    }
+    seekMeasures <- seekMeasures[ whichGeoMeasures ]
+  }
+  # Keep only measures that are being sought
+  valueList <- lapply(
+    valueList,
+    function(v) {
+      # Each value list element is a list of years
+      lapply(v,
+        function(y) {
+          # Each year is a named list of measure values
+          v[[y]] <- v[[y]][seekMeasures]
+        }
+      )
+    }
+  )
+
+  # Build data.frame with requested measure results (filtered to specific GeoValues), and metadata
   results.df <- NULL
   for ( value in valueList ) {
-    if ( ! is.null(Years) ) {
-      # Need to do this check each time since not all results may have the same years
-      useYears <- which( as.character(Years) %in% names(result) )
-      if ( length(useYears)>0 ) resultValues <- result[ Years ] else {
-        writeLog(paste("Not extracting invalid 'Years' parameter:",as.character(Years),collapse=", "),Level="warn")
+    ScenarioName <- attr(value,"ScenarioName")
+    for ( year in names(value) ) {
+      theseResults <- makeMeasureDataframe(value[[Year]],year,GeoValues,data,wantMetadata)
+
+      # plus initial columns for first results are metadata if requested
+      if ( is.null(results.df) ) {
+        if ( wantMetadata && length(metadata>0) ) {
+          results.df <- theseResults[,metadata]
+          metadata <- character(0) # only keep the metadata columns this one time
+          wantMetadata <- FALSE
+        } else {
+          results.df <- data.frame(Measure=theseResults$Measure)
+        }
       }
+      if ( data ) {
+        results.df[paste0(ScenarioName,".",as.character(year))] <- theseResults$Value
+      } else break # Only gathering metadata
     }
-    theseResults <- makeMeasureDataframe(value,Measures,GeoValues,data)
-    # has one column per scenario year of values
-    # plus initial columns are metadata if requested
-    results.df <- if ( is.null(results.df) ) {
-      if ( length(metadata>0) ) {
-        theseResults <- theseResults[,metadata]
-        metadata <- character(0) # only keep the metadata columns this one time
-      }
-      theseResults
-      if ( ! data ) break # Only generate metadata
-    } else {
-      cbind( results.df, theseResults )
-    }
-    rm(list=ls(results,all=TRUE)) # Set up environment contents for garbarge collection
+    if ( ! data ) break # don't loop if not generating data
   }
   return(results.df)
 }
@@ -659,25 +697,21 @@ ve.query.extract <- function(Results=NULL, Measures=NULL, Years=NULL,GeoType=NUL
 # don't consider "Reportable").
 ve.query.export <- function(format="csv",OutputDir="",Results=NULL,Years=NULL,GeoType=NULL,GeoValue=NULL) {
   Results_df <- self$extract(Results=Results,Years,GeoType=GeoType,GeoValue=GeoValue) # Results will contain list of available query results
+
+  # TODO: Use OutputDir if provided
+  #       otherwise if self$Model is available, write output into model's OutputDir
+  #       otherwise use Path of first element of self$QueryResults
   
-  # TODO: branch on format, locate results, iterate over result files, opening them and building the
-  #       required output formats.
-  # TODO: data.frame and .csv format are identical (use the same helper function to build
-  #       data.frames) but differ with respect to how (or if) those data.frames are written out.
-  # TODO: data.frame generates a data.frame of flattened measures for each scenario+year in
-  #       results. Can include some metadata columns on the front end (by default, just do the
-  #       data). Use helper function to visit each QueryResultsFile and each Measure spec to
-  #       formulate the columns for each scenario (use the first Result file to load up the
-  #       the measure names). Crap out if subsequent Results have different measure names in them.
-  #       Metadata flag determines if we include Units/Description/Geography along with first
-  #       column. If OutputDir is not missing, locate OutputDir and create
-  #       "Export_<QueryName>_<Timestamp>.Rda" in that location. Also return the data.frames.
   # TODO: writes results of data.frame format except including metadata by default into files in
   #       timestamped subdirectory of model's ResultsDir. If no model is attached and we provide
   #       Results, then we work backwards to the ResultsDir of the Model that the first Results
   #       element is associated with to find its OutputDir to write the results. Should be able
   #       to overwrite folder name to contain timestamped subdirectory ("OutputDir"). Also return
   #       the data.frames.
+
+  # Currently supports .csv files and other tabular formats exclusively.
+  # Could support "visualize" which passes back to the global visualize function that takes a
+  # VEModel and a VEQuery (and will visualize whatever is available).
 }
 
 # Helper function to locate OutputDir given Results (VEModel or VEResults) for exporting query
@@ -1441,7 +1475,13 @@ makeMeasure <- function(measureSpec,thisYear,QPrep_ls) {
     }
     # Add GeoValue as an attribute to the measure
     # GeoType is found in the Spec
-    measure <- structure(measure,GeoType=GeoType,GeoValue=GeoValue) # used during export to filter on Geography
+    measure <- structure(
+      measure,
+      Units=measureSpec$Units,
+      Description=measureSpec$Description,
+      QueryGeoType=GeoType,
+      GeoValue=GeoValue
+    ) # used during export to filter on Geography
   } else {
     writeLog(paste(measureName,"Invalid Measure Specification (must be 'Summarize' or 'Function')"),Level="error")
     measure <- as.numeric(NA)
@@ -1542,32 +1582,128 @@ makeMeasure <- function(measureSpec,thisYear,QPrep_ls) {
 # VEModel ResultsDir if querying a model), and then create one measure .Rdata for
 # each VEResults object (fill the environment, then save to .Rdata in the results path)
 #
-makeMeasureDataFrame <- function(value,GeoType,GeoValues,data) {
-  # TODO: The values 
-  Measures_     <- objects(measureEnv)
-  Values_       <- sapply(Measures_, get, envir=measureEnv)
-  Units_        <- unname(sapply(Measures_, function(x) attributes(get(x,envir=measureEnv))$Units))
-  Description_  <- unname(sapply(Measures_, function(x) attributes(get(x,envir=measureEnv))$Description))
-  Data_df       <- data.frame(
-    Measure     = Measures_,
-    thisYear    = Values_,
-    Units       = Units_,
-    Description = Description_
-  )
+makeMeasureDataFrame <- function(Values,Year,GeoValues,wantData=TRUE,wantMetadata=TRUE) {
+  # Value is a list of measures for a single scenario year (scenarios may have more than one year)
+  # If GeoValues provided, only expand Geography measures that are present in GeoValues
+  # if data, include actual measure values, otherwise just do Metadata for
+  #  each of the seek Measures, based on what is attached to the first value
+  #  results.
+
+  outputNames    <- character(0)
+  outputMeasures <- numeric(0)
+  outputUnits    <- character(0)
+  outputDesc     <- character(0)
+
+  wantData <- wantData || ! wantMetadata # return data unless we explicitly only want metaData
+
+  for ( measure in Values ) {
+    measureUnits <- attr(measure,"Units")
+    measureDesc  <- attr(measure,"Description")
+    measureName  <- names(measure)
+    # measure is a scalar, vector or array of numeric measure values
+    GeoType <- attr(measureName,"GeoType")
+    if ( ! is.null(GeoType) && GeoType != "Region" ) {
+      # We have a geography type, and the names of the vector
+      #  are the geography names. If it's an array, the geography
+      #  names are in the first dimension
+      if ( is.array(measure) ) {
+        # it's an array of Geography, Breaks
+        geoNames <- dimnames(measure)[[1]]
+        geoNames <- geoNames[ which(geoNames) %in% GeoValues ]
+        if ( length(geoNames)>0 ) {
+          measure  <- measure[geoNames,]
+          measureNames <- paste (
+            sep=".",
+            measureName,
+            sapply(
+              seq(ncol(measure)),
+              function(y) {
+                paste(
+                  sep=".",
+                  sapply(
+                    seq(nrow(b)),
+                    function(x) {
+                      dimnames(b)[[1]][x]
+                    }
+                  ),
+                  dimnames(b)[[2]][y]
+                )
+              }
+            )
+          )
+          measure <- as.vector(measure)
+          if ( length(measureNames) != length(measure) ) {
+            stop(
+              writeLog(
+                paste0(measureName,": Program error: vector=",length(measure)," names=",length(measureNames)),
+                Level="error"
+              )
+            )
+          }
+        } else {
+          measure <- as.numeric(NA)
+          measureNames <- measureName
+        }
+      } else {
+        # it's a vector of geographies
+        geoNames <- names(measure)
+        geoNames <- geoNames[ which(geoNames) %in% GeoValues ]
+        if ( length(geoNames)>0 ) {
+          measure  <- measure[geoNames]
+          measureNames <- paste(sep=".",measureName,names(measure)
+        } else {
+          measure <- as.numeric(NA)
+          measureNames <- measureName
+        }
+      }
+    } else {
+      # It's a scalar measure or a vector of break values for the region
+      if ( length(measure) > 1 ) {
+        measureNames <- paste(sep=".",measureName,names(measure)) )
+      } else {
+        measureNames <- measureName )
+      }
+    }
+
+    # Assemble vectors to add to resulting data.frame
+    outputNames <- c( outputNames, measureNames )
+    outputMeasures <- c( outputMeasures, measure )
+    outputUnits <- c( outputUnits, rep(measureUnits,length(measure)) )
+    outputDesc <- c( outputDesc, rep(measureDesc,length(measure)) )
+  }
+
+  # Add the year as a row
+  if ( wantData ) {
+    outputNames    <- c( "Year", outputNames )
+    outputMeasures <- c( as.numeric(Year), outputMeasures )
+    outputUnits    <- c( "YR", outputUnits )
+    outputDesc     <- c( "Scenario Year", outputDesc )
+  }
+
+  # Format output as a data.frame
+  if ( wantMetadata && wantData ) {
+    Data_df       <- data.frame(
+      Measure     = outputNames,
+      Units       = outputUnits,
+      Description = outputDesc,
+      Value       = outputMeasures
+    )
+  } else if ( wantMetadata ) { # but not data
+    Data_df       <- data.frame(
+      Measure     = outputNames,
+      Units       = outputUnits,
+      Description = outputDesc,
+    )
+  } else if ( wantData ) { # but not metadata
+    Data_df <- data.frame(
+      Measure=outputNames,
+      Value=outputMeasures
+    )
+  }
+
   rownames(Data_df) <- NULL
   return(Data_df)
 }
-
-# The following code conspires to build a data.frame - use in $export function
-#       # Add this Year's measures to the output data.frame
-#       computed <- makeMeasureDataFrame(result.env)
-#       if ( is.null(Measures_df) ) {
-#         # Uninitialized Measures_df - initialize from metadata columns
-#         print(names(computed))
-#         Measures_df<-computed[,c("Measure","Units","Description")]
-#       }
-#       # Then add the measure results for thisYear
-#       Measures_df[paste0(thisYear,"-",ScenarioName)] <- computed$thisYear
 
 ############################################################
 # PROCESS QUERY SPECIFICATIONS ON DATASTORE
