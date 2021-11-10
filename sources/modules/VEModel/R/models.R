@@ -1760,6 +1760,8 @@ ve.model.visual <- function(stages=list(),query=NULL,save=FALSE) {
   # Don't need to stay live with the page (leave it in the browser, but close
   #  everything on our side).
 
+  visualizer.json <- character(0)
+
   # always return the JSON so the caller can write a file if desired
   return(invisible(visualizer.json))
 }
@@ -2839,6 +2841,8 @@ visualize <- function(Model, Query, Year, categories, measures,saveTo,maxMeasure
   # if saveTo provided or TRUE
   # generate the results into a folder with that name inside Model$ResultsDir
   # default saveTo (if not character) is "visualizer" in ResultsDir
+
+  visualizer.json <- character(0)
 
   # Cache the visualizer.json somewhere? Return it?
 

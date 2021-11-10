@@ -36,7 +36,7 @@ ve.scenario.load <- function(fromFile=FALSE) {
   # Layer in the base model run parameters as basis for scenarios
   # Must ignore keys that we may read for Scenarios that are distinct from base model
   scenarioParams <- c("ModelStates","Categories","Scenarios")
-  baseParam_ls <- baseModel$RunParam_ls[ ! names(baseModel$RunParam_ls) %in% scenarioParams ]
+  baseParam_ls <- self$baseModel$RunParam_ls[ ! names(self$baseModel$RunParam_ls) %in% scenarioParams ]
 
   # Now add the loaded scenario parameters (scenarioParams, but possibly others)
   modelParam_ls <- visioneval::mergeParameters(self$baseModel$RunParam_ls,self$loadedParam_ls)
