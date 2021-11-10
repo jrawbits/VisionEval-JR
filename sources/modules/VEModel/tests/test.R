@@ -1107,9 +1107,6 @@ test_query <- function(log="info",reset=FALSE) {
 }
 
 test_multiquery <- function(reset=FALSE,log="info") {
-  # TODO: ensure that the query outputs are disambiguated and remain
-  # available
-
   if ( ! missing(log) ) logLevel(log)
   testStep("Acquiring test model")
   jr <- test_run("VERSPM-query",baseModel="VERSPM",variant="pop",reset=reset)

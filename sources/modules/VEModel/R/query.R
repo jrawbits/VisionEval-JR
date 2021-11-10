@@ -1,4 +1,4 @@
-# Query.R
+ Query.R
 #' @include environment.R
 #' @include results.R
 #' @import visioneval
@@ -518,7 +518,7 @@ ve.query.print <- function(details=FALSE) {
   if ( self$valid() ) {
     cat("Valid query with",length(private$QuerySpec),"elements\n")
     if ( length(private$QuerySpec) ) {
-      if ( ! is.character(self$QueryResults) && length(self$QueryResults)>0 ) cat("Results are available.\n")
+      if ( is.list(private$QueryResults) && length(private$QueryResults)>0 ) cat("Results are available.\n")
       print(self$names())
       if ( details ) for ( spec in private$QuerySpec ) print(spec)
     }
@@ -568,12 +568,86 @@ ve.query.getlist <- function(Geography=NULL) {
   return( newSpec )
 }
 
-# make a data.frame of all the query results
-ve.query.extract <- function(Years=NULL,GeoType=NULL,GeoValue=NULL) {
-  Results_df <- data.frame()
-  # TODO: make a query data.frame
-  # From there, we can write the data.frame or use it for visualizeResults
-  return( Results_df )
+# List of standard Metadata. Can ask for any field from VEQuerySpec
+# "Name" is always included to support cbind
+defaultMetadata <- c("Units","Description")
+
+# make a data.frame of all (and only) the valid query results
+ve.query.extract <- function(Results=NULL, Measures=NULL, Years=NULL,GeoType=NULL,GeoValue=NULL, metadata=TRUE, data=TRUE) {
+  # Visit each of the valid results in the Model (or Results list) and add its years as columns
+  #  to the resulting data.frame, then return the accumulated result
+  # Metadata will generate default columns (or a list of metadata names as first columns in
+  #  results); NOT IMPLEMENTED except for default columns
+  # if "data" is true, include data columns. If false, only generate metadata
+  
+  Results <- self$results(Results) # Results will contain list of valid query results
+  if ( length(Results)==0 ) {
+    stop(
+      writeLog("No query results available; run the query first",Level="error")
+    )
+  }
+
+  valueList <- lapply(Results,function(r) r$Values) 
+  valueList <- valueList[ ! sapply(valueList,is.null) ]
+
+  if ( is.character(metadata) ) {
+    wantMetadata <- TRUE
+  } else {
+    wantMetadata <- metadata
+    metadata <- if ( wantMetadata ) defaultMetadata else character(0)
+  }
+  if ( ! data && ! wantMetadata )
+    wantMetadata <- TRUE
+    metadata <- defaultMetadata
+  }
+  # metadata contains list of names to include from query specification
+
+  # Filter values by Years
+  if ( ! is.null(Years) ) {
+    Years <- as.character(Years)
+    valueList <- lapply(valueList,
+      function(v) {
+        yrs <- which( names(v) %in% Years )
+        if ( length(v[yrs])==0 ) {
+          stop(
+            writeLog(paste("Years are not available in all query results:",Years,collapse=", "),Level="error")
+          )
+        }
+        v[yrs]
+      }
+    )
+  }
+
+  # Filter desired measures by Measures parameter (list of names)
+  # Also filter desired Measures by GeoType - only include measures with that explicit GeoType
+  #  based on the name in the specification.
+  # GeoValues are filtered inside makeMeasureDataFrame before unrolling measures by geography type
+
+  results.df <- NULL
+  for ( value in valueList ) {
+    if ( ! is.null(Years) ) {
+      # Need to do this check each time since not all results may have the same years
+      useYears <- which( as.character(Years) %in% names(result) )
+      if ( length(useYears)>0 ) resultValues <- result[ Years ] else {
+        writeLog(paste("Not extracting invalid 'Years' parameter:",as.character(Years),collapse=", "),Level="warn")
+      }
+    }
+    theseResults <- makeMeasureDataframe(value,Measures,GeoValues,data)
+    # has one column per scenario year of values
+    # plus initial columns are metadata if requested
+    results.df <- if ( is.null(results.df) ) {
+      if ( length(metadata>0) ) {
+        theseResults <- theseResults[,metadata]
+        metadata <- character(0) # only keep the metadata columns this one time
+      }
+      theseResults
+      if ( ! data ) break # Only generate metadata
+    } else {
+      cbind( results.df, theseResults )
+    }
+    rm(list=ls(results,all=TRUE)) # Set up environment contents for garbarge collection
+  }
+  return(results.df)
 }
 
 # Put the results of the query into a csv by default (or a data.frame, or sql, or other
@@ -583,13 +657,9 @@ ve.query.extract <- function(Years=NULL,GeoType=NULL,GeoValue=NULL) {
 # one year), and specific ModelStage name (for Results).
 # TODO: "query" function on VEModel should be able to limit to certain ModelStages (in which case
 # don't consider "Reportable").
-ve.query.export <- function(format="csv",OutputDir="",Geography=list(),Results=NULL) {
-  Results <- self$results(Results)
-  if ( length(Results)==0 ) {
-    stop(
-      writeLog("No query results available; run the query first",Level="error")
-    )
-  }
+ve.query.export <- function(format="csv",OutputDir="",Results=NULL,Years=NULL,GeoType=NULL,GeoValue=NULL) {
+  Results_df <- self$extract(Results=Results,Years,GeoType=GeoType,GeoValue=GeoValue) # Results will contain list of available query results
+  
   # TODO: branch on format, locate results, iterate over result files, opening them and building the
   #       required output formats.
   # TODO: data.frame and .csv format are identical (use the same helper function to build
@@ -623,78 +693,84 @@ exportDir <- function(model=NULL,results=NULL) {
   return(exportDir)
 }
 
-# TODO: helper function to prepare a list of metadata elements
-defautlMetadata <- c("NAME","UNITS","DESCRIPTION")
-
-# TODO: helper function to build a data.frame from a sequence of query result files (with
-#       option to include metadata or not from the query specification).
-makeExportDataFrame <- function(resultList,metadata=TRUE,data=TRUE) {
-  # resultList is a character vector of file path names
-  # if metadata is TRUE (default), basic metadata will be inserted before the first
-  #   data output; if metadata is a character vector, it is treated as TRUE, but
-  #   the vector holds names of specific metadata fields to insert (e.g. just UNITS
-  #   or some other field not usually included).
-  # if data is FALSE, data columns will not be generated if metadata is TRUE
-  # if both are false, data is treated as TRUE
-
-  if ( is.character(metadata) ) {
-    wantMetadata <- TRUE
-  } else {
-    wantMetadata <- metadata
-    metadata <- if ( wantMetadata ) defaultMetadata else character(0)
-  }
-
-  results.df <- NULL
-  results <- new.env()
-  for ( resultsFile in resultList ) {
-    load(resultsFile, envir=results)
-    theseResults <- makeMeasureDataframe(results,metadata)
-    # has one column per scenario year of values
-    # plus initial columns are metadata if requested
-    results.df <- if ( is.null(results.df) ) {
-      theseResults
-    } else {
-      cbind( results.df, theseResults )
-    }
-    rm(list=ls(results,all=TRUE)) # Set up environment contents for garbarge collection
-  }
-}   
-
-# Find any existing Query Results (as a list of files)
+# Find any existing Query Results (as a list of items containing Path and Results)
+# The "Results" element generated by doQuery includes:
+#   "Timestamp"
+#   "Values" (a named list of metrics)
+#   "Specifications" (redundant list of specs used to create "Values")
+# If results are not available for one of the VEResults, Results element is NULL
 ve.query.results <- function(Results=NULL) {
   # Figure out where to look for results
   if ( missing(Results) || is.null(Results) ) {
     if ( "VEModel" %in% class(self$Model) ) {
-      # update QueryResultsFile based on self$Model
       Results <- self$Model$results()
-      OutputFile = self$Model$setting("QueryOutputTemplate")
-      self$QueryResultsFile <- stringr::str_replace(OutputFile,"%queryname%",self$QueryName)
-      if ( ! grepl("\\.Rda(ta)?$",self$QueryResultsFile) ) self$QueryResultsFile <- paste0(self$QueryResultsFile,".Rda")
-    } else return( character(0) ) # No current results
-  } else OutputFile <- visioneval::getRunParameter("QueryOutputTemplate") # Use generic output file
-
-  if ( is.null(self$QueryResultsFile) ) {
-    self$QueryResultsFile <- stringr::str_replace(OutputFile,"%queryname%",self$QueryName)
-    if ( ! grepl("\\.Rda(ta)?$",self$QueryResultsFile) ) self$QueryResultsFile <- paste0(self$QueryResultsFile,".Rda")
+      # Output file was set when Model was attached
+    } else {
+      stop( writeLog("No query results available",Level="error") )
+    }
+  } else {
+    private$outputfile() # will use self$Model output file if model is available, or global
   }
 
-  # Check to see if any query results are out there...
-  self$QueryResults <- sapply(Results$results(),
+  if ( "VEResultsList" %in% class(Results) ) {
+    # downshift to list of VEResults
+    Results <- Results$results()
+  }
+  private$reload( Results ) # pulls up available results
+  if ( length(self$QueryResults) == 0 ) self$QueryResults <- NULL # No valid results
+  return(self$QueryResults) # Just return the results that are actually present
+}
+
+ve.query.reload <- function( Results ) {
+  # Expects a list of VEResults (not VEResultsList)
+  # Returns the (possibly invalid) set of query results for each VEResults
+  # Also updates self$QueryResults to include only the valid query results
+  allQueryResults <- lapply( Results,
     function(r) {
-      file.path(r$resultsPath,self$QueryResultsFile)
+      # expect VEResuls$resultsPath to be normalized path
+      resultsPath <- file.path(r$resultsPath,self$QueryResultsFile)
+      if ( file.exists(resultsPath) ) {
+        # Load query results for this set of model stage results
+        results.env <- new.env() # where to load query results
+        items <- load.results <- try( load(resultsPath,envir=results.env) )
+        results <- if ( class(items) == "try-error" || ! "Values" %in% items ) {
+          NULL else as.list(results.env)
+        }
+      }
+      return(
+        list(
+          Path=resultsPath,   # Location of QueryResults RData file
+          Results=results,    # Timestamp, Values, Geo, etc (generated by doQuery)
+          Source=r            # VEResults object for accessing data/modelstate
+        )
+      )
     }
   )
-  self$QueryResults <- self$QueryResults[ file.exists(self$QueryResults) ]
-  return(self$QueryResults) # Just return the ones that are already there...
+  validResults <- sapply( allQueryResults, function(qr) !is.null(qr$Results) )
+  self$QueryResults <- allQueryResults[ validResults ]
+  return(allQueryResults) # use to get status of full list of Results parameter
+  # Invalid query results will have NULL Results
 }
 
 # Attach a Model and pre-load QueryResults if present
 ve.query.model <- function( Model ) {
   if ( ! missing(Model) ) {
-    self$Model <- Model
-    self$results() # Check for presence of results and set self$QueryResultsFile
+    self$Model <- Model  # update attached model
+    private$outputfile() # Set file name for query results output
+    self$results()       # cache results if available
   }
   return(self$Model)
+}
+
+ve.query.outputfile <- function() {
+  if ( ! is.null(self$Model) ) {
+      OutputFile <- self$Model$setting("QueryOutputTemplate")
+    } else {
+    OutputFile =  visioneval::getRunParameter("QueryOutputTemplate")
+  }
+  self$QueryResultsFile <- stringr::str_replace(OutputFile,"%queryname%",self$QueryName)
+  if ( ! grepl("\\.Rda(ta)?$",self$QueryResultsFile) ) self$QueryResultsFile <- paste0(self$QueryResultsFile,".Rda")
+  return(  self$QueryResultsFile )
 }
 
 ve.query.run <- function(
@@ -704,12 +780,11 @@ ve.query.run <- function(
   )
 {
   if ( missing(Model) || is.null(Model) ) {
-    stop( writeLog("No results provided to query",Level="error") )
+    Model <- self$Model # Use attached model if available
+    if ( is.null(Model) ) stop( writeLog("No model results available to run query",Level="error") )
+  } else {
+    self$model(Model) # attach different model
   }
-
-  # Set up the Model for results
-  if ( is.null(Model) ) Model <- self$model() else self$model(Model) # attach different model
-  if ( is.null(Model) ) stop( writeLog("No model available to query",Level="error") )
 
   queryingModel <- FALSE
   if ( "VEModel" %in% class(Model) ) {
@@ -724,67 +799,88 @@ ve.query.run <- function(
         writeLog(paste("Unknown type for Model$results():",class(Results),collapse=","),Level="error")
       )
     }
-    # TODO: verify that Model$results() will also return invalid results for stages that have not
-    # yet run. If Force is TRUE and there are invalid results, run the Model with "continue"
-    # before trying again to get the Model$results(). If there are still invalid stages, drop
-    # those from the list and only run the stages that do have results.
   } else if ( "VEResultsList" %in% class(Model) ) {
     Results <- Results$results() # Downshift to plain list of VEResults
     if ( class(Results) != "list" || class(Results[[1]]!="VEResults") ) {
-      stop( writeLog("Program error: VEResultsList won't convert to list",Level="error") )
+      stop( writeLog("Program error: VEResultsList won't convert to list of VEResults",Level="error") )
     }
   } else {
-    stop( writeLog(paste0("Cannot find results in Model Parameter: ",class(Model)),Level="error") )
+    stop( writeLog(paste0("No results in Model Parameter: ",class(Model)),Level="error") )
+  }error
+  if ( ! is.list(Results) ) {
+    stop(
+      writeLog(
+        paste0("Program Error: list of results is not a list: ",class(Results)),
+        Level="error"
+      )
+    )
   }
-  if ( ! is.list(Results) ) Results <- list(Results)
+  validResults <- sapply(Results,function(r) r$valid())
+  if ( !all(validResults) ) {
+    for ( result in Results[!validResults] ) {
+      writeLog(paste("Model Results",result$Name,"is Invalid; not running query."),Level="warn")
+    }
+  }
+  Results <- Results[validResults]
+  if ( length(Results)==0 ) {
+    stop( writeLog( "No valid model results to query",Level="error" ) )
+  }
 
   # Check and compile the specifications; abort if not valid
   self$check()
 
-  validResults <- sapply(Results,function(r) r$valid())
-  if ( !all(validResults) ) {
-    for ( result in Results[!validResults] ) {
-      writeLog(paste("Results",result$Name,"is Invalid; not running query."),Level="warn")
-    }
-  }
-  Results <- Results[validResults]
   if ( ! Force && length(Results)>0 ) {
-    upToDate <- sapply( Results,
+    # Reload cached results (updates self$QueryResults and check for validity)
+    # private$reload returns all the Results, whether or not they have query results
+    upToDate <- sapply( private$reload(Results) ,
       function(r) {
-        found.file <- dir(r$resultsPath,pattern=self$QueryResultsFile,full.names=TRUE)
-        if (length(found.file)==0) return(FALSE) # no results file == not Up to Date
+        if (
+          ! is.list(r) ||
+          ! all("Results","Path","Source") %in% names(r) ||
+          ! all("Timestamp","Values","Specifications") %in% names(r$Results)
+        ) return(FALSE)
         tempEnv <- new.env()
-        load(found.file,envir=tempEnv)
-        Timestamp <- tempEnv$Timestamp # Timestamp when query was generated
-        return(
+        load(r$Path,envir=tempEnv)
+        Timestamp <- tempEnv$Results$Timestamp # Timestamp when query results were generated
+        outOfDate <- ( 
           is.null(Timestamp) ||
-          is.null(r$ModelState()$LastChanged) ||
-          Timestamp > r$ModelState()$LastChanged
-        ) # True if query results were created after model stage was last changed
+          is.null(r$Source$ModelState()$LastChanged) ||
+          Timestamp < r$Source$ModelState()$LastChanged
+        )
+        returh( ! outOfDate )
       }
     )
-    ResultsToUpdate <- Results[!upToDate]
-    writeLog(paste("Results are up to date:",all(upToDate)),Level="info")
+    ResultsToUpdate <- Results[ ! upToDate ]
+    if ( all(upToDate) {
+      writeLog("Query results are all up to date.",Level="info")
+    } else {
+      writeLog(paste("Query results for",length(ResultsToUpdate),"model results out of",length(Results),"will be updated."),Level="info")
+    }
   } else {
+    # update everything
     ResultsToUpdate <- Results
+    writeLog("Query results will all be updated.",Level="info")
   }
       
   # Run the query on any out-of-date results
+  # ResultsToUpdate is a list of VEResults
   if ( length(ResultsToUpdate) > 0 ) {
     writeLog(paste("Updating Results:",sapply(ResultsToUpdate,function(x)x$Name),collapse=", "),Level="info")
     doQuery(
       Results=ResultsToUpdate,         # list of VEResults objects for which to generate results
       Specifications=self$getlist(),   # A list of VEQuerySpec
-      QueryFile=self$QueryResultsFile, # File into which to save each query result (in Results$Path)
+      QueryFile=self$QueryResultsFile, # File into which to save each query result (in Results$resultsPath)
       Timestamp=Sys.time()             # Compared to ModelState last update to see if Query results are up to date
     )
+    # Results of doQuery are written to the QueryFile in Results$resultsPath
+    # self$results will reload them
   } else {
     writeLog("No results to query.",Level="info")
   }
 
-  # Update self$QueryResults to the list of Results that were processed in this run
-  Results <- if ( queryingModel ) self$results() else self$results(Results)
-  return( invisible(Results) )
+  # Update self$QueryResults to the list of Results that were processed in this run and return those
+  QueryResults <- if ( queryingModel ) self$results() else self$results(Results)
+  return( invisible(QueryResults) )
 }
 
 # One of these is constructed by VEModel$query or by opening a query specification file
@@ -797,7 +893,6 @@ VEQuery <- R6::R6Class(
   public = list(
     # Data
     QueryDir = NULL,                # Default directory from which to load queries (see initialize and load)
-    QueryResults = NULL,            # vector of file names of QueryResultsFiles for each queried result
     QueryResultsFile = NULL,        # Name of file to hold query results (in each results path)
     QueryFile = NULL,               # Name of file holding VEQuery dump (load/save)
     checkResults = "Empty",         # Named character vector of check errors from last self$check
@@ -836,7 +931,9 @@ VEQuery <- R6::R6Class(
   private = list(
     QuerySpec=list(),               # access via public functions - list of VEQuerySpec objects
     saved=TRUE,                     # Flag whether spec list has unsaved changes
-    queryPrep=NULL                  # structure for running with summarizeDatasets code
+    reload=ve.query.reload,         # recreate self$QueryResults
+    outputfile=ve.query.outputfile, # set the file name into which to save QueryResults
+    QueryResults = NULL             # cache of QueryResults (load from QueryResultsFile or re-generate)
   )
 )
 
@@ -1440,13 +1537,13 @@ makeMeasure <- function(measureSpec,thisYear,QPrep_ls) {
 # writing to the output file. This function is an export helper and should draw from the
 # result.env$Values list created for each scenario/ModelStage to build the resulting data.frame.
 #
-# TODO: this is part of the ve.query.export function, and it works on a series
-# of environments saved as .Rdata files in each ResultsPath.
-# TODO: to drive the query processing we just create the index (written into the
+# TODO: this is part of the ve.query.extract function, and it works on a series
+# of values generated by doQuery
 # VEModel ResultsDir if querying a model), and then create one measure .Rdata for
 # each VEResults object (fill the environment, then save to .Rdata in the results path)
 #
-makeMeasureDataFrame <- function(measureEnv) {
+makeMeasureDataFrame <- function(value,GeoType,GeoValues,data) {
+  # TODO: The values 
   Measures_     <- objects(measureEnv)
   Values_       <- sapply(Measures_, get, envir=measureEnv)
   Units_        <- unname(sapply(Measures_, function(x) attributes(get(x,envir=measureEnv))$Units))
@@ -1481,15 +1578,18 @@ makeMeasureDataFrame <- function(measureEnv) {
 
 # doQuery processes a list of VEResults, and generates QueryFile in their Path
 # Returns full path of file QueryFile created
+# TODO: perhaps make this a private member function of the VEQuery, so we can
+# access self$QueryResults and cache the actual generated data, not just the
+# QueryFile name.
 doQuery <- function (
   Results,             # a list of VEResult object(s) corresponding to Reportable scenarios
   Specifications,      # validated query specification to process
-  QueryFile,           # Name of query file in which to save (same for each result and model
+  QueryFile,           # Name of query file in which to save results
   Timestamp=Sys.time() # Pass as parameter since model calling doQuery will need it too
 )
 {
   if ( missing(Results) || missing(Specifications) ) {
-    writeLogMessage("Invalid Setup for doQuery function")
+    writeLog("Program error: Invalid Setup for doQuery function",Level="error")
     return(character(0))
   }
     
@@ -1536,24 +1636,26 @@ doQuery <- function (
       for ( measureSpec in Specifications ) {
         writeLog(paste("Processing",measureSpec$Name,"..."),Level="info")
         measure <- makeMeasure(measureSpec,thisYear,QPrep_ls)
+        # makeMeasure attaches GeoType and available GeoValues to each measure
         if ( ! names(measure) %in% names(Specifications) ) {
           stop(
             writeLog("Programming error: measure name not present in specifications.",Level="error")
           )
         } else {
           processPrefix <- if ( length(measure) == 1 ) {
+            # makeMeasure generates a list of one (or zero if not processed)
+            # use the name of that list item and then unlist it to store the value
             # Add measure to Values for thisYear
-            queryEnv$Values[[thisYear]][names(measure)] <- measure
+            queryEnv$Values[[thisYear]][names(measure)] <- unlist(measure)
             ""
           } else "Not "
           writeLog(paste0(processPrefix,"processed: ",measureSpec$Name),Level="info")
         }
       }
     }
-    # Always save results to the QueryFile in the VEResults path
+    # Save results to the QueryFile in the VEResults path
     queryResults <- file.path(results$resultsPath,QueryFile)
     save(list=ls(queryEnv),envir=queryEnv,file=queryResults)
-    resultsGenerated <- c(resultsGenerated,queryResults)
   }
-  return(resultsGenerated)
+  return(NULL)
 }
