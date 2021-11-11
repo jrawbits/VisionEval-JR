@@ -696,15 +696,15 @@ ve.query.extract <- function(Results=NULL, Measures=NULL, Years=NULL,GeoType=NUL
 # one year), and specific ModelStage name (for Results).
 # TODO: "query" function on VEModel should be able to limit to certain ModelStages (in which case
 # don't consider "Reportable").
-ve.query.export <- function(format="csv",OutputDir=NULL,Results=NULL,Years=NULL,GeoType=NULL,GeoValues=NULL) {
+ve.query.export <- function(format="csv",OutputDir=NULL,SaveTo=NULL,Results=NULL,Years=NULL,GeoType=NULL,GeoValues=NULL) {
 
   needOutputDir <- missing(OutputDir) || ! is.null(OutputDir)
   if ( ! is.null(self$baseModel) ) {
-   OutputPath <- self$baseModel$modelPath
+   OutputPath <- self$baseModel$modelResults # Absolute path to ResultsDir for model
    if ( needOutputDir ) self$baseModel$setting("OutputDir")
   } else if ( !is.null(Results) ) {
     firstResult <-Results$results()[[1]] 
-    OutputPath <- firstResult$resultsPath
+    OutputPath <- firstResult$resultsPath # Results for this scenario
     if ( needOutputDir ) OutputDir <- visionval::getRunParameter("OutputDir",Param_ls=firstResult$ModelState()$RunParam_ls)
   } else {
     stop( writeLog("No Query Results to export.",Level="error") )
@@ -721,10 +721,13 @@ ve.query.export <- function(format="csv",OutputDir=NULL,Results=NULL,Years=NULL,
 
   Results_df <- self$extract(Results=Results,Years,GeoType=GeoType,GeoValues=GeoValues)
 
-  Timestamp <- format(Sys.time(),"%Y_%m_%d-%H_%M")
-  OutputFile <- file.path(OutputPath,paste0("QueryExport-",self$QueryName,"-",Timestamp,".csv"))
-
+  if ( ! is.character(SaveTo) ) {
+    Timestamp <- format(Sys.time(),"%Y_%m_%d-%H_%M")
+    SaveTo <- file.path(OutputPath,paste0("QueryExport-",self$QueryName,"-",Timestamp,".csv"))
+  }
+  OutputFile <- file.path(OutputPath,SaveTo)
   utils::write.csv(Results_df,file=OutputFile)
+  return(invisible(Results_df))
 }
 
 # Helper function to locate OutputDir given Results (VEModel or VEResults) for exporting query
