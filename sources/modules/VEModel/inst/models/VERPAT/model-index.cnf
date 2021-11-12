@@ -11,3 +11,5 @@ variants:
     inputs: inputs
     defs: defs
 #   queries: queries # TBD: queries for VERPAT model using 3.0 query mechanism
+
+# Also need Category-based scanarios based on original VERPAT-scenarios (for visualizer)

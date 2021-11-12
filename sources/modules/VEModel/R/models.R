@@ -2616,7 +2616,7 @@ findStandardModel <- function( model, variant="" ) {
   } # if no Config, move contents of scripts directory to installPath (hack for classic model)
 
   # Get standard directories to copy (including stage directories if any)
-  modelTo <- c("scripts","inputs","defs","queries")
+  modelTo <- c("scripts","inputs","defs","queries","scenarios")
   modelTo <- modelTo[ modelTo %in% names(variantConfig) ]
   modelFrom <- unlist( variantConfig[modelTo] )
   modelStages <- unlist(variantConfig$stages)
