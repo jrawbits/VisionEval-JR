@@ -236,12 +236,12 @@ ve.query.copy <- function(newName=NULL) {
 
 ve.query.check <- function(verbose=FALSE) {
   self$names(update=TRUE) # Make sure QuerySpec named list names are consistent
-  self$checkResults <- character(0)
+  self$CheckMessages <- character(0)
   query.names <- character(0)
   for ( spec in self$QuerySpec ) {
     if ( ! "VEQuerySpec" %in% class(spec) ) {
-      self$checkResults <- c(
-        self$checkResults,
+      self$CheckMessages <- c(
+        self$CheckMessages,
         "QuerySpec contains an unknown type of object:",
         deparse(spec)
       )
@@ -250,10 +250,10 @@ ve.query.check <- function(verbose=FALSE) {
     spec$check( Names=query.names ) # names list for validating functions
     query.names <- c( query.names,spec$Name )
     if ( ! spec$valid() ) {
-      self$checkResults <- c(
-        self$checkResults,
+      self$CheckMessages <- c(
+        self$CheckMessages,
         paste0("Error checking specification '",spec$Name,"'"),
-        spec$checkResults )
+        spec$CheckMessages )
     }
   }
   return(self)
@@ -261,7 +261,7 @@ ve.query.check <- function(verbose=FALSE) {
 
 ve.query.valid <- function() {
   # summarize outcome of last check (as a logical)
-  return( length(self$checkResults)==0 || all(!nzchar(self$checkResults)) )
+  return( length(self$CheckMessages)==0 || all(!nzchar(self$CheckMessages)) )
 }
 
 ve.query.add <- function(obj,location=0,before=FALSE,after=TRUE) {
@@ -278,7 +278,7 @@ ve.query.add <- function(obj,location=0,before=FALSE,after=TRUE) {
     qry <- asQuery(obj) # Do deeper type conversions to build a query if needed
     # NOTE: if obj is already a VEQuery, it is returned as is. It is NOT copied.
     if ( ! qry$valid() ) {
-      msg <- c("Cannot add to query:",qry$checkResults)
+      msg <- c("Cannot add to query:",qry$CheckMessages)
       writeLogMessage( c(msg,deparse(obj)) )
       stop(msg)
     }
@@ -354,9 +354,9 @@ ve.query.add <- function(obj,location=0,before=FALSE,after=TRUE) {
   private$QuerySpec <- newSpec
 
   self$check() # probably all we catch here are pre-existing errors and function order problems
-  if ( length(self$checkResults)>0 ) {
+  if ( length(self$CheckMessages)>0 ) {
     writeLogMessage("QuerySpec contains errors")
-    print(self$checkResults) # a named character string
+    print(self$CheckMessages) # a named character string
   }
   return(self)
 }
@@ -367,7 +367,7 @@ ve.query.update <- function(obj) {
   if ( ! qry$valid() ) {
     msg <- writeLogMessage("Invalid VEQuerySpec:")
     writeLogMessage(deparse(obj))
-    writeLogMessage(qry$checkResults)
+    writeLogMessage(qry$CheckMessages)
     stop(msg)
   }
   q.names <- names(qry$getlist())
@@ -462,7 +462,7 @@ ve.query.assign <- function(obj) {
     private$QuerySpec <- qry$getlist() # just replace what's there with copy of other
   } else {
     msg <- "Cannot assign invalid query"
-    writeLogMessage( c(msg,qry$checkResults) )
+    writeLogMessage( c(msg,qry$CheckMessages) )
     stop(msg)
   }
   return(self)
@@ -525,9 +525,9 @@ ve.query.print <- function(details=FALSE) {
       print(self$names())
       if ( details ) for ( spec in private$QuerySpec ) print(spec)
     }
-  } else if ( length(self$checkResults)>0 ) {
+  } else if ( length(self$CheckMessages)>0 ) {
     cat("Query specification has errors:\n")
-    for ( err in self$checkResults ) {
+    for ( err in self$CheckMessages ) {
       cat(err,"\n")
     }
   } else if ( length(private$QuerySpec)==0 ) {
@@ -554,16 +554,16 @@ ve.query.getlist <- function(Geography=NULL) {
     for ( test.spec in newSpec ) {
       test.spec <- test.spec$setgeo(Geography)
       validity <- if ( ! test.spec$valid() ) {
-        checkResults <- c(checkResults,
+        CheckMessages <- c(CheckMessages,
           paste0(test.spec$name(),": ",test.spec$CheckResults," (removed)")
         )
         append(validity,FALSE)
       } else append(validity,TRUE)
     }
-    if ( length(checkResults)>0 ) {
+    if ( length(CheckMessages)>0 ) {
       newSpec <- newSpec[validity] # Remove any invalid elements from newSpec
       writeLog(paste("Specifications invalid for Geography",Geography,":"),Level="warn")
-      writeLog(paste(checkResults,collapse="\n"),Level="warn")
+      writeLog(paste(CheckMessages,collapse="\n"),Level="warn")
     }
   }
   # Make sure list names are up to date
@@ -582,7 +582,7 @@ ve.query.extract <- function(Results=NULL, Measures=NULL, Years=NULL,GeoType=NUL
   # Metadata will generate default columns (or a list of metadata names as first columns in
   #  results); NOT IMPLEMENTED except for default columns
   # if "data" is true, include data columns. If false, only generate metadata
-  
+
   Results <- self$results(Results) # Results will contain list of valid query results
   if ( length(Results)==0 ) {
     stop(
@@ -590,7 +590,7 @@ ve.query.extract <- function(Results=NULL, Measures=NULL, Years=NULL,GeoType=NUL
     )
   }
 
-  valueList <- lapply(Results,function(r) structure(r$Values,ScenarioName=r$Source$Name) )
+  valueList <- lapply(Results,function(r) structure(r$Results$Values,ScenarioName=r$Source$Name) )
   valueList <- valueList[ ! sapply(valueList,is.null) ]
 
   if ( is.character(metadata) ) {
@@ -622,7 +622,7 @@ ve.query.extract <- function(Results=NULL, Measures=NULL, Years=NULL,GeoType=NUL
   }
 
   # Filter list of measure names by Measures parameter (list of names)
-  measureNames <- names(self$QuerySpec)
+  measureNames <- names(private$QuerySpec)
   if ( ! is.character(Measures) ) {
     seekMeasures <- measureNames
   } else {
@@ -638,7 +638,7 @@ ve.query.extract <- function(Results=NULL, Measures=NULL, Years=NULL,GeoType=NUL
   if ( is.character(GeoType) && GeoType %in% c("Marea","Azone","Bzone") ) {
     whichGeoMeasures <- which(
       sapply(
-        self$QuerySpec[seekMeasures],
+        private$QuerySpec[seekMeasures],
         function(m) return( GeoType=="Region" || GeoType %in% m$By )
       )
     )
@@ -650,18 +650,12 @@ ve.query.extract <- function(Results=NULL, Measures=NULL, Years=NULL,GeoType=NUL
     seekMeasures <- seekMeasures[ whichGeoMeasures ]
   }
   # Keep only measures that are being sought
-  valueList <- lapply(
-    valueList,
-    function(v) {
-      # Each value list element is a list of years
-      lapply(v,
-        function(y) {
-          # Each year is a named list of measure values
-          v[[y]] <- v[[y]][seekMeasures]
-        }
-      )
+  # Filter the measures using for loops rather than lapply to ensure names stay up to date
+  for ( scenario in seq(valueList) ) {
+    for ( year in names(valueList[[scenario]]) ) {
+      valueList[[scenario]][[year]] <- valueList[[scenario]][[year]][seekMeasures]
     }
-  )
+  }
 
   # Build data.frame with requested measure results (filtered to specific GeoValues), and metadata
   results.df <- NULL
@@ -673,7 +667,7 @@ ve.query.extract <- function(Results=NULL, Measures=NULL, Years=NULL,GeoType=NUL
       # plus initial columns for first results are metadata if requested
       if ( is.null(results.df) ) {
         if ( wantMetadata && length(metadata>0) ) {
-          results.df <- theseResults[,metadata]
+          results.df <- theseResults[,c("Measure",metadata)]
           metadata <- character(0) # only keep the metadata columns this one time
           wantMetadata <- FALSE
         } else {
@@ -686,6 +680,7 @@ ve.query.extract <- function(Results=NULL, Measures=NULL, Years=NULL,GeoType=NUL
     }
     if ( ! data ) break # don't loop if not generating data
   }
+  if ( is.null(results.df) ) results.df <- data.frame()
   return(results.df)
 }
 
@@ -697,41 +692,52 @@ ve.query.extract <- function(Results=NULL, Measures=NULL, Years=NULL,GeoType=NUL
 # TODO: "query" function on VEModel should be able to limit to certain ModelStages (in which case
 # don't consider "Reportable").
 ve.query.export <- function(format="csv",OutputDir=NULL,SaveTo=NULL,Results=NULL,Years=NULL,GeoType=NULL,GeoValues=NULL) {
-
   needOutputDir <- missing(OutputDir) || ! is.null(OutputDir)
-  if ( ! is.null(self$baseModel) ) {
-   OutputPath <- self$baseModel$modelResults # Absolute path to ResultsDir for model
-   if ( needOutputDir ) self$baseModel$setting("OutputDir")
+  if ( ! is.null(self$Model) ) {
+    OutputPath <- self$Model$modelResults # Absolute path to ResultsDir for model
+    if ( needOutputDir ) OutputDir <- self$Model$setting("OutputDir")
+    QueryExtractFile <- self$Model$setting("QueryExtractTemplate")
   } else if ( !is.null(Results) ) {
     firstResult <-Results$results()[[1]] 
     OutputPath <- firstResult$resultsPath # Results for this scenario
-    if ( needOutputDir ) OutputDir <- visionval::getRunParameter("OutputDir",Param_ls=firstResult$ModelState()$RunParam_ls)
+    Param_ls <- firstResult$ModelState()$RunParam_ls
+    if ( needOutputDir ) OutputDir <- visionval::getRunParameter("OutputDir",Param_ls=Param_ls)
+    QueryExtractFile <- visioneval::getRunParameter("QueryExtractTemplate",Param_ls=Param_ls)
   } else {
     stop( writeLog("No Query Results to export.",Level="error") )
   }
   OutputPath <- file.path(OutputPath,OutputDir)
+  if ( ! dir.exists(OutputPath) ) dir.create(OutputPath)
 
   if ( format != "csv" ) stop( writeLog("Currently only supporting .csv export",Level="error") )
 
   if ( missing(Results) || is.null(Results) ) {
-    if ( ! is.null(self$baseModel) ) Results <- self$baseModel$results()
+    if ( ! is.null(self$Model) ) Results <- self$Model$results()
   } else {
     stop( writeLog("No results to query",Level="error") )
   }
 
+  # Extract results into data.frame
   Results_df <- self$extract(Results=Results,Years,GeoType=GeoType,GeoValues=GeoValues)
 
+  # Then write the data.frame
   if ( ! is.character(SaveTo) ) {
-    Timestamp <- format(Sys.time(),"%Y_%m_%d-%H_%M")
-    SaveTo <- file.path(OutputPath,paste0("QueryExport-",self$QueryName,"-",Timestamp,".csv"))
+    ExtractFile <- QueryExtractFile
+    ExtractFile <- stringr::str_replace(ExtractFile,"%queryname%",self$QueryName)
+    ExtractFile <- stringr::str_replace(ExtractFile,"%timestamp%",format(Sys.time(),"%Y_%m_%d-%H_%M"))
+    # TODO: support other output file formats (different extension, alternate way to format SaveTo)
+    if ( ! grepl("\\.csv$",ExtractFile) ) ExtractFile <- paste0(ExtractFile,".csv")
+    SaveTo <- file.path(OutputPath,ExtractFile)
+  } else {
+    SaveTo <- file.path(OutputPath,SaveTo)
   }
-  OutputFile <- file.path(OutputPath,SaveTo)
-  utils::write.csv(Results_df,file=OutputFile)
+  utils::write.csv(Results_df,file=SaveTo,row.names=FALSE)
   return(invisible(Results_df))
 }
 
 # Helper function to locate OutputDir given Results (VEModel or VEResults) for exporting query
 # data.frame
+# TODO: also use this function to locate the OutputDir/extract file name
 exportDir <- function(model=NULL,results=NULL) {
   exportDir <- if ( class(model) == "VEModel" ) {
     file.path(model$modelPath,model$setting("ResultsDir"))
@@ -756,10 +762,10 @@ ve.query.results <- function(Results=NULL) {
       Results <- self$Model$results()
       # Output file was set when Model was attached
     } else {
-      stop( writeLog("No query results available",Level="error") )
+      return( list() ) # empty list if query has not been run
     }
   } else {
-    private$outputfile() # will use self$Model output file if model is available, or global
+    self$outputfile() # will use self$Model output file if model is available, or global
   }
 
   if ( "VEResultsList" %in% class(Results) ) {
@@ -806,25 +812,29 @@ ve.query.reload <- function( Results ) {
 ve.query.model <- function( Model ) {
   if ( ! missing(Model) ) {
     self$Model <- Model  # update attached model
-    private$outputfile() # Set file name for query results output
+    self$outputfile()    # Set file name for query results output
     self$results()       # cache results if available
   }
   return(self$Model)
 }
 
-ve.query.outputfile <- function() {
-  if ( ! is.null(self$Model) ) {
+# set or override the query's output filename
+# (used for raw query results in the resultsPath).
+ve.query.outputfile <- function(OutputFile=NULL) {
+  if ( ! is.character(OutputFile) ) {
+    if ( ! is.null(self$Model) ) {
       OutputFile <- self$Model$setting("QueryOutputTemplate")
     } else {
-    OutputFile =  visioneval::getRunParameter("QueryOutputTemplate")
+      OutputFile =  visioneval::getRunParameter("QueryOutputTemplate")
+    }
   }
-  self$QueryResultsFile <- stringr::str_replace(OutputFile,"%queryname%",self$QueryName)
-  if ( ! grepl("\\.Rda(ta)?$",self$QueryResultsFile) ) self$QueryResultsFile <- paste0(self$QueryResultsFile,".Rda")
-  return(  self$QueryResultsFile )
+  OutputFile <- stringr::str_replace(OutputFile,"%queryname%",self$QueryName)
+  OutputFile <- stringr::str_replace(OutputFile,"%timestamp%",format(Sys.time(),"%Y_%m_%d-%H_%M"))
+  if ( ! grepl("\\.Rda(ta)?$",OutputFile) ) OutputFile <- paste0(OutputFile,".Rda")
+  return(  self$QueryResultsFile <- OutputFile )
 }
 
 ve.query.run <- function(
-#  Results,   # May be a vector of file locations, a VEResults or VEModel object, or a list of such objects
   Model      = NULL,  # Attached model on whose results to run (or a VEResultsList)
   Force      = FALSE   # If true, re-run the query for all results even if they are up to date
   )
@@ -832,13 +842,11 @@ ve.query.run <- function(
   if ( missing(Model) || is.null(Model) ) {
     Model <- self$Model # Use attached model if available
     if ( is.null(Model) ) stop( writeLog("No model results available to run query",Level="error") )
-  } else {
-    self$model(Model) # attach different model
   }
-
   queryingModel <- FALSE
   if ( "VEModel" %in% class(Model) ) {
     queryingModel <- TRUE
+    self$model(Model)
     Results <- Model$results() # Convert model Reportable stages into a VEResults or VEResultsList if more than one
     if ( "VEResultsList" %in% class(Results) ) {
       Results <- Results$results()
@@ -850,11 +858,12 @@ ve.query.run <- function(
       )
     }
   } else if ( "VEResultsList" %in% class(Model) ) {
-    Results <- Results$results() # Downshift to plain list of VEResults
-    if ( class(Results) != "list" || class(Results[[1]]!="VEResults") ) {
+    Results <- Model$results() # Downshift to plain list of VEResults
+    if ( class(Results) != "list" || class(Results[[1]])!="VEResults" ) {
       stop( writeLog("Program error: VEResultsList won't convert to list of VEResults",Level="error") )
     }
   } else {
+    print(class(Model))
     stop( writeLog(paste0("No results in Model Parameter: ",class(Model)),Level="error") )
   }
   if ( ! is.list(Results) ) {
@@ -886,12 +895,12 @@ ve.query.run <- function(
       function(r) {
         if (
           ! is.list(r) ||
-          ! all("Results","Path","Source") %in% names(r) ||
-          ! all("Timestamp","Values","Specifications") %in% names(r$Results)
+          ! all(c("Results","Path","Source") %in% names(r)) ||
+          ! all(c("Timestamp","Values","Specifications") %in% names(r$Results))
         ) return(FALSE)
         tempEnv <- new.env()
         load(r$Path,envir=tempEnv)
-        Timestamp <- tempEnv$Results$Timestamp # Timestamp when query results were generated
+        Timestamp <- tempEnv$Timestamp # Timestamp when query results were generated
         outOfDate <- ( 
           is.null(Timestamp) ||
           is.null(r$Source$ModelState()$LastChanged) ||
@@ -919,7 +928,7 @@ ve.query.run <- function(
     doQuery(
       Results=ResultsToUpdate,         # list of VEResults objects for which to generate results
       Specifications=self$getlist(),   # A list of VEQuerySpec
-      QueryFile=self$QueryResultsFile, # File into which to save each query result (in Results$resultsPath)
+      QueryFile=self$outputfile(),     # File into which to save each query result (in Results$resultsPath)
       Timestamp=Sys.time()             # Compared to ModelState last update to see if Query results are up to date
     )
     # Results of doQuery are written to the QueryFile in Results$resultsPath
@@ -945,7 +954,8 @@ VEQuery <- R6::R6Class(
     QueryDir = NULL,                # Default directory from which to load queries (see initialize and load)
     QueryResultsFile = NULL,        # Name of file to hold query results (in each results path)
     QueryFile = NULL,               # Name of file holding VEQuery dump (load/save)
-    checkResults = "Empty",         # Named character vector of check errors from last self$check
+    CheckMessages = c(Init="Not checked"), # Named character vector of check errors from last self$check
+    QueryResults = NULL,            # cache of QueryResults (load from QueryResultsFile or re-generate)
     QueryName = NULL,               # Display name for Query (default basename(Query-File)
     Model = NULL,                   # Attached model on which to run query
 
@@ -976,14 +986,12 @@ VEQuery <- R6::R6Class(
     results=ve.query.results,       # report results of last run (available stage files)
     extract=ve.query.extract,       # get requested (or all) results into a data.frame
     export=ve.query.export,         # Export query results to .csv or something else (uses $extract)
+    outputfile=ve.query.outputfile, # expand the file name into which to save QueryResults
     run=ve.query.run                # results are cached in self$QueryResults
   ),
   private = list(
-    QuerySpec=list(),               # access via public functions - list of VEQuerySpec objects
-    saved=TRUE,                     # Flag whether spec list has unsaved changes
-    reload=ve.query.reload,         # recreate self$QueryResults
-    outputfile=ve.query.outputfile, # set the file name into which to save QueryResults
-    QueryResults = NULL             # cache of QueryResults (load from QueryResultsFile or re-generate)
+    QuerySpec=list(),                 # access via public functions - list of VEQuerySpec objects
+    reload=ve.query.reload            # recreate self$QueryResults
   )
 )
 
@@ -1022,7 +1030,7 @@ ve.spec.init <- function(other=NULL) {
     } else {
       # Can't figure out what to do - an error
       self$QuerySpec <- list()
-      self$checkResults <- c("Unknown source:",deparse(other))
+      self$CheckMessages <- c("Unknown source:",deparse(other))
     }
   }
 }
@@ -1070,7 +1078,7 @@ ve.spec.print <- function() {
   # If summarize, print its elements (nicely)
   if ( ! self$valid() ) {
     cat("Specification is not valid:\n")
-    cat(paste(self$checkResults,collapse="\n"),"\n")
+    cat(paste(self$CheckMessages,collapse="\n"),"\n")
   } else {
     nm <- specOverallElements[ specOverallElements %in% names(self$QuerySpec) ]
     dummy <- lapply(nm,spec=self$QuerySpec,
@@ -1091,7 +1099,7 @@ getNames <- function(AST) {
 }
 
 ve.spec.check <- function(Names=NULL, Clean=TRUE) {
-  # Check the query spec and return a corrected version, with errors in self$checkResults
+  # Check the query spec and return a corrected version, with errors in self$CheckMessages
   # if Names is a character string, check that a Function spec only refers
   #   to defined names.
   # if Clean is FALSE, leave unknown names behind in the Specification
@@ -1116,23 +1124,23 @@ ve.spec.check <- function(Names=NULL, Clean=TRUE) {
   #     breakNames <- c("min",breakNames)
   #   }
 
-  self$checkResults <- character(0)
+  self$CheckMessages <- character(0)
   if ( length(self$QuerySpec)==0 ) {
-    self$checkResults <- "Empty"
+    self$CheckMessages <- "Empty"
     return(self)
   }
   nm.test.spec <- names(self$QuerySpec) # may be NULL
   if ( is.null(nm.test.spec) ) {
-    self$checkResults <- c(self$checkResults,"Specification list elements are unnamed")
+    self$CheckMessages <- c(self$CheckMessages,"Specification list elements are unnamed")
   } else {
     if ( "Name" %in% nm.test.spec ) {
       self$Name <- self$QuerySpec$Name
       if ( is.character(Names) && self$Name %in% Names ) {
-        self$checkResults <- c(self$checkResults,paste("Duplicated Specification Name:",self$Name))
+        self$CheckMessages <- c(self$CheckMessages,paste("Duplicated Specification Name:",self$Name))
       }
     } else {
       self$Name <- "Unnamed"
-      self$checkResults <- c(self$checkResults,paste(self$Name,"Specification"))
+      self$CheckMessages <- c(self$CheckMessages,paste(self$Name,"Specification"))
     }
     if ( Clean ) {
       self$QuerySpec[ ! nm.test.spec %in% specOverallElements] <- NULL
@@ -1140,8 +1148,8 @@ ve.spec.check <- function(Names=NULL, Clean=TRUE) {
       have.names <- nm.test.spec %in% specOverallElements
       spec.valid <- length(have.names)>0 && all(have.names)
       if ( ! spec.valid ) {
-        self$checkResults <- c(
-          self$checkResults,
+        self$CheckMessages <- c(
+          self$CheckMessages,
           paste("Unrecognized Specification elements:",paste(nm.test.spec[!have.names],collapse=","))
         )
       }
@@ -1155,16 +1163,16 @@ ve.spec.check <- function(Names=NULL, Clean=TRUE) {
         have.names <- nm.test.summarize %in% specSummarizeElements;
         spec.valid <- length(have.names)>0 && all(have.names)
         if ( ! spec.valid ) {
-          self$checkResults <- c(
-            self$checkResults,
+          self$CheckMessages <- c(
+            self$CheckMessages,
             paste("Unrecognized Specification Elements:",paste(nm.test.spec[!have.names],collapse=","))
           )
         }
       }
       checkedSpec <- visioneval::checkQuerySpec(QuerySpec=self$QuerySpec$Summarize)
       if ( length(checkedSpec$Errors)>1 || any(nzchar(checkedSpec$Errors)) ) {
-        self$checkResults <- c(
-          self$checkResults,
+        self$CheckMessages <- c(
+          self$CheckMessages,
           msg<-paste("Error(s) in Query Specification:",self$Name,"\n"),
           checkedSpec$Errors
         )
@@ -1182,15 +1190,15 @@ ve.spec.check <- function(Names=NULL, Clean=TRUE) {
         # Make sure the parent.frame includes names of other specs...
         Symbols <- Symbols [ ! sapply(Symbols,exists,envir=parent.frame()) ]
         if ( length(Symbols)>0 ) {
-          self$checkResults <- c(
-            self$checkResults,
+          self$CheckMessages <- c(
+            self$CheckMessages,
             paste("Function refers to undefined names:",Symbols,collapse=", ")
           )
         }
       }
     } else {
-      self$checkResults <- c(
-        self$checkResults,
+      self$CheckMessages <- c(
+        self$CheckMessages,
         "Unknown Specification Type (Valid='Summarize' or 'Function')"
       )
     }
@@ -1199,7 +1207,7 @@ ve.spec.check <- function(Names=NULL, Clean=TRUE) {
 }
 
 ve.spec.valid <- function() {
-  return ( length(self$checkResults)==0 || all(!nzchar(self$checkResults)) )
+  return ( length(self$CheckMessages)==0 || all(!nzchar(self$CheckMessages)) )
 }
 
 ve.spec.copy <- function() {
@@ -1336,7 +1344,7 @@ ve.spec.setgeo <- function(Geography=NULL) {
       # with a message (or we could use Require). So any dip into the Marea table or the
       # Azone table only gets processed if we are running for that GeographyType.
       if ( ! Geography["Type"] %in% ve.small.geo ) {
-        self$checkResults <- paste0("Invalid Geography Type for query specification: ",Geography["Type"])
+        self$CheckMessages <- paste0("Invalid Geography Type for query specification: ",Geography["Type"])
       }
       geotest <- ( test.sum[["Table"]] %in% ve.small.geo ) # Which Table elements are the small geography
       # Write the following in case more than one Table element is a small geography
@@ -1411,7 +1419,7 @@ VEQuerySpec <- R6::R6Class(
     copy = ve.spec.copy,            # clone this VEQuerySpec
 
     # Data elements
-    checkResults = "Empty",         # message explaining why VEQuerySpec$valid() returned FALSE, or "" if OK
+    CheckMessages = "Empty",        # message explaining why VEQuerySpec$valid() returned FALSE, or "" if OK
     QuerySpec = list(),             # The actual specification
     Name = "Unnamed",               # Name of the spec, from its QuerySpec
     CompiledSpec = NULL             # The compiled specification (checked and with derived elements added) see ve.spec.check
@@ -1430,7 +1438,8 @@ VEQuerySpec <- R6::R6Class(
 #
 # Process a measureSpec for a Year
 # Return the measure for inclusion in the results
-makeMeasure <- function(measureSpec,thisYear,QPrep_ls) {
+# currentMeasures creates environment in which to evaluate Function specs
+makeMeasure <- function(measureSpec,thisYear,currentMeasures=list(),QPrep_ls) {
 
   measureName <- measureSpec$Name
   measureSpec <- measureSpec$QuerySpec
@@ -1451,14 +1460,26 @@ makeMeasure <- function(measureSpec,thisYear,QPrep_ls) {
 
   # Compute the measure based on the measureSpec
   if ( "Function" %in% names(measureSpec) ) {
-    measure <- try( eval(parse(text=measureSpec$Function), envir=new.env()) )
+    # currentMeasures contains a named numeric vector of previous results
+    # Elevate those to individual objects
+    functionEnv <- new.env()
+    sapply( names(currentMeasures),
+      function(n) {
+        assign(n,currentMeasures[[n]],functionEnv)
+      }
+    )
+    measure <- try( eval(parse(text=measureSpec$Function), envir=functionEnv) )
     if ( ! is.numeric(measure) ) {
       writeLog(paste(measureName,"Function measure failed to compute."),Level="error")
       writeLog(as.character(measure),Level="error")
       measure <- as.numeric(NA) # Fall through with measure being scalar NA
     }
     # TODO: Require GeoType and GeoValues in Function specification
-    # Currently, Functions without GeoValues/GeoType will be filtered out of extracted results
+    measure <- structure(
+      measure,
+      Units=measureSpec$Units,
+      Description=measureSpec$Description
+    ) # used during export to filter on Geography
   } else if ( "Summarize" %in% names(measureSpec) ) {
     sumSpec <- measureSpec$Summarize;
     # TODO: pre-process usingBreaks/usingKey once for each measureSpec before we
@@ -1495,7 +1516,7 @@ makeMeasure <- function(measureSpec,thisYear,QPrep_ls) {
       measure,
       Units=measureSpec$Units,
       Description=measureSpec$Description,
-      QueryGeoType=GeoType,
+      GeoType=GeoType,
       GeoValues=GeoValues
     ) # used during export to filter on Geography
   } else {
@@ -1503,7 +1524,7 @@ makeMeasure <- function(measureSpec,thisYear,QPrep_ls) {
     measure <- as.numeric(NA)
   }
 
-  # Turn the measure into a named list of one, for inclusion in the measureEnv$Values entry
+  # Turn the measure into a named list of one, for inclusion in the measureEnv$Values list
   measureList <- list(measure)
   names(measureList) <- measureName
   return(measureList)
@@ -1599,7 +1620,8 @@ makeMeasure <- function(measureSpec,thisYear,QPrep_ls) {
 # each VEResults object (fill the environment, then save to .Rdata in the results path)
 #
 makeMeasureDataframe <- function(Values,Year,GeoValues,wantData=TRUE,wantMetadata=TRUE) {
-  # Value is a list of measures for a single scenario year (scenarios may have more than one year)
+  # Values is a named list of measures for a single scenario year (scenarios may have more than one year)
+  # Specifications provides metadata for each measure
   # If GeoValues provided, only expand Geography measures that are present in GeoValues
   # if data, include actual measure values, otherwise just do Metadata for
   #  each of the seek Measures, based on what is attached to the first value
@@ -1612,12 +1634,13 @@ makeMeasureDataframe <- function(Values,Year,GeoValues,wantData=TRUE,wantMetadat
 
   wantData <- wantData || ! wantMetadata # return data unless we explicitly only want metaData
 
-  for ( measure in Values ) {
+  # Values is a named numeric vector of measures
+  for ( measureName in names(Values) ) {
+    measure      <- Values[[measureName]]
     measureUnits <- attr(measure,"Units")
     measureDesc  <- attr(measure,"Description")
-    measureName  <- names(measure)
+    GeoType      <- attr(measure,"GeoType")
     # measure is a scalar, vector or array of numeric measure values
-    GeoType <- attr(measureName,"GeoType")
     if ( ! is.null(GeoType) && GeoType != "Region" ) {
       # We have a geography type, and the names of the vector
       #  are the geography names. If it's an array, the geography
@@ -1674,6 +1697,8 @@ makeMeasureDataframe <- function(Values,Year,GeoValues,wantData=TRUE,wantMetadat
       }
     } else {
       # It's a scalar measure or a vector of break values for the region
+      # TODO: this will fail for a Function measure that was based on other measures
+      #   that have a non-Region GeoType - need to diagnose Function GeoType in makeMeasure
       if ( length(measure) > 1 ) {
         measureNames <- paste(sep=".",measureName,names(measure))
       } else {
@@ -1682,10 +1707,10 @@ makeMeasureDataframe <- function(Values,Year,GeoValues,wantData=TRUE,wantMetadat
     }
 
     # Assemble vectors to add to resulting data.frame
-    outputNames <- c( outputNames, measureNames )
+    outputNames    <- c( outputNames, measureNames )
     outputMeasures <- c( outputMeasures, measure )
-    outputUnits <- c( outputUnits, rep(measureUnits,length(measure)) )
-    outputDesc <- c( outputDesc, rep(measureDesc,length(measure)) )
+    outputUnits    <- c( outputUnits, rep(measureUnits,length(measure)) )
+    outputDesc     <- c( outputDesc, rep(measureDesc,length(measure)) )
   }
 
   # Add the year as a row
@@ -1781,13 +1806,14 @@ doQuery <- function (
       # Process measures for thisYear in VEResults
       writeLog(paste("Working on Year",thisYear),Level="warn")
       if ( ! thisYear %in% names(queryEnv$Values) ) {
-        queryEnv$Values[thisYear] <- list()
+        queryEnv$Values[[thisYear]] <- list()
       }
 
       # Iterate over the measures, computing each one
       for ( measureSpec in Specifications ) {
         writeLog(paste("Processing",measureSpec$Name,"..."),Level="info")
-        measure <- makeMeasure(measureSpec,thisYear,QPrep_ls)
+        # queryEnv$Values[thisYear] creates environment in which to evaluate Function specs
+        measure <- makeMeasure(measureSpec,thisYear,queryEnv$Values[[thisYear]],QPrep_ls)
         # makeMeasure attaches GeoType and available GeoValues to each measure
         if ( ! names(measure) %in% names(Specifications) ) {
           stop(
@@ -1797,8 +1823,8 @@ doQuery <- function (
           processPrefix <- if ( length(measure) == 1 ) {
             # makeMeasure generates a list of one (or zero if not processed)
             # use the name of that list item and then unlist it to store the value
-            # Add measure to Values for thisYear
-            queryEnv$Values[[thisYear]][names(measure)] <- unlist(measure)
+            # Add measure to named list of Values for thisYear
+            queryEnv$Values[[thisYear]][names(measure)] <- measure
             ""
           } else "Not "
           writeLog(paste0(processPrefix,"processed: ",measureSpec$Name),Level="info")

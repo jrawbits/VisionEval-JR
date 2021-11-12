@@ -853,6 +853,11 @@ test_query <- function(log="info",build.query=TRUE,break.query=TRUE,run.query=TR
   testStep("Show query directory (may be empty)...")
   print(jr$query())
 
+  if ( ! ( build.query || break.query || run.query ) ) {
+    testStep("No query tests requested; returning VERSPM-query model")
+    return(jr)
+  }
+
   if ( build.query ) {
     testStep("Create an empty query object and print it...")
     # create a query object
@@ -919,16 +924,22 @@ test_query <- function(log="info",build.query=TRUE,break.query=TRUE,run.query=TR
     print(c("2",qry$names()[2]))
     qry$remove(2) # remove by position (bye-bye loc45)
     print(qry)
+  } else {
+    qry <- jr$query("Test-Query",load=FALSE) # Don't open it if file exists already
   }
-  if ( break.query ) {
+  if ( build.query && break.query ) {
     testStep("Make a new VEQuery and add various bad specifications to it (not implemented)...")
     # TODO: Throw some additional specific broken queries at it to see if errors are correct.
     # TODO: destroy that object once we're done abusing it.
   }
-  if ( run.query ) {
+  if ( ! run.query ) {
+    testStep("Not running query - returning it for further exploration")
+    return(qry)
+  } else {
     # TODO: split into further testing of query construction
     # plus second element to efficiently create a correct query and run it.
-    testStep("Construct bare query...")
+    testStep("Build a query from scratch and run it.")
+    testStep("Construct bare query specification...")
     spec <- VEQuerySpec$new()
     cat("Bare query is valid (FALSE): ")
     print(spec$valid())   # Should return FALSE
@@ -962,8 +973,9 @@ test_query <- function(log="info",build.query=TRUE,break.query=TRUE,run.query=TR
     testStep("Print again with details...")
     print(qry,details=TRUE)
 
-    testStep("Complete the initial query by adding two more 'Summarize' specs...")
+    testStep("Complete the initial query by adding more 'Summarize' specs...")
 
+    # Just load a list of specifications straight into the query
     spec <- list(
       list(
         Name = "UrbanVanDvmt",
@@ -992,8 +1004,24 @@ test_query <- function(log="info",build.query=TRUE,break.query=TRUE,run.query=TR
         ),
         Units = "Miles per day",
         Description = "Commercial service vehicle daily vehicle miles traveled attributable to the demand of households and businesses located in the urban area"
+      ),
+      list(
+        Name = "UrbanHhDvmt",
+        Summarize = list(
+          Expr = "sum(UrbanHhDvmt)",
+          Units = c(
+            UrbanHhDvmt = "MI/DAY",
+            Marea = ""
+          ),
+          By = "Marea",
+          Table = "Marea"
+        ),
+        Units = "Miles per day",
+        Description = "Daily vehicle miles traveled by households residing in the urban area"
       )
     )
+    qry$add(spec)
+
     print(qry)
     qry$add(spec,location=1,after=TRUE)
     print(qry)
@@ -1005,9 +1033,7 @@ test_query <- function(log="info",build.query=TRUE,break.query=TRUE,run.query=TR
         Name = "UrbanLdvDvmt",
         Function = "UrbanHhDvmt + UrbanVanDvmt + UrbanComSvcDvmt",
         Units = "Miles per day",
-        Description = paste0("Sum of daily vehicle miles traveled by households residing in the urban area,\n",
-        "commercial service travel attributable to the demand of urban area households and businesses,\n",
-        "and on-demand transit van travel in the urban area.")
+        Description = "Sum of daily vehicle miles traveled in the urban area"
       )
     )
     cat("Function spec is valid (TRUE):"); print(spec$valid())
@@ -1035,64 +1061,74 @@ test_query <- function(log="info",build.query=TRUE,break.query=TRUE,run.query=TR
     cat("Directory: "); print(qry$QueryDir)
     print(dir(qry$QueryDir))
 
-    testStep("Save a copy of the query and fix its extension...")
+    if ( build.query ) { # Interior elaborate test of copying/ssving queries
+      testStep("Save a copy of the query and fix its extension...")
 
-    qry2 <- qry$copy("Copy-Query.R") # .R will be removed from the name
-    qry2$save() # Essentially as "Save As"
-    cat("Saved values in renamed query...\n")
-    cat("Directory: "); print(qry2$QueryDir)
-    cat("Name; "); print(qry2$QueryName)
-    cat("Path: "); print(qry2$QueryFile)
-    cat("Contents of copied query...\n")
-    print(qry2)
+      qry2 <- qry$copy("Copy-Query.R") # .R will be removed from the name
+      qry2$save() # Essentially as "Save As"
+      cat("Saved values in renamed query...\n")
+      cat("Directory: "); print(qry2$QueryDir)
+      cat("Name; "); print(qry2$QueryName)
+      cat("Path: "); print(qry2$QueryFile)
+      cat("Contents of copied query...\n")
+      print(qry2)
 
-    testStep("Model QueryDir contents...")
+      testStep("Model QueryDir contents...")
 
-    cat("Expecting "); print(c("Copy-Query.VEqry","Test-Query.VEqry"))
-    print(jr$query())
+      cat("Expecting "); print(c("Copy-Query.VEqry","Test-Query.VEqry"))
+      print(jr$query())
 
-    testStep("Save a query somewhere else...")
-    qry2$save(qfile <- file.path(jr$modelPath,"queries","Dump-Query.R"))
-    print(jr$query())
+      testStep("Save a query somewhere else...")
+      qfile <- file.path(jr$modelPath,"queries","Dump-Query.R")
+      qry2$save(qfile)
+      print(jr$query())
 
-    testStep("Save a query without overwriting...")
-    actualFile <- qry2$save(overwrite=FALSE)
-    qfile <- c(qfile,actualFile)
-    print(jr$query())
-    unlink(qfile); rm(qry2)
+      testStep("Save a query without overwriting...")
+      actualFile <- qry2$save(overwrite=FALSE)
+      qfile <- c(qfile,actualFile)
+      print(jr$query())
+      unlink(qfile); rm(qry2)
 
-    testStep("Open the query by short name in a different object from the file...")
+      testStep("Open the query by short name in a different object from the file...")
 
-    runqry <- jr$query("Test-Query")
-    cat("Loaded query...\n")
-    cat("Directory: "); print(runqry$QueryDir)
-    cat("Name; "); print(runqry$QueryName)
-    cat("Path: "); print(runqry$QueryFile)
-    print(runqry)
+      runqry <- jr$query("Test-Query")
+      cat("Loaded query...\n")
+      cat("Directory: "); print(runqry$QueryDir)
+      cat("Name; "); print(runqry$QueryName)
+      cat("Path: "); print(runqry$QueryFile)
+      print(runqry)
 
-    testStep("Open the query again from the file, using full file name...")
+      testStep("Open the query again from the file, using full file name...")
 
-    runqry <- jr$query("Test-Query.VEQry")
-    cat("Re-Loaded query with name extension...\n")
-    cat("Directory: "); print(runqry$QueryDir)
-    cat("Name; "); print(runqry$QueryName)
-    cat("Path: "); print(runqry$QueryFile)
-    print(runqry)
-    rm(runqry)
+      runqry <- jr$query("Test-Query.VEQry")
+      cat("Re-Loaded query with name extension...\n")
+      cat("Directory: "); print(runqry$QueryDir)
+      cat("Name; "); print(runqry$QueryName)
+      cat("Path: "); print(runqry$QueryFile)
+      print(runqry)
+      rm(runqry)
+    }
 
     testStep("Run the query on the model...")
-    qry$run(jr)
+    qry$run(jr) # using original query above
 
     testStep("Display query results...")
-    # TODO: need to give those results a class so we can print something sensible
-    # Have a status function report the results that can then be formatted by print
-    print(qry$results())
+    # TODO: put a class on the query results and push the following into a print method
+    rs <- qry$results()
+    cat("Number of query results:",length(rs),"\n")
+    for ( r in seq(length(rs)) ) {
+      cat("Result #",r,"\n")
+      result <- rs[[r]]
+      cat("  Path:",result$Path)
+      cat("  Results:",paste(names(result$Results),collapse=", "),"\n")
+      cat("  ModelStage Results:",result$Source$Name,"\n")
+    }
 
     testStep("Extract query results into data.frame")
     df <- query.results <- qry$extract() # Constructs the data.frame of query results
     # TODO: should the data.frame be cached (not just the raw results?)
-    cat(paste(names(df),"\n",collapse=","))
-    cat("With",nrow(df),"Row(s)\n")
+    print(names(df))
+    print(df)
 
     testStep("Extract query results into .csv file (default name)")
     df <- qry$export(format="csv")
@@ -1101,14 +1137,17 @@ test_query <- function(log="info",build.query=TRUE,break.query=TRUE,run.query=TR
     # the timestamps only differ by minutes: figure out how that works.
 
     testStep("Export query results into explicitly named .csv file")
-    qry$export(format="csv",saveTo=paste0("TestQuery-",qry$Name))
+    qry$export(format="csv",SaveTo=paste0("TestQuery_%timestamp%",qry$Name))
 
     testStep("Show output files, which will include exports and queries")
     jr$dir(outputs=TRUE,all.files=TRUE)
 
     testStep("Run the query again on the bare results (should do nothing)...")
+    rs <- jr$results()
     qry$run(rs) # Won't re-run if query results are up to date with the scenario runs
-    # TODO: should always re-run if the query specification file itself is newer
+    # TODO: It is actually running the query again...
+    # TODO: should always re-run if the query specification file itself is newer than results
+    # Currently just looks at timestamp on results versus last changed time for the model stage
 
     testStep("Force the query to run on the bare results rather than the model...")
     qry$run(rs,Force=TRUE) # Won't re-run if query is up to date
@@ -1120,10 +1159,12 @@ test_query <- function(log="info",build.query=TRUE,break.query=TRUE,run.query=TR
 
 test_multiquery <- function(reset=FALSE,log="info") {
   # TODO: since the multiquery is the now the same as a standard query (multiple reportable stages),
-  # evolve this test into a test of multi-processing to run model stages in parallel. Add tests for
-  # category scenarios and model stage scenarios (like what is already below) Actually change input
-  # files for the program-constructed model stage scenarios, based on setting the inputpath in the
-  # model stages to a couple of test categories and scenarios.
+  # evolve the following into a test of multi-processing to run model stages in parallel. Add tests
+  # for category scenarios and model stage scenarios (like what is already below) Actually change
+  # input files for the program-constructed model stage scenarios, based on setting the inputpath in
+  # the model stages to a couple of test categories and scenarios. Then run queries on the
+  # multi-stage models run with a multisession/callr plan and generate the visualizer (either
+  # interactively or into a file).
 
   if ( ! missing(log) ) logLevel(log)
   testStep("Acquiring test model")
@@ -1147,6 +1188,7 @@ test_multiquery <- function(reset=FALSE,log="info") {
     Name="Scenario-1",
     Dir="Scenario-1",
     ModelDir=jr$modelPath,
+    # TODO: InputPath = NULL, # from one of the category test scenarios
     Scenario="Scenario 1",
     Description="Same as original...",
     StartFrom="stage-pop-future",
@@ -1160,6 +1202,7 @@ test_multiquery <- function(reset=FALSE,log="info") {
     Name="Scenario-2",
     Dir="Scenario-2",
     ModelDir=jr$modelPath,
+    # TODO: InputPath = NULL, # from a different category test scenario
     Scenario="Scenario 2",
     Description="Same as original...",
     StartFrom="stage-pop-future",
@@ -1169,7 +1212,7 @@ test_multiquery <- function(reset=FALSE,log="info") {
   )
 
   # Force Reportable on stage-pop-future (auto-detect says no since
-  # the other scenarios start from it.
+  # the other scenarios start from it).
   jr$modelStages[["stage-pop-future"]]$Reportable=TRUE
 
   # NOTE: without an InputDir or a different InputPath or different Script, this will just re-run
@@ -1178,30 +1221,18 @@ test_multiquery <- function(reset=FALSE,log="info") {
   testStep("Running two additional scenarios")
   jr$run() # runs with "continue" - will just do the newly added stages
 
-  testStep("Multiple query as a list of VEResult objects")
+  # TODO: restructure multi-scenario model to push those scenarios into ModelStages and use
+  #   the scenarios StartFrom to establish the default case.
+
+  testStep("Query the model")
   # Make a list of VEResults objects from the VEModel list and run query on it
-  resultList <- jr$results() # JR now has multiple reportable results
-  qry$run(resultList,OutputRoot=jr$modelResults,OutputFile="%queryname%_ByResultObject_%timestamp%")
+  qry$run(jr,OutputFile="%queryname%_FromModel_%timestamp%")
 
-  testStep("Base/Future query on original model by model name")
-  # Query the vector of model names (character vector says "model names" to VEQuery)
-  nameList <- c(jr$modelName,jr$modelName) # do the same model twice
-  names(nameList) <- nameList
-  qry$run(nameList,OutputRoot=jr$modelResults,OutputFile="%queryname%_ByModelName_%timestamp%.csv")
-
-  testStep("Base/Future query as a list of opened VEModel objects")
-  # Make a list of VEModel objects from the names and query that
-  modelList <- lapply(nameList,openModel)
-  names(modelList) <- nameList
-  qry$run(modelList,OutputRoot=jr$modelResults,OutputFile="%queryname%_ByModelObject_%timestamp%.csv")
-
-  testStep("Multiple query as a list of ResultsDir path names")
+  testStep("Query the results list explicitly (should use cached query results)")
   # Make a list of ResultsDir path names (i.e. list of character strings) from the
   # VEResults and query that (Note difference between a character vector - list of
   # model names and a list of character strings, which are the result paths).
-  pathList <- lapply(resultList,function(r) r$resultsPath)
-  names(pathList) <- nameList
-  qry$run(pathList,OutputRoot=jr$modelResults,OutputFile="%queryname%_ByResultPath%timestamp%.csv")
+  qry$run(jr$results(),OutputRoot=jr$modelResults,OutputFile="%queryname%_FromResultList_%timestamp%.csv")
 
   testStep("Done with multiple queries")
 }
