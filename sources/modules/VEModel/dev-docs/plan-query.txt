@@ -1,20 +1,39 @@
-VEQuery needs a function to dump the outpuc configuration for the visualizer (as JSON)
+Make sure BreakNames are getting set up properly (once per query spec prior to doQuery).
+
+Make sure we include additional named elements in the query spec list that are used just to tag
+the query spec (e.g. for Visualizer Displayname, Instructions, XTicks, etc). They get elevated
+to attributes of the individual metrics to facilitate generating the metadata table.
+So find any code that filters down the fields to "known" values and let anything at all creep in.
+
+Visualizer metrics from VEScenarios are simple, but a lot of intermediates are generated. We need an
+"Export" flag to decide whether to extract it or not. The extract function will export everything by
+default. But the Visualizer will only generate "Export" metrics. We can elaborate that later...
+
+VEQuery needs a function to dump the output configuration for the visualizer (as JSON)
 Eventually need additional query metadata, like this:
 
+Add Instructions, Label, Metric, XTicks, DisplayName as below as options for the QuerySpec
+
 {
-  "NAME": "Walk Trips Per Capita",
+  "DISPLAYNAME": "Walk Trips Per Capita",
   "LABEL": "Walk Travel Per Capita",
   "DESCRIPTION": "annual residents walk trips (not including recreation or walk to transit) divided by population",
   "INSTRUCTIONS": "annual residents walk trips (not including recreation or walk to transit) divided by population",
   "METRIC": "Average",
   "UNIT": "annual trips",
-  "COLUMN": "WalkTravelPerCapita",
+  "NAME": "WalkTravelPerCapita",
   "XTICKS" : 3
 }
 
+Change Visualizer so it uses NAME for COLUMN, and DISPLAYNAME for NAME
+
 Create these as additional
-  DISPLAYNAME (for NAME; COLUMN is what we current call "NAME")
-  LABEL (default = COLUMN)
+
+  EXPORT (Default is Not Present)
+    - indicates measure should not be output to Visualizer unless named
+    - Visualizer will only consider export metrics
+  DISPLAYNAME (Default is NAME)
+  LABEL (default = DISPLAYNAME = NAME)
   METRIC (default = "")
   XTICKS (default = 5)
   INSTRUCTIONS (default = DESCRIPTION)
