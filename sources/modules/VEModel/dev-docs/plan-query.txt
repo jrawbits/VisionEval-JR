@@ -1,3 +1,62 @@
+Additional things for NextGen:
+  make installModel look through packages (not just VEModel) and allow packages to add new models
+  and new variants.
+  Change runtime to keep a VE.package.manifest.
+  Create an installVEPackages function to install package and maintain manifest
+  Create a DRAT repository for just the VE Packages (in suitable R versions)
+  If you install the visioneval package, have a function in the framework to install the rest of
+  visioneval and launch the runtime.
+  Make a package for the VERPAT model (VEReports => VERPAT, plus alter the model). Then do
+  the model as installable from that package.
+  Likewise VE-State (now VEState).
+  Model package contains:
+    bare model
+    sample model
+    vignettes (module_docs here? Tutorial for model)
+    extra modules (e.g. the VEReport module)
+    man for moduels/module_docs - integrate all that better
+
+  Clear out the models directory - should show up empty or just with a ReadMe.pdf
+
+  Saving visualizer creates in ResultsDir for model: Visualize-<QueryName>-<Timestamp>
+
+  Modularize output modules (for data.frames with metadata, mostly from queries)
+  Those modules can attach additional metadata from scenario or whatever (in particular,
+  the scenario stuff).
+
+For walkthrough:
+  Make a slide show of key elements of NextGen
+  Core principles: modular, simple, extensible in every dimension
+  Basic recap
+  Show stuff that works (and hint at the future)
+    Configurations
+    ModelStages
+      Unit that runs
+      Unit that can be interrogated for raw export
+    "Runnable" ModelStage (it's not a model stage if it's not runnable)
+    "Reportable" ModelStage
+    StartFrom stages
+      Share scripts
+      Share earlier results
+    LoadModel / LoadStage that we saw before:
+      Copies over the Datastore from a different model or model stage
+    Scenarios
+      ModelStages
+      Auto-organization (category scenarios - work in progress)
+    Scenarios versus standard stages
+    Reporting on ModelStages and Scenarios
+      SummarizeDatasets (Queries)
+      How to set up queries - examples
+    Exporting Query results
+    Visualizing Query results
+      Standard reportable model stages
+      Category/scenario stages
+      
+
+Use a single MeasureEnv environment for all of the makeMeasure calls for a single scenario (don't
+keep going back and forth). Retreat to a list at the end (make sure metadata attributes are
+preserved).
+
 Make sure BreakNames are getting set up properly (once per query spec prior to doQuery).
 
 Make sure we include additional named elements in the query spec list that are used just to tag
