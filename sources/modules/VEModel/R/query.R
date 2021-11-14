@@ -660,7 +660,7 @@ ve.query.extract <- function(Results=NULL, Measures=NULL, Years=NULL,GeoType=NUL
 
   if ( exportOnly ) {
     whichExport <- sapply( private$QuerySpec[seekMeasures], function(m) return( ! is.null(attr(m,"Export")) ) )
-    seekMeasures <- seekMeasure[ whichExport ]
+    seekMeasures <- seekMeasures[ whichExport ]
   }
     
   # Keep only measures that are being sought

@@ -1,13 +1,16 @@
 Additional things for NextGen:
-  make installModel look through packages (not just VEModel) and allow packages to add new models
-  and new variants.
-  Change runtime to keep a VE.package.manifest.
-  Create an installVEPackages function to install package and maintain manifest
-  Create a DRAT repository for just the VE Packages (in suitable R versions)
-  If you install the visioneval package, have a function in the framework to install the rest of
-  visioneval and launch the runtime.
-  Make a package for the VERPAT model (VEReports => VERPAT, plus alter the model). Then do
-  the model as installable from that package.
+  Verify that installModel is looking through packages for "models".
+  Seems to be working.
+
+  (LATER) Create an installVEPackages function to install packages and update package manifest
+    Create a DRAT repository for just the VE Packages (in suitable R versions)
+    If you install just the visioneval/VEModel package, have a function in the framework to install the rest of
+      visioneval and launch the runtime.
+    So the installation is two steps: install visioneval/VEModel, then install a model.
+
+  Make a package for the VERPAT model
+    (DONE) VEReports => VERPAT, plus alter the model in both VEModel and VERPAT.
+    Created the model as installable from that package.
   Likewise VE-State (now VEState).
   Model package contains:
     bare model
