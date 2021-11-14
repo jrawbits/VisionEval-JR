@@ -1453,7 +1453,7 @@ VEQuerySpec <- R6::R6Class(
 # Process a measureSpec for a Year
 # Return the measure for inclusion in the results
 # currentMeasures creates environment in which to evaluate Function specs
-makeMeasure <- function(measureSpec,thisYear,currentMeasures=list(),QPrep_ls) {
+makeMeasure <- function(measureSpec,thisYear,QPrep_ls,measureEnv) {
 
   measureName <- measureSpec$Name
   measureSpec <- measureSpec$QuerySpec
@@ -1474,15 +1474,8 @@ makeMeasure <- function(measureSpec,thisYear,currentMeasures=list(),QPrep_ls) {
 
   # Compute the measure based on the measureSpec
   if ( "Function" %in% names(measureSpec) ) {
-    # currentMeasures contains a named numeric vector of previous results
     # Elevate those to individual objects
-    functionEnv <- new.env()
-    sapply( names(currentMeasures),
-      function(n) {
-        assign(n,currentMeasures[[n]],functionEnv)
-      }
-    )
-    measure <- try( eval(parse(text=measureSpec$Function), envir=functionEnv) )
+    measure <- try( eval(parse(text=measureSpec$Function), envir=measureEnv) )
     if ( ! is.numeric(measure) ) {
       writeLog(paste(measureName,"Function measure failed to compute."),Level="error")
       writeLog(as.character(measure),Level="error")
@@ -1577,10 +1570,10 @@ makeMeasure <- function(measureSpec,thisYear,currentMeasures=list(),QPrep_ls) {
     measure <- as.numeric(NA)
   }
 
-  # Turn the measure into a named list of one, for inclusion in the measureEnv$Values list
-  measureList <- list(measure)
-  names(measureList) <- measureName
-  return(measureList)
+  # Turn the measure into a named list of one, for inclusion in the
+  # measureEnv$Values list
+  assign(measureName,measure,envir=measureEnv)
+  return(measureEnv)
 }
 
 #   # Linearize measure elements and names when doing export
@@ -1863,26 +1856,14 @@ doQuery <- function (
       }
 
       # Iterate over the measures, computing each one
+      # Work in an environment so "Function" specs can easily access earlier measure results
+      measureEnv <- new.env
       for ( measureSpec in Specifications ) {
         writeLog(paste("Processing",measureSpec$Name,"..."),Level="info")
-        # queryEnv$Values[thisYear] creates environment in which to evaluate Function specs
-        measure <- makeMeasure(measureSpec,thisYear,queryEnv$Values[[thisYear]],QPrep_ls)
+        makeMeasure(measureSpec,thisYear,QPrep_ls,measureEnv)
         # makeMeasure attaches GeoType and available GeoValues to each measure
-        if ( ! names(measure) %in% names(Specifications) ) {
-          stop(
-            writeLog("Programming error: measure name not present in specifications.",Level="error")
-          )
-        } else {
-          processPrefix <- if ( length(measure) == 1 ) {
-            # makeMeasure generates a list of one (or zero if not processed)
-            # use the name of that list item and then unlist it to store the value
-            # Add measure to named list of Values for thisYear
-            queryEnv$Values[[thisYear]][names(measure)] <- measure
-            ""
-          } else "Not "
-          writeLog(paste0(processPrefix,"processed: ",measureSpec$Name),Level="info")
-        }
       }
+      queryEnv$Values[[thisYear]] <- as.list(measureEnv)
     }
     # Save results to the QueryFile in the VEResults path
     queryResults <- file.path(results$resultsPath,QueryFile)
