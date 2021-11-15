@@ -1,3 +1,9 @@
+For the visualizer:
+
+  Look at content of DataObjects in relation to how the crossfilter is using them (VisualVE.js)
+  Use console.log
+  Struture differs between JRC and HTML/JS versions.
+
 Additional things for NextGen:
 006145
   (LATER) Create an installVEPackages function to install packages and update package manifest

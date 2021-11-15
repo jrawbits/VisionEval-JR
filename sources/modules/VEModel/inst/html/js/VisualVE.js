@@ -1,3 +1,4 @@
+
 // The VEModel use case is to call the visualize function which will start the browser with a
 // websocket connection, load the visualizer page, use sendCommand to create the four required
 // Javascript objects, then use sendCommand to execute the VisualVE command below.
@@ -63,15 +64,13 @@ VisualVE = function( catconfig, scenconfig, outputconfig, VEdata ) {
       $('#scen' + index + '-popover-content').append('<p><strong>' + scenarioName + ':</strong> ' + scenarioDescription + '</p>');
       $.each(scenarioLevels, function(i,val){
           $.each(val.INPUTS,function(k,v){
-                  $.each(scenconfig, function(idx,scenario){
-                          if(v.NAME[0] == scenario.NAME[0]) {
-                                  $('#scen' + index + '-popover-content')
-                                  .append('<p><strong>L'+i+': ' + scenario.LABEL + ':</strong> ' + scenario.LEVELS[parseInt(v.LEVEL)-1].DESCRIPTION + '</p>');
-                          }
-                  });
-
+              $.each(scenconfig, function(idx,scenario){
+                  if(v.NAME[0] == scenario.NAME[0]) {
+                      $('#scen' + index + '-popover-content')
+                      .append('<p><strong>L'+i+': ' + scenario.LABEL + ':</strong> ' + scenario.LEVELS[parseInt(v.LEVEL)-1].DESCRIPTION + '</p>');
+                  }
+              });
           });
-
       });
       $("#scen"+index+"-popover").popover({
           trigger: "hover",
@@ -82,6 +81,7 @@ VisualVE = function( catconfig, scenconfig, outputconfig, VEdata ) {
           }
       });
   });
+  console.log(DataObjects);
 
   // Add low-level scenarios to DataTable
   var scenarioTableColumns = [];
@@ -116,7 +116,7 @@ VisualVE = function( catconfig, scenconfig, outputconfig, VEdata ) {
       $('#output'+index+'_subtitle').append(outputMetric+' = <span id="output'+index+'_stat" class="stat">'+'</span> '+outputUnit);  
       $('#output'+index+'-popover-content').append('<p><strong>'+outputLabel+ ": </strong>"+outputDesc+'</p>');
       $('#outputinstlist').append('<li><strong>'+outputName+'</strong>: '+outputInst+'</li>');
-      $('#Scenario-Results thead tr.header').append("<th>"+values.COLUMN+"</th>");
+      $('#Scenario-Results thead tr.header').append("<th>"+values.NAME+"</th>");
       $("#output"+index+"-popover").popover({
           trigger: "hover",
           html: true,
@@ -176,7 +176,7 @@ VisualVE = function( catconfig, scenconfig, outputconfig, VEdata ) {
               var inputs = value.INPUTS;
               scnCnt =0;                   
               $.each(inputs,function(idx,i){
-                  if(d[i.NAME]== i.LEVEL){
+                  if(d[i.NAME] == i.LEVEL){
                       scnCnt++;                                                       
                   }
               });
@@ -212,6 +212,7 @@ VisualVE = function( catconfig, scenconfig, outputconfig, VEdata ) {
   var scenarioHash = Array(categoryInputChartCount);
   $.each(scenarioHash,function(index,value) { scenarioHash[index] = {}; });
 
+  console.log(scenarioGroupWhole[0])
   $.each(scenarioGroupWhole,function(index,value) {
       scenarioGroupWhole[index].forEach( function(p,i) {
           scenarioHash[index][p.key] = p.value;

@@ -1674,16 +1674,17 @@ ve.model.visual <- function(stages=list(),query=NULL,save=FALSE) {
   jrc::openPage(
     useViewer=FALSE,
     rootDirectory=htmlRoot,
-    startPage=file.path(htmlRoot,"visualizer.html")
+    startPage=file.path(htmlRoot,"visualizer.html"),
+    browser="C:/Users/jeremy.raw/AppData/Local/Vivaldi/Application/vivaldi.exe"
   )
   jsonvars <- jsonlite::read_json(file.path(system.file("html",package="VEModel"),"visualizer-sample.js"))
   # NOTE: jrc does R-to-JSON conversion internally - so that would make it very easy just to
   # develop R structures and send them over with a suitable name
-  jrc::sendData("catconfig",jsonvars$catconfig)
-  jrc::sendData("scenconfig",jsonvars$scenconfig)
-  jrc::sendData("outputconfig",jsonvars$outputconfig)
-  jrc::sendData("VEdata",jsonvars$VEdata)
-  jrc::callFunction("VisualVE")
+  jrc::sendData("catconfig",jsonvars$catconfig,keepAsVector=TRUE) # keepAsVector -> otherwise flattens elements of length 1
+  jrc::sendData("scenconfig",jsonvars$scenconfig,keepAsVector=TRUE)
+  jrc::sendData("outputconfig",jsonvars$outputconfig,keepAsVector=TRUE)
+  jrc::sendData("VEdata",jsonvars$VEdata,keepAsVector=TRUE)
+  jrc::callFunction("VisualVE",list("catconfig","scenconfig","outputconfig","VEdata"))
   
   # Consider using onStart to then populate with data and call VisualVE function
 
@@ -1786,33 +1787,33 @@ ve.model.visual <- function(stages=list(),query=NULL,save=FALSE) {
 
 # Print a summary of the VEModel, including its run status
 ve.model.print <- function(details=FALSE,configs=FALSE,scenarios=FALSE) {
-  cat("Model:",self$modelName,"\n")
+  cat("Model:",self$modelName,"/n")
   if ( details ) {
-    cat("Path:","\n")
-    cat(self$modelPath,"\n")
-    cat("Configurations:","\n")
-    cat(paste("  ",uniqueSources(self$RunParam_ls,shorten=self$modelPath)),sep="\n") # Generates one row for each unique source
+    cat("Path:","/n")
+    cat(self$modelPath,"/n")
+    cat("Configurations:","/n")
+    cat(paste("  ",uniqueSources(self$RunParam_ls,shorten=self$modelPath)),sep="/n") # Generates one row for each unique source
   }
-  cat("Status:", self$printStatus(),"\n")
+  cat("Status:", self$printStatus(),"/n")
   if ( private$p.valid ) {
     scenarioStages <- sapply( self$modelStages, function(s) s$Scenario )
-    cat("Model Stages:\n")
+    cat("Model Stages:/n")
     for ( s in self$modelStages[ ! scenarioStages ] ) {
       s$print(details,configs)
     }
     scenarioCount <- length(which(scenarioStages))
     if ( scenarioCount > 0 || is.null(self$modelScenarios) ) {
       if ( ! scenarios ) {
-        cat(scenarioCount,"Scenario stages defined in",sub(self$modelPath,"",self$modelScenarios$scenarioPath),"\n")
+        cat(scenarioCount,"Scenario stages defined in",sub(self$modelPath,"",self$modelScenarios$scenarioPath),"/n")
       } else {
-        cat("Scenario Stages from",sub(self$modelPath,"",self$modelScenarios$scenarioPath),"\n")
+        cat("Scenario Stages from",sub(self$modelPath,"",self$modelScenarios$scenarioPath),"/n")
         for ( s in self$modelStages[ scenarioStages ] ) {
           s$print(details,configs=FALSE) # don't show configs for scenarios...
         }
       }
     } else if (scenarioCount > 0 && is.null(self$modelScenarios) ) {
-      cat("Program error: scenarioCount",scenarioCount,"but modelScenarios is NULL\n")
-    } else cat("No scenarios defined.\n")
+      cat("Program error: scenarioCount",scenarioCount,"but modelScenarios is NULL/n")
+    } else cat("No scenarios defined./n")
   }
   private$p.valid
 }
@@ -1826,7 +1827,7 @@ ve.model.log <- function(shorten=TRUE) {
     if ( is.null(logFile) ) {
       # See if there's one in the RunPath anyway...
       p <- s$RunPath
-      logFile <- dir(p,pattern="\\.log$",full.names=TRUE)
+      logFile <- dir(p,pattern="//.log$",full.names=TRUE)
     }
     if ( is.character(logFile) && length(logFile)>0 ) {
       if ( ! shorten ) logFile <- normalizePath(file.path(s$RunPath,logFile))
@@ -2472,8 +2473,8 @@ ve.model.query <- function(QueryName=NULL,FileName=NULL,load=TRUE) {
 #     cat("QueryDir:"); print(QueryDir)
 #     cat("Query Directory:"); print(QueryPath)
 #     cat("Query Directory Exists:"); print(dir.exists(QueryPath))
-#     cat("Available Queries:\n")
-    queries <- dir(QueryPath,pattern="\\.(VEqry|R)$",ignore.case=TRUE)
+#     cat("Available Queries:/n")
+    queries <- dir(QueryPath,pattern="//.(VEqry|R)$",ignore.case=TRUE)
     if ( length(queries)==0 ) queries <- "No queries defined"
     return(queries)
   }
@@ -2496,7 +2497,7 @@ ve.model.query <- function(QueryName=NULL,FileName=NULL,load=TRUE) {
 #' Open a VisionEval Model
 #'
 #' @description
-#' \code{openModel} opens a VisionEval model and returns a VEModel object (q.v.) through
+#' /code{openModel} opens a VisionEval model and returns a VEModel object (q.v.) through
 #'    which it can be manipulated (run or queried)
 #'
 #' @details
@@ -2665,7 +2666,7 @@ installStandardModel <- function( modelName, modelPath, confirm=TRUE, overwrite=
   # Confirm installation if requested
   install <- TRUE
   if ( confirm && interactive() ) {
-    msg <- paste0("Install standard model '",model$Name,"' into ",installPath,"?\n")
+    msg <- paste0("Install standard model '",model$Name,"' into ",installPath,"?/n")
     install <- confirmDialog(msg)
   }
 
@@ -2825,11 +2826,7 @@ visualize <- function(Model, Query, Year, categories, measures,saveTo,maxMeasure
   # generate the results into a folder with that name inside Model$ResultsDir
   # default saveTo (if not character) is "visualizer" in ResultsDir
 
-  visualizer.json <- character(0)
-
   # Cache the visualizer.json somewhere? Return it?
-
-  return(invisible(visualizer.json))
 }
 
 ################################################################################
