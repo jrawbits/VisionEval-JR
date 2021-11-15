@@ -336,7 +336,7 @@ writeSetup <- function(object=NULL,filename=NULL,overwrite=FALSE) {
 #'
 #' When that line runs, start.dir will again be reset, so running that line repeatedly will toggle
 #' between two directories (e.g. the one from which \code{R} was started and the one defined in the
-#' VE_RUNTIME environment variable..
+#' VE_RUNTIME environment variable..)
 #'
 #' @param Directory a specific directory (absolute or relative to getwd()) to use as the runtime. If
 #' Directory is not provided, looks for a system environment variable VE_RUNTIME, and if that is not
@@ -444,5 +444,84 @@ uniqueSources <- function(Param_ls,shorten=NULL) {
     if ( ! is.null(shorten) ) sources <- sub(paste0(shorten,"/"),"",sources)
   }
   return(sources)
+}
+
+# BUILD INSTALLABLE MODEL INDEX
+# =============================
+#' Get index of models and variants available for installModel()
+#' @param reset if TRUE, rebuild the available model index
+#' @return a list of available models and variants 
+#' @export
+getModelIndex <- function(reset=FALSE) {
+
+  # Uses the package global ve.env to cache models and variants
+  if ( ! reset && "modelIndex" %in% names(ve.env) ) return(ve.env$modelIndex)
+
+  # WARNING: if using pkgload, this will still reach for the installed package version
+  pkgs <- utils::installed.packages(fields=c("Package","LibPath"))
+  VE.pkgs <- pkgs[ grep("^VE",pkgs[,"Package"]),"LibPath"] # named character vector of paths
+  modelPaths <- dir(file.path(VE.pkgs,names(VE.pkgs),"models"),pattern="model-index.cnf",recursive=TRUE,full.names=T)
+  modelIndex <- list()
+  for ( confPath in modelPaths ) {
+    confPackage <- basename(sub("[/\\]models[/\\].*","",confPath))
+    index <- try( yaml::yaml.load_file(confPath) )
+    if ( ! "variants" %in% names(index) ) {
+      modelName <- names(index)
+    } else {
+      modelName <- basename(dirname(confPath)) # sub-directory in VEModel/models
+      tmp <- list()
+      tmp[modelName] <- list(variants=index)
+      index <- tmp
+    }
+    # Get here with modelIndex a list of model names, whose elements are a list of model variants
+    for ( m in names(index) ) {
+      if ( ! "variants" %in% names(index[[m]]) ) {
+        writeLog(paste("No model variants in",m,"\n"),Level="warn")
+        next
+      }
+      vars <- index[[m]]$variants
+      if ( length(vars)>0 ) {
+        if ( any(dupes <- names(vars) %in% modelIndex[[m]]) ) {
+          writeLog(paste("Duplicated model variant",paste0(m,":",paste(names(vars)[dupes],collapse=","))),Level="warn")
+        }
+        modelIndex[[m]][ names(vars) ] <- vars
+        for ( v in names(vars) ) {
+          modelIndex[[m]][[v]]$ModelDir <- dirname(confPath)
+          attr(modelIndex[[m]][[v]],"Package") <- confPackage
+        }
+      } else {
+        writeLog(paste("No model variants in",modelName),Level="error")
+        modelIndex[[m]] <- list()
+        attr(modelIndex[[m]],"Package") <- confPackage
+      }
+    }
+  }
+  return( invisible(ve.env$modelIndex <- modelIndex) )
+}
+
+# DUMP MODEL INDEX, SHOWING SOURCES
+#==================================
+#' Report package source of model variants
+#' @return a data.frame listing all models, variants and their package source
+#' @export
+showModelIndex <- function(reset=FALSE) {
+  modelIndex <- getModelIndex(reset)
+  modelSources <- list()
+  for ( m in names(modelIndex) ) {
+    if ( length(modelIndex[[m]]) == 0 ) {
+      modelSources$Model <- c(modelSources$Model,m)
+      modelSources$Variant <- c(modelSources$Variant,"None")
+      modelSources$Package <- c(modelSources$Package,attr(modelIndex[[m]],"Package"))
+      writeLog("Added model with no variants",Level="info")
+    } else {
+      for ( v in names(modelIndex[[m]]) ) {
+        modelSources$Model <- c(modelSources$Model,m)
+        modelSources$Variant <- c(modelSources$Variant,v)
+        modelSources$Package <- c(modelSources$Package,attr(modelIndex[[m]][[v]],"Package"))
+        writeLog(paste("Added model",m,"Variant",v,"\n"),Level="info")
+      }
+    }
+  }
+  return( as.data.frame(modelSources) )
 }
 

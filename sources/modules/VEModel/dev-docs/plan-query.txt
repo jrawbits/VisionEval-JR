@@ -1,7 +1,5 @@
 Additional things for NextGen:
-  Verify that installModel is looking through packages for "models".
-  Seems to be working.
-
+006145
   (LATER) Create an installVEPackages function to install packages and update package manifest
     Create a DRAT repository for just the VE Packages (in suitable R versions)
     If you install just the visioneval/VEModel package, have a function in the framework to install the rest of
