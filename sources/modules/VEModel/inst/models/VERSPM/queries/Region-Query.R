@@ -1,3 +1,5 @@
+# TODO: Implement these for VEQuery
+
 #CALCULATE SUMMARY MEASURES FOR A MODEL REGION
 #=============================================
 #' Calculate summary measures for a region and organize results in a table.
