@@ -799,14 +799,14 @@ ve.query.reload <- function( Results ) {
     function(r) {
       # expect VEResuls$resultsPath to be normalized path
       resultsPath <- file.path(r$resultsPath,self$QueryResultsFile)
-      if ( file.exists(resultsPath) ) {
+      results <- if ( file.exists(resultsPath) ) {
         # Load query results for this set of model stage results
         results.env <- new.env() # where to load query results
         items <- load.results <- try( load(resultsPath,envir=results.env) )
-        results <- if ( class(items) == "try-error" || ! "Values" %in% items ) {
+        if ( class(items) == "try-error" || ! "Values" %in% items ) {
           NULL
         } else as.list(results.env)
-      }
+      } else NULL
       return(
         list(
           Path=resultsPath,   # Location of QueryResults RData file
@@ -1522,27 +1522,27 @@ makeMeasure <- function(measureSpec,thisYear,QPrep_ls,measureEnv) {
     # Compute some metric attributes needed by visualizer
 
     Export <- measureSpec$Export  # NULL if not present - don't care about Export value, only presence
-    Instructions <- if ( !is.na(measureSpec$Instructions) ) {
+    Instructions <- if ( !is.null(measureSpec$Instructions) ) {
       measureSpec$Instructions
     } else {
       measureSpec$Description
     }
-    DisplayName <- if ( !is.na(measureSpec$DisplayName) ) {
+    DisplayName <- if ( !is.null(measureSpec$DisplayName) ) {
       measureSpec$DisplayName
     } else {
       measureSpec$Name
     }
-    Metric <- if ( !is.na(measureSpec$Metric) ) {
+    Metric <- if ( !is.null(measureSpec$Metric) ) {
       measureSpec$Metric
     } else {
       ""
     }
-    XTicks <- if ( !is.na(measureSpec$XTicks) ) {
+    XTicks <- if ( !is.null(measureSpec$XTicks) ) {
       measureSpec$XTicks
     } else {
       5
     }
-    Label <- if ( !is.na(measureSpec$Label) ) {
+    Label <- if ( !is.null(measureSpec$Label) ) {
       measureSpec$Label
     } else {
       DisplayName # either explicit or itself defaulted further
@@ -1563,7 +1563,7 @@ makeMeasure <- function(measureSpec,thisYear,QPrep_ls,measureEnv) {
       DisplayName=DisplayName,
       Metric=Metric,
       XTicks=XTicks,
-      Label=Label,
+      Label=Label
     ) # used during export to filter on Geography
   } else {
     writeLog(paste(measureName,"Invalid Measure Specification (must be 'Summarize' or 'Function')"),Level="error")
@@ -1857,7 +1857,7 @@ doQuery <- function (
 
       # Iterate over the measures, computing each one
       # Work in an environment so "Function" specs can easily access earlier measure results
-      measureEnv <- new.env
+      measureEnv <- new.env()
       for ( measureSpec in Specifications ) {
         writeLog(paste("Processing",measureSpec$Name,"..."),Level="info")
         makeMeasure(measureSpec,thisYear,QPrep_ls,measureEnv)
