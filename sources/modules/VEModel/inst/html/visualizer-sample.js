@@ -1,272 +1,273 @@
-var catconfig = [
-  {
-    "NAME": ["Community Design"],
-    "DESCRIPTION": ["Local policies to enable shorter trips and travel by alternate modes."],
-    "LEVELS": [
-      {
-        "NAME": ["1"],
-        "INPUTS": [
-          {
-            "NAME": ["L"],
-            "LEVEL": ["1"]
-          },
-          {
-            "NAME": ["B"],
-            "LEVEL": ["1"]
-          },
-          {
-            "NAME": ["T"],
-            "LEVEL": ["1"]
-          },
-          {
-            "NAME": ["P"],
-            "LEVEL": ["1"]
-          }
-        ]
-      },
-      {
-        "NAME": ["2"],
-        "INPUTS": [
-          {
-            "NAME": ["L"],
-            "LEVEL": ["2"]
-          },
-          {
-            "NAME": ["B"],
-            "LEVEL": ["1"]
-          },
-          {
-            "NAME": ["T"],
-            "LEVEL": ["2"]
-          },
-          {
-            "NAME": ["P"],
-            "LEVEL": ["1"]
-          }
-        ]
-      },
-      {
-        "NAME": ["3"],
-        "INPUTS": [
-          {
-            "NAME": ["L"],
-            "LEVEL": ["2"]
-          },
-          {
-            "NAME": ["B"],
-            "LEVEL": ["1"]
-          },
-          {
-            "NAME": ["T"],
-            "LEVEL": ["3"]
-          },
-          {
-            "NAME": ["P"],
-            "LEVEL": ["2"]
-          }
-        ]
-      },
-      {
-        "NAME": ["4"],
-        "INPUTS": [
-          {
-            "NAME": ["L"],
-            "LEVEL": ["2"]
-          },
-          {
-            "NAME": ["B"],
-            "LEVEL": ["2"]
-          },
-          {
-            "NAME": ["T"],
-            "LEVEL": ["3"]
-          },
-          {
-            "NAME": ["P"],
-            "LEVEL": ["2"]
-          }
-        ]
-      }
-    ]
-  },
-  {
-    "NAME": ["Marketing/Incentive"],
-    "DESCRIPTION": ["Local programs to improve driving efficiency & reduce auto demand."],
-    "LEVELS": [
-      {
-        "NAME": ["1"],
-        "INPUTS": [
-          {
-            "NAME": ["D"],
-            "LEVEL": ["1"]
-          },
-          {
-            "NAME": ["E"],
-            "LEVEL": ["1"]
-          }
-        ]
-      },
-      {
-        "NAME": ["2"],
-        "INPUTS": [
-          {
-            "NAME": ["D"],
-            "LEVEL": ["2"]
-          },
-          {
-            "NAME": ["E"],
-            "LEVEL": ["2"]
-          }
-        ]
-      }
-    ]
-  },
-  {
-    "NAME": ["Pricing"],
-    "DESCRIPTION": ["State-led policies that move towards true cost pricing."],
-    "LEVELS": [
-      {
-        "NAME": ["1"],
-        "INPUTS": [
-          {
-            "NAME": ["C"],
-            "LEVEL": ["1"]
-          }
-        ]
-      },
-      {
-        "NAME": ["2"],
-        "INPUTS": [
-          {
-            "NAME": ["C"],
-            "LEVEL": ["2"]
-          }
-        ]
-      },
-      {
-        "NAME": ["3"],
-        "INPUTS": [
-          {
-            "NAME": ["C"],
-            "LEVEL": ["3"]
-          }
-        ]
-      }
-    ]
-  },
-  {
-    "NAME": ["Vehicles/Fuels"],
-    "DESCRIPTION": ["Factors representing changes to future vehicles and fuels."],
-    "LEVELS": [
-      {
-        "NAME": ["0"],
-        "INPUTS": [
-          {
-            "NAME": ["V"],
-            "LEVEL": ["1"]
-          },
-          {
-            "NAME": ["F"],
-            "LEVEL": ["1"]
-          }
-        ]
-      },
-      {
-        "NAME": ["1"],
-        "INPUTS": [
-          {
-            "NAME": ["V"],
-            "LEVEL": ["2"]
-          },
-          {
-            "NAME": ["F"],
-            "LEVEL": ["1"]
-          }
-        ]
-      },
-      {
-        "NAME": ["2"],
-        "INPUTS": [
-          {
-            "NAME": ["V"],
-            "LEVEL": ["2"]
-          },
-          {
-            "NAME": ["F"],
-            "LEVEL": ["2"]
-          }
-        ]
-      }
-    ]
-  },
-  {
-    "NAME": ["Fuel Price"],
-    "DESCRIPTION": ["Context factor on the assumed market price of gasoline (exclusive of fuel taxes.)"],
-    "LEVELS": [
-      {
-        "NAME": ["0"],
-        "INPUTS": [
-          {
-            "NAME": ["G"],
-            "LEVEL": ["1"]
-          }
-        ]
-      },
-      {
-        "NAME": ["1"],
-        "INPUTS": [
-          {
-            "NAME": ["G"],
-            "LEVEL": ["2"]
-          }
-        ]
-      },
-      {
-        "NAME": ["2"],
-        "INPUTS": [
-          {
-            "NAME": ["G"],
-            "LEVEL": ["3"]
-          }
-        ]
-      }
-    ]
-  },
-  {
-    "NAME": ["Income"],
-    "DESCRIPTION": ["Context factor on the assumed growth of statewide average per capita income."],
-    "LEVELS": [
-      {
-        "NAME": ["0"],
-        "INPUTS": [
-          {
-            "NAME": ["I"],
-            "LEVEL": ["1"]
-          }
-        ]
-      },
-      {
-        "NAME": ["1"],
-        "INPUTS": [
-          {
-            "NAME": ["I"],
-            "LEVEL": ["2"]
-          }
-        ]
-      },
-      {
-        "NAME": ["2"],
-        "INPUTS": [
-          {
-            "NAME": ["I"],
-            "LEVEL": ["3"]
-          }
-        ]
-      }
-    ]
-  }
-];
-var scenconfig = [
+{
+  "catconfig": [
+    {
+      "NAME": ["Community Design"],
+      "DESCRIPTION": ["Local policies to enable shorter trips and travel by alternate modes."],
+      "LEVELS": [
+        {
+          "NAME": ["1"],
+          "INPUTS": [
+            {
+              "NAME": ["L"],
+              "LEVEL": ["1"]
+            },
+            {
+              "NAME": ["B"],
+              "LEVEL": ["1"]
+            },
+            {
+              "NAME": ["T"],
+              "LEVEL": ["1"]
+            },
+            {
+              "NAME": ["P"],
+              "LEVEL": ["1"]
+            }
+          ]
+        },
+        {
+          "NAME": ["2"],
+          "INPUTS": [
+            {
+              "NAME": ["L"],
+              "LEVEL": ["2"]
+            },
+            {
+              "NAME": ["B"],
+              "LEVEL": ["1"]
+            },
+            {
+              "NAME": ["T"],
+              "LEVEL": ["2"]
+            },
+            {
+              "NAME": ["P"],
+              "LEVEL": ["1"]
+            }
+          ]
+        },
+        {
+          "NAME": ["3"],
+          "INPUTS": [
+            {
+              "NAME": ["L"],
+              "LEVEL": ["2"]
+            },
+            {
+              "NAME": ["B"],
+              "LEVEL": ["1"]
+            },
+            {
+              "NAME": ["T"],
+              "LEVEL": ["3"]
+            },
+            {
+              "NAME": ["P"],
+              "LEVEL": ["2"]
+            }
+          ]
+        },
+        {
+          "NAME": ["4"],
+          "INPUTS": [
+            {
+              "NAME": ["L"],
+              "LEVEL": ["2"]
+            },
+            {
+              "NAME": ["B"],
+              "LEVEL": ["2"]
+            },
+            {
+              "NAME": ["T"],
+              "LEVEL": ["3"]
+            },
+            {
+              "NAME": ["P"],
+              "LEVEL": ["2"]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "NAME": ["Marketing/Incentive"],
+      "DESCRIPTION": ["Local programs to improve driving efficiency & reduce auto demand."],
+      "LEVELS": [
+        {
+          "NAME": ["1"],
+          "INPUTS": [
+            {
+              "NAME": ["D"],
+              "LEVEL": ["1"]
+            },
+            {
+              "NAME": ["E"],
+              "LEVEL": ["1"]
+            }
+          ]
+        },
+        {
+          "NAME": ["2"],
+          "INPUTS": [
+            {
+              "NAME": ["D"],
+              "LEVEL": ["2"]
+            },
+            {
+              "NAME": ["E"],
+              "LEVEL": ["2"]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "NAME": ["Pricing"],
+      "DESCRIPTION": ["State-led policies that move towards true cost pricing."],
+      "LEVELS": [
+        {
+          "NAME": ["1"],
+          "INPUTS": [
+            {
+              "NAME": ["C"],
+              "LEVEL": ["1"]
+            }
+          ]
+        },
+        {
+          "NAME": ["2"],
+          "INPUTS": [
+            {
+              "NAME": ["C"],
+              "LEVEL": ["2"]
+            }
+          ]
+        },
+        {
+          "NAME": ["3"],
+          "INPUTS": [
+            {
+              "NAME": ["C"],
+              "LEVEL": ["3"]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "NAME": ["Vehicles/Fuels"],
+      "DESCRIPTION": ["Factors representing changes to future vehicles and fuels."],
+      "LEVELS": [
+        {
+          "NAME": ["0"],
+          "INPUTS": [
+            {
+              "NAME": ["V"],
+              "LEVEL": ["1"]
+            },
+            {
+              "NAME": ["F"],
+              "LEVEL": ["1"]
+            }
+          ]
+        },
+        {
+          "NAME": ["1"],
+          "INPUTS": [
+            {
+              "NAME": ["V"],
+              "LEVEL": ["2"]
+            },
+            {
+              "NAME": ["F"],
+              "LEVEL": ["1"]
+            }
+          ]
+        },
+        {
+          "NAME": ["2"],
+          "INPUTS": [
+            {
+              "NAME": ["V"],
+              "LEVEL": ["2"]
+            },
+            {
+              "NAME": ["F"],
+              "LEVEL": ["2"]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "NAME": ["Fuel Price"],
+      "DESCRIPTION": ["Context factor on the assumed market price of gasoline (exclusive of fuel taxes.)"],
+      "LEVELS": [
+        {
+          "NAME": ["0"],
+          "INPUTS": [
+            {
+              "NAME": ["G"],
+              "LEVEL": ["1"]
+            }
+          ]
+        },
+        {
+          "NAME": ["1"],
+          "INPUTS": [
+            {
+              "NAME": ["G"],
+              "LEVEL": ["2"]
+            }
+          ]
+        },
+        {
+          "NAME": ["2"],
+          "INPUTS": [
+            {
+              "NAME": ["G"],
+              "LEVEL": ["3"]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "NAME": ["Income"],
+      "DESCRIPTION": ["Context factor on the assumed growth of statewide average per capita income."],
+      "LEVELS": [
+        {
+          "NAME": ["0"],
+          "INPUTS": [
+            {
+              "NAME": ["I"],
+              "LEVEL": ["1"]
+            }
+          ]
+        },
+        {
+          "NAME": ["1"],
+          "INPUTS": [
+            {
+              "NAME": ["I"],
+              "LEVEL": ["2"]
+            }
+          ]
+        },
+        {
+          "NAME": ["2"],
+          "INPUTS": [
+            {
+              "NAME": ["I"],
+              "LEVEL": ["3"]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "scenconfig": [
   {
     "NAME": ["B"],
     "LABEL": ["Bicycles"],
@@ -485,8 +486,8 @@ var scenconfig = [
       }
     ]
   }
-];
-var outputconfig = [
+],
+   "outputconfig": [
 {
   "DISPLAYNAME": "DVMT Per Capita",
   "LABEL": "Daily Vehicle Miles Traveled",
@@ -565,8 +566,8 @@ var outputconfig = [
   "NAME": "VehicleCostLow",
   "XTICKS" : 5
 }
-];
-var VEdata = [
+],
+"VEdata": [
   {"Scenario":"B1C1D1E1F1G1I1L1P1T1V1","B":"1","C":"1","D":"1","E":"1","F":"1","G":"1","I":"1","L":"1","P":"1","T":"1","V":"1","GHGReduction":0,"DVMTPerCapita":19.6096,"WalkTravelPerCapita":0.3489,"TruckDelay":0,"AirPollutionEm":802362.5458,"FuelUse":35078019.0482,"VehicleCost":4.5443,"VehicleCostLow":23.9726},
   {"Scenario":"B1C1D1E1F1G1I1L1P1T1V2","B":"1","C":"1","D":"1","E":"1","F":"1","G":"1","I":"1","L":"1","P":"1","T":"1","V":"2","GHGReduction":0,"DVMTPerCapita":19.7694,"WalkTravelPerCapita":0.3481,"TruckDelay":0,"AirPollutionEm":747143.5295,"FuelUse":32764462.6057,"VehicleCost":4.9181,"VehicleCostLow":26.033},
   {"Scenario":"B1C1D1E1F1G1I1L2P1T2V1","B":"1","C":"1","D":"1","E":"1","F":"1","G":"1","I":"1","L":"2","P":"1","T":"2","V":"1","GHGReduction":0,"DVMTPerCapita":18.2711,"WalkTravelPerCapita":0.3589,"TruckDelay":0,"AirPollutionEm":770534.4713,"FuelUse":33825723.3276,"VehicleCost":4.3573,"VehicleCostLow":24.6553},
@@ -1215,4 +1216,5 @@ var VEdata = [
   {"Scenario":"B2C3D2E2F2G3I1L2P2T3V2","B":"2","C":"3","D":"2","E":"2","F":"2","G":"3","I":"1","L":"2","P":"2","T":"3","V":"2","GHGReduction":0,"DVMTPerCapita":12.4191,"WalkTravelPerCapita":0.4149,"TruckDelay":0,"AirPollutionEm":468319.4184,"FuelUse":21089114.8577,"VehicleCost":5.0339,"VehicleCostLow":25.9707},
   {"Scenario":"B2C3D2E2F2G3I2L2P2T3V2","B":"2","C":"3","D":"2","E":"2","F":"2","G":"3","I":"2","L":"2","P":"2","T":"3","V":"2","GHGReduction":0,"DVMTPerCapita":12.465,"WalkTravelPerCapita":0.4201,"TruckDelay":0,"AirPollutionEm":468333.7049,"FuelUse":21090097.341,"VehicleCost":4.6469,"VehicleCostLow":26.2978},
   {"Scenario":"B2C3D2E2F2G3I3L2P2T3V2","B":"2","C":"3","D":"2","E":"2","F":"2","G":"3","I":"3","L":"2","P":"2","T":"3","V":"2","GHGReduction":0,"DVMTPerCapita":12.5905,"WalkTravelPerCapita":0.4228,"TruckDelay":0,"AirPollutionEm":472990.7698,"FuelUse":21284603.9184,"VehicleCost":4.3341,"VehicleCostLow":26.4386}
-];
+  ]
+}

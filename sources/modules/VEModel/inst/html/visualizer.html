@@ -251,7 +251,9 @@
     <!--
     LOAD CONFIGURATION AND SCENARIO DATA (ALL-IN-ONE)
     -->
-    <script src='data/visualizer.js' type='text/javascript'></script> <!-- scenconfig -->
+    <script src='visualizer.js'
+        onError='myFunc=function(){}; myFunc();'
+           type='text/javascript'></script>
     <!-- Obsolete individual inputs
     <script src='data/scenario-cfg.js' type='text/javascript'></script>  scenconfig
     <script src='data/category-cfg.js' type='text/javascript'></script>  catconfig

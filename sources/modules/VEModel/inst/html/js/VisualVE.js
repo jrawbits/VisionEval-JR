@@ -63,12 +63,17 @@ VisualVE = function( catconfig, scenconfig, outputconfig, VEdata ) {
       $('#scen' + index + '-popover-content').append('<p><strong>' + scenarioName + ':</strong> ' + scenarioDescription + '</p>');
       $.each(scenarioLevels, function(i,val){
           $.each(val.INPUTS,function(k,v){
-              $.each(scenconfig, function(idx,scenario){
-                  if(v.NAME[0] == scenario.NAME[0]) {
-                      $('#scen' + index + '-popover-content')
-                      .append('<p><strong>L'+i+': ' + scenario.LABEL + ':</strong> ' + scenario.LEVELS[parseInt(v.LEVEL)-1].DESCRIPTION + '</p>');
-                  }
-              });
+                  $.each(scenconfig, function(idx,scenario){
+                          if ( typeof(v)!=='undefined' && typeof(v.NAME[0]) !=='undefined' ) {
+                                  console.log(v.NAME[0]);
+                          } else {
+                                  alert("undefined scenarioLevel.INPUTS at "+k)
+                          }
+                          if(v.NAME[0] == scenario.NAME[0]) {
+                                  $('#scen' + index + '-popover-content')
+                                  .append('<p><strong>L'+i+': ' + scenario.LABEL + ':</strong> ' + scenario.LEVELS[parseInt(v.LEVEL)-1].DESCRIPTION + '</p>');
+                          }
+                  });
 
           });
 
