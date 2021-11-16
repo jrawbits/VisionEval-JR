@@ -3,6 +3,7 @@
 # VEModel Package Code
 
 #' @include environment.R
+#' @import visioneval
 NULL
 
 # R6 Class documentation example:
@@ -130,6 +131,7 @@ NULL
 #' $run). "continue" is used for debugging and development and will load the existing Datastore and
 #' proceed from the first stage or RunStep that is not marked as "complete".
 #'
+#' @import jsonlite
 #' @importFrom R6 R6Class
 #' @name VEModel
 NULL
@@ -1669,7 +1671,7 @@ ve.model.list <- function(inputs=FALSE,outputs=FALSE,details=NULL,stage=characte
 # Visualize model results
 ve.model.visual <- function(stages=list(),query=NULL,save=FALSE) {
 
-  print(htmlRoot<-system.file("html",package="VEModel"))
+  print(htmlRoot<-system.file("visualizer",package="VEModel"))
   print(dir(htmlRoot))
   jrc::openPage(
     useViewer=FALSE,
@@ -1677,13 +1679,14 @@ ve.model.visual <- function(stages=list(),query=NULL,save=FALSE) {
     startPage=file.path(htmlRoot,"visualizer.html") #,
 #    browser="C:/Users/jeremy.raw/AppData/Local/Vivaldi/Application/vivaldi.exe"
   )
-  jsonvars <- jsonlite::read_json(file.path(system.file("html",package="VEModel"),"visualizer-sample.js"))
+
+  # The following just fakes some data and visualizes it
+  jsonvars <- jsonlite::read_json(file.path(system.file("visualizer",package="VEModel"),"visualizer-sample.js"))
   
   jrc::sendData("catconfig",jsonvars$catconfig,keepAsVector=TRUE) # keepAsVector -> otherwise flattens inconveniently
   jrc::sendData("scenconfig",jsonvars$scenconfig)
   jrc::sendData("outputconfig",jsonvars$outputconfig)
   jrc::sendData("VEdata",jsonvars$VEdata)
-  warnings()
   
   # Consider using onStart to then populate with data and call VisualVE function
 

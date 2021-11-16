@@ -91,6 +91,7 @@ ve.env$RunParam_ls <- list()
 #' }
 #'
 #' @return an R environment "ve.env"
+#' @import visioneval
 #' @export
 runtimeEnvironment <- function() { ve.env }
 
@@ -129,6 +130,7 @@ default.parameters.table = list(
 #' @param Param_ls a list (possibly empty) of already-defined parameters
 #' @return a named list for parameters not present in Param_ls containing default values for those
 #'   parameters
+#' @import visioneval
 #' @export
 VEPackageRunParameters <- function(Param_ls=list()) {
   defaultParams_ls <- default.parameters.table[
@@ -151,6 +153,7 @@ VEPackageRunParameters <- function(Param_ls=list()) {
 #' version up to date). See \code{visioneval::loadConfiguration} for more details.
 #'
 #' @return Parameters from the runtime configuration file
+#' @import visioneval
 #' @export
 loadRuntimeConfig <- function() {
   # Function loads configuration from ParamDir/VisionEval.cnf
@@ -236,6 +239,7 @@ viewSetup <- function(object=NULL,Param_ls=NULL,fromFile=FALSE,...) {
 #' @param Param_ls a named list of parameters to add (or replace)
 #' @param drop a character vector of parameters names that will be dropped rather than replaced
 #' @param ... individual named parameters that will be added to (or replace) settings
+#' @import visioneval
 #' @export
 updateSetup <- function(object=NULL,inFile=FALSE,Source="interactive",Param_ls=list(),drop=character(0),...) {
   # merge ... into Param_ls
@@ -427,6 +431,7 @@ normalizePath <- function(
 
 # MOVE LOG FUNCTIONS INTO VEModel NAMESPACE
 # =========================================
+#' @import visioneval
 writeLog <- visioneval::writeLog
 writeLogMessage <- visioneval::writeLogMessage
 initLog <- visioneval::initLog
@@ -502,6 +507,7 @@ getModelIndex <- function(reset=FALSE) {
 # DUMP MODEL INDEX, SHOWING SOURCES
 #==================================
 #' Report package source of model variants
+#' @param reset if TRUE, rebuild the index (e.g. after installing new VE packages)
 #' @return a data.frame listing all models, variants and their package source
 #' @export
 showModelIndex <- function(reset=FALSE) {

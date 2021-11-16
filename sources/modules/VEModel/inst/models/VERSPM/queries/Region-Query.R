@@ -71,7 +71,7 @@
 #' frame containing the results. If the path name of a file is specified the
 #' results are written out the the specified file and no results are returned
 #' by the function.
-#' @import jsonlite
+#' @import jsonlite visioneval
 #' @export
 requireNamespace(jsonlite)
 requireNamespace(visioneval)
