@@ -23,12 +23,13 @@ $(document).ready( function() {
       typeof scenconfig !== 'undefined' &&
       typeof outputconfig !== 'undefined' &&
       typeof VEdata !== 'undefined' ) {
-    VisualVE( catconfig, scenconfig, outputconfig, VEdata );
+    VisualVE();
   }
 });
 
 // Define the VisualVE (Visualizer) function that operates on loaded data
-VisualVE = function( catconfig, scenconfig, outputconfig, VEdata ) {
+// Expect catconfig, scenconfig, outputconfig and VEdata defined globally
+VisualVE = function( ) {
   // scenconfig from scenario-cfg.js
   var categdata = catconfig;       // from category-cfg.js = Scenario Group elements ("Community Design" etc.) - configures Scenario Input Levels
   var outputData = outputconfig;   // from output-cfg.js = Output Measure elements ( "DVMT Per Capita", etc.) - configures Model Outputs
@@ -81,7 +82,6 @@ VisualVE = function( catconfig, scenconfig, outputconfig, VEdata ) {
           }
       });
   });
-  console.log(DataObjects);
 
   // Add low-level scenarios to DataTable
   var scenarioTableColumns = [];
@@ -212,7 +212,6 @@ VisualVE = function( catconfig, scenconfig, outputconfig, VEdata ) {
   var scenarioHash = Array(categoryInputChartCount);
   $.each(scenarioHash,function(index,value) { scenarioHash[index] = {}; });
 
-  console.log(scenarioGroupWhole[0])
   $.each(scenarioGroupWhole,function(index,value) {
       scenarioGroupWhole[index].forEach( function(p,i) {
           scenarioHash[index][p.key] = p.value;

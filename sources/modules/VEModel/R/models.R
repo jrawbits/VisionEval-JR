@@ -1674,17 +1674,16 @@ ve.model.visual <- function(stages=list(),query=NULL,save=FALSE) {
   jrc::openPage(
     useViewer=FALSE,
     rootDirectory=htmlRoot,
-    startPage=file.path(htmlRoot,"visualizer.html"),
-    browser="C:/Users/jeremy.raw/AppData/Local/Vivaldi/Application/vivaldi.exe"
+    startPage=file.path(htmlRoot,"visualizer.html") #,
+#    browser="C:/Users/jeremy.raw/AppData/Local/Vivaldi/Application/vivaldi.exe"
   )
   jsonvars <- jsonlite::read_json(file.path(system.file("html",package="VEModel"),"visualizer-sample.js"))
-  # NOTE: jrc does R-to-JSON conversion internally - so that would make it very easy just to
-  # develop R structures and send them over with a suitable name
-  jrc::sendData("catconfig",jsonvars$catconfig,keepAsVector=TRUE) # keepAsVector -> otherwise flattens elements of length 1
-  jrc::sendData("scenconfig",jsonvars$scenconfig,keepAsVector=TRUE)
-  jrc::sendData("outputconfig",jsonvars$outputconfig,keepAsVector=TRUE)
-  jrc::sendData("VEdata",jsonvars$VEdata,keepAsVector=TRUE)
-  jrc::callFunction("VisualVE",list("catconfig","scenconfig","outputconfig","VEdata"))
+  
+  jrc::sendData("catconfig",jsonvars$catconfig,keepAsVector=TRUE) # keepAsVector -> otherwise flattens inconveniently
+  jrc::sendData("scenconfig",jsonvars$scenconfig)
+  jrc::sendData("outputconfig",jsonvars$outputconfig)
+  jrc::sendData("VEdata",jsonvars$VEdata)
+  warnings()
   
   # Consider using onStart to then populate with data and call VisualVE function
 
