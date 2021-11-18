@@ -2,18 +2,198 @@ For the visualizer:
 
   see plan-visualizer.txt
 
+For extraction:
+
+  # Immediately: Bury the whole selection thing for extract/export
+
+    Can still implement off the selection internally, but build it on the fly from parameters
+      to export/extract.
+
+    Implement two functions for extracting Datastores
+
+    extract
+      Operates on a set of Group/Table/Name (given a ModelStage with its Datastore)
+        Produces a list of unit-converted data.frames (selecting only named Group, Table or Name)
+        Uses readDatastoreTables
+          Does unit conversion plus field subsetting
+          Auto-generatea the bizarre structure required for readDatastoreTables
+      Basic structure tracks with current VEResults$extract, except we generate a list of
+      data.frames
+      Export iterates over Group/Table/Name and extracts, then writes the data.frame (so we
+        don't put them all in memory at once). export passes Group and Table explicitly to extract.
+    export (for results)
+      Applied to a ModelStage will iterate over requested Group/Table/Name in the specified format
+        Extracts each Group/Table to a data.frame then writes a table to the connection
+        specified in the output format.
+        Default is to iterate over all Groups. Group can be a specific name or the shortcut "Years"
+        Writes one Table per Group formatting the output table as ModelStage_Group_Table
+      Applied to a Model will visit each requested ModelStage (default=Reportable) and write
+        out the requested Group/Table/Name. Group at this level can be "Years" or explicit names.
+      Specifying output:
+        "format" is an identifier for the supported output format ("csv","DBI","feather","ffdf")
+        Initially only "csv" supported.
+        "feather" and "ffdf"should be easy
+      Inner output engine abstracts the actual writing (send a data.frame, "directory" and
+      "filename" to the output form)
+
+      File-based export will make a location in ResultsDir/outputs. Subfolder will be created as
+      export_<Timestamp>. Filename will be Scenario_Group_Table.fileformat.
+
+  # Full implementation of file formats for export
+
+      Dispatch through functions that will:
+        Establish a connection to the "database" (directory, "Export_<Timestamp>", Database name)
+          Wrapper function interprets "directory" as connection
+        DBI::writeTable using the Scenario_Group_Table name (with double underscore for database)
+          Make a wrapper function that takes a data.frame and puts it into a table with the
+            given name (sanitized with double underscores as needed)
+        Metadata for the tables can also be generated (the way the current export does it 
+
+      Database-based will create a Database using the connection information (but DBI doesn't
+      directly support creating a database in some back-ends; connection may require an existing
+      database - report a gentle error if exporting to such a thing). Probably want to instruct the
+      user to pre-create the database (default=<ModelName>_outputs). Or we could use a generic
+      connection to the database engine and run SQL to create the database and set permissions.
+
+      Uses a filename template to name the DBI/output table. The "directory" says where to make the
+      table. File-system default is RunPath/outputs/export_<Timestamp>. DBI default is a database
+      that should already exist (stands in for "export_<Timestamp>"). But for SQLite specifically,
+      which can create a new database, it will be created as
+      RunPath/outputs/export_<Timestamp>.sqlite.
+
+      Tablename in all cases contains Scenario__Group__Table
+
+  # API for different storage formats
+
+    Format basis:
+      file-based (csv, feather)
+      DBI-based (anything that we can create a DBI connection to)
+    Can be used for INPUT if format provides inputFunctions
+      Just one function, taking an extended file name
+      Only available (for now) for file-based formats ("csv","feather","json")
+      Locates a table spec (strip off .csv if present and use format-supplied extension)
+    Can be used for export if format provides exportFunctions
+      con <- connect("directory")  # connects to database with appropriate parameters - see DBI
+      writeDataFrame(df,tablename) # makes that table (drop/then write) in the database
+                                   # it's all or nothing
+    Can be used for DatastoreType
+      initDatastore    # initial setup (open database)
+      initTable        # set up to make a table (can demand a certain length)
+                       # will check length if table exists and make a variant
+                       # if it's wrong
+      initDataset      # prepare a column in the table
+      readFromTable    # get datasets (columns) in a list
+      writeToTable     # write a datset to a table
+      listDatastore    # update the metadata directory for the Datastore
+
+      # additional low-level implementation
+      copyRawDatastore # Copies a set of Tables from one database to another.
+      readTable        # low-level to implement readDatastoreTables
+                       # does no conversion - just gets the Table
+      getDirectory     # If results, returns a directory of Scenario/Group/Table/Name for results
+                       # If archives, looks for format that includes a Timestamp (end of table name)
+      datastoreExists  # Do we have Scenario__ prefixed tables in the current DatastoreType
+                       # Will determine if we need to move anything aside. Also consider Table
+                       # Length indicator
+      timestampTables  # Will rename Group_Table tablenames to Group_Table_<Timestamp>
+                       # Called as a hook when the filesystem Datastore is moved aside
+
+      # Should maintain a "Datastore" file in the RunPath, even for "non-local"/DBI formats
+      # For DBI, that file should contain the Database connection criteria. May include a
+      # username/password which are requested by VisionEval when first creating a Datastore
+      # function.
+      # Then we can just move everything around - except we need to handle a non-local DBI
+      # format by ALSO timestamping the tables in the Database when we move it (append
+      # <Timestamp> to tables that don't already have a Timestamp): the next run may put
+      # the Group__Tables into the same Database
+      # So add a hook
+
+      In doing VEModel$dir, we'll iterate over the ModelStages in case they have different
+      DatastoreTypes
+
+      archiveResults (with or without copyDatasore) will entail visiting the Datastore and renaming a
+      bunch of tables (unless we do a Database-per-ModelStage approach, which might be overill). So
+      we
+
+      We would need to update the model directory funcction
+
+      I think we can't support "DBI" in general. Instead, we support specific DBI drivers Thus MY
+      (MariaDB/MySQL), PG (PostgreSQL), SS (SQL Server), OR (Oracle), SL (SQLite), etc. So we can
+      create efficient copyRawDatastore. Though we'll have some standard DBI functions.
+      Offer those through VEDBI package (part of the framework).
+
+      For DBI Datastore support
+        Database is construcated as <VEModel$modelName>_Results_<Timestamp>
+          # Timestamp is when initialized
+        Tables are prefixed with StageDir__
+        Rest of table name is Group__Table
+        Create a StageDir__DatastoreListing table for each ModelStage
+
+  # DBI Interace
+
+  https://db.rstudio.com/advanced/backend
+
+  For DBI, work one database per model. Prefix ScenarioDir__ then Group__Table to construct
+  a Datastore table. Maintain ScenarioDir__DatastoreListing metadata table.
+
+  In a DBI implementation, need to make a hack to support VERPAT: create a pseudo-table to support
+  fields with different lengths written into the "same" Vehicles table): if we write the wrong
+  number of rows, create an alternate table (suffix on table name of "__<Length>") and maintain a
+  mapping table that says if this Table gets a column of a certain length it gets written into
+  into the table with the appropriate index (pick the table based on the number of rows being
+  written).
+  In the DatastoreListing, we can update the target length of the table (that's an init parameter
+  in any case, so we should be good for checking).
+
+  We could be fancy in the DatastoreListing and list the TableName as a given (the one used
+  by VisionEval) for writing. Then map to the actual DB table, which can be different, and pick
+  the correct table base on its TableName and its Length (compared to the dataset being written
+  in - so we can create a different Group/DBTable for differen Table/Length. On extract/export
+  it becomes just another table (doing the hack-mapping that we otherwise had to do explicitly).
+  So the hack/reconciliation happens when the table is created or written to, not when it is
+  retrieved.
+
+  Wrap DBI with the VisionEval datastore functions. We would need to provide connection information
+  and we can do that quasi-automatically for DBI-based types by adding some RunParam_ls options to
+  describe the Datastore connection (so if DatastoreType=="DBI" then we need DatastoreConnection
+  specified). There may or may not be a Datastore object in the file system in that case.
+  "DatastoreName" can be the connection information; for file-based approaches like SQLite the file
+  name is relative to RunPath. In DBI, make the Scenario/Group/Table separator a setting that defaults to
+  something like a doubled underscore. Keep a table of known scenarios and groups - force a lookup
+  check if something that doesn't exist is requested.
+
+  The DatastorePath looks at RunPaths to find the ModelState. The ModelState has the DatastoreType
+  and DatastoreName (connection information), the latter is (if file-system based) always relative
+  to the Model Stage RunPath.
+
+  Grapple here with the bug that says if we try to open model results after the ModelDir/ve.runtime
+  is changed, we can still find the Datastore etc. So we probably need to store the path components
+  separately and make a parameter for opening a ModelState that provides an alternate ModelDir and
+  rebuilds RunPath etc when the ModelState is opened.
+
+  For using DBI, user just needs to install driver package and provide a connection. Try it out with
+  Access/ODBC, sqlite, and (on the home machine) MariaDB.
+
+  Also, option to export into R data.frames or perhaps data.tables using the same structure.
+
+  Then look at dbplyr ("designed to work with database tables as if they were local data.frames").
+
+  Consider writing a DBI back-end for the VisionEval Datastore itself. The connection string goes
+  to a particular model, and the user can browse through Group/Table with an option (viq SQL) to
+  filter via a query. Need to think about use-cases for filtering out scenarios: we can perhaps
+  make that an option on the DBI connection (scenario becomes a table field if there is more than
+  one, but left out if there is only one; likewise year becomes a table field if there is more than
+  one, but left out if there is only one).
+
 For running models:
 
   When multiprocessing, a race condition may lead to invalid log file being accessed, leading to an error.
+  The watch log file may not be thread-safe...
 
 BUG: When re-running the walkthrough with files already built in another directory, the Datastore
 path ends up wrong. TODO: when we open a ModelState.Rda in a particular working directory, we need
 to look at the actual location of ModelState and the current ve.runtime path and relocate the
-Datastore path in the ModelState.Rda (otherwise it craps out because the path is wrong). POSSIBLE
-FIX: look up the original ModelDir as an attribute of the ModelState DatastorePath so we can remove
-and replace it when we open the model stage (if current ModelDir is not the same as the one saved in
-the attribute). There are some other parameters like the results RunPath that need a similar
-treatment.
+Datastore path in the ModelState.Rda (otherwise it craps out because the path is wrong).
 
 New features:
   Add a VE package manifest as a hidden file to the runtime root (based on what's in ve-lib)
@@ -26,12 +206,13 @@ New features:
     Will add VE<package> to the package manifest (should rebuild the manifest from the ground up)
   Can be used for a local/custom VE repository (new or experimental package)
 
-How to make a model package:
-  Model package ideally contains:
-    bare model (geo.csv is empty; all input files are empty; won't run without data)
-    sample model (Some variant of RVMPO or other test data set; model will run)
-    vignettes (goes into ints/docs ultimately)
-      TODO: Add vignette building
+Make a package for the VE-State model (now VEState model within VEModelhow to write r vignette
+).
+
+  Model package contains:
+    bare model
+    sample model
+    vignettes (module_docs here? Tutorial for model)
     R directory with extra modules (see VETravelDemandMM or VERPAT)
     man for modules/module_docs - integrate all that better
 
@@ -51,13 +232,8 @@ For walkthrough:
   Make a slide show of key elements of NextGen
   Core principles: modular, simple, extensible in every dimension
   Basic recap
-    The $ operator in R
-    Loading the runtime (just load VEModel package - current directory
-      becomes the runtime).
-    install model
-    run model
   Show stuff that works (and hint at the future)
-    Configurations (show in the context of core principles)
+    Configurations
     ModelStages
       Unit that runs
       Unit that can be interrogated for raw export
@@ -72,10 +248,6 @@ For walkthrough:
       ModelStages
       Auto-organization (category scenarios - work in progress)
     Scenarios versus standard stages
-      Very little difference - grouped differently
-      Will be able to auto-generate model stages (category/scenario)
-      Scenarios can be visualized (only something declared as a 
-        "scenario" gets handed to visualizer).
     Reporting on ModelStages and Scenarios
       SummarizeDatasets (Queries)
       How to set up queries - examples

@@ -4,20 +4,10 @@ Components:
 
 # "Type: module" components are built and installed as R packages
 # "Type: framework" works like a module, but is built first; also it has a different implied
-#        documentation location.
-# New build architecture (late 2021) will do this:
-#   'Type: framework' items built into VEBase-lib.
-#   All dependencies are loaded into runtime-lib (separate from ve-lib)
-#     If dependencies are not installed, can update them "live" during end-user installation
-#   'Type: module' is built into ve-lib
+#        documentation location
 # The test script relative path is copied to the "test" environment under the module name
-#   New architecture rethinks tests - we'll look automatically at package tests folder for unit tests
-#   Full runtime test will happen optionally in a new ve.build/Makefile target that uses VEModel
-#   to load all the "models" configured in different packages and run each of them.
-# The group captures the VE internal dependencies (see .travis.yml) but is unused (obsolete)
+# The group captures the VE internal dependencies (see .travis.yml) but is unused
 # Docs target is one (or a vector) of locations from which markdown files will be processed into PDFs
-#   May push the docs down into package documentation (just need GettingStarted...)
-#   Other docs will get restructured.
 #   Build target PDFs will be placed in a name derived (for the framework) from the first element in the  Docs path,
 #   and (for the modules) in a folder named after the module:
 #       framework [Type]:
@@ -38,7 +28,7 @@ Components:
     BioC:
       - rhdf5
   VEModel: # End-user R API
-    Type: framework
+    Type: module
     Path: sources/modules
     Test: { Script: tests/scripts/test.R, Group: 1 }
     CRAN:
@@ -51,13 +41,11 @@ Components:
       - future
       - future.callr
       - jrc
-  VE2001NHTS:
-    # VE2001NHTS is only used internally for estimating other models
-    # Rethink how it is packaged and used for local re-estimation (future change)
-    Type: framework
-    Path: sources/modules
-    Test: { Script: tests/scripts/test.R, Group: 1 }
-
+#    Github:
+#      - anders-biostat/jrc
+#    To build properly, need to do externals after creating ve.lib!
+#    which requires a change to the Makefile sequencing.
+#    The CRAN version may be sufficient
 #  VEScenario:
 #   Type: module
 #   Path: sources/modules
@@ -96,6 +84,12 @@ Components:
     Path: sources/modules
     Test: { Script: tests/scripts/test.R, Group: 1 }
 
+  VE2001NHTS:
+    # VE2001NHTS is only used internally for estimating other models
+    # Rethink how it is packaged and used for local re-estimation (future change)
+    Type: module
+    Path: sources/modules
+    Test: { Script: tests/scripts/test.R, Group: 1 }
   VEHouseholdTravel:
     Type: module
     Path: sources/modules
@@ -171,10 +165,6 @@ Components:
 #   # VERSPM has no package dependencies (only an installable model)
 #   VE:
 #      - # TODO: list all the packages used in VERSPM model
-# May want a new "Type" for the following (make construction of the "models"
-#   directory into a "script" type). Then use "model" for these, which will
-#   mark them for a different sort of build and make them eligible for full
-#   runtime testing via new build-tests.R
   VEState:
     Type: module
     Path: sources/modules

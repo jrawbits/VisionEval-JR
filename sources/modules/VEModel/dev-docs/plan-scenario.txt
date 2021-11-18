@@ -1,7 +1,5 @@
 ###### Deeper architecture follows:
 
-Only ModelStages declared as a "Scenario" get visualized.
-
 Set up a stock model variant VERSPM variant="scenario" which installs a couple of scenario
 variant folders - one a ModelStages version that emulates the in-memory version we'll build in
 tests/test.R, and one a Category version that uses the setup from the old VERSPM-scenarios. The
