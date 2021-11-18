@@ -5,12 +5,15 @@ For the visualizer:
 For running models:
 
   When multiprocessing, a race condition may lead to invalid log file being accessed, leading to an error.
-  The watch log file may not be thread-safe...
 
-BUG: When re-runnign the walkthrough with files already built in another directory, the Datastore
+BUG: When re-running the walkthrough with files already built in another directory, the Datastore
 path ends up wrong. TODO: when we open a ModelState.Rda in a particular working directory, we need
 to look at the actual location of ModelState and the current ve.runtime path and relocate the
-Datastore path in the ModelState.Rda (otherwise it craps out because the path is wrong).
+Datastore path in the ModelState.Rda (otherwise it craps out because the path is wrong). POSSIBLE
+FIX: look up the original ModelDir as an attribute of the ModelState DatastorePath so we can remove
+and replace it when we open the model stage (if current ModelDir is not the same as the one saved in
+the attribute). There are some other parameters like the results RunPath that need a similar
+treatment.
 
 New features:
   Add a VE package manifest as a hidden file to the runtime root (based on what's in ve-lib)
@@ -23,13 +26,12 @@ New features:
     Will add VE<package> to the package manifest (should rebuild the manifest from the ground up)
   Can be used for a local/custom VE repository (new or experimental package)
 
-Make a package for the VE-State model (now VEState model within VEModelhow to write r vignette
-).
-
-  Model package contains:
-    bare model
-    sample model
-    vignettes (module_docs here? Tutorial for model)
+How to make a model package:
+  Model package ideally contains:
+    bare model (geo.csv is empty; all input files are empty; won't run without data)
+    sample model (Some variant of RVMPO or other test data set; model will run)
+    vignettes (goes into ints/docs ultimately)
+      TODO: Add vignette building
     R directory with extra modules (see VETravelDemandMM or VERPAT)
     man for modules/module_docs - integrate all that better
 
@@ -49,8 +51,13 @@ For walkthrough:
   Make a slide show of key elements of NextGen
   Core principles: modular, simple, extensible in every dimension
   Basic recap
+    The $ operator in R
+    Loading the runtime (just load VEModel package - current directory
+      becomes the runtime).
+    install model
+    run model
   Show stuff that works (and hint at the future)
-    Configurations
+    Configurations (show in the context of core principles)
     ModelStages
       Unit that runs
       Unit that can be interrogated for raw export
@@ -65,6 +72,10 @@ For walkthrough:
       ModelStages
       Auto-organization (category scenarios - work in progress)
     Scenarios versus standard stages
+      Very little difference - grouped differently
+      Will be able to auto-generate model stages (category/scenario)
+      Scenarios can be visualized (only something declared as a 
+        "scenario" gets handed to visualizer).
     Reporting on ModelStages and Scenarios
       SummarizeDatasets (Queries)
       How to set up queries - examples
