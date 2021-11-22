@@ -38,7 +38,7 @@ ve.scenario.load <- function(fromFile=FALSE) {
   # If StartFrom is defined in the scenario RunParam_ls, use the parameters from that stage as the
   # basis for the current scenarios. Otherwise, just load the parameters from the base model.
   if ( "StartFrom" %in% names(self$loadedParam_ls) ) {
-    startFrom <- baseModel$modelStages[[ self$loadedParam_ls$StartFrom ]]
+    startFrom <- self$baseModel$modelStages[[ self$loadedParam_ls$StartFrom ]]
     baseParam_ls <- startFrom$RunParam_ls
     # Drop keys that we will force stages here to define
     baseParam_ls <- baseParam_ls[ - which( names(baseParam_ls) %in% c("Scenario","Description") ) ]
