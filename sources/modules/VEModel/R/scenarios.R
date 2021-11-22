@@ -43,7 +43,7 @@ ve.scenario.load <- function(fromFile=FALSE) {
     # Drop keys that we will force stages here to define
     baseParam_ls <- baseParam_ls[ - which( names(baseParam_ls) %in% c("Scenario","Description") ) ]
   } else {
-    baseParam_ls <- baseModel$RunParam_ls
+    baseParam_ls <- self$baseModel$RunParam_ls
   }
 
   # Now add the loaded scenario parameters (scenarioParams, but possibly others)
@@ -82,13 +82,13 @@ ve.scenario.load <- function(fromFile=FALSE) {
     # Only present to support setting a StartFrom from among the explicit ModelStages in the
     # ScenarioDir - that stage will always use a StartFrom from the BaseModel (or have no start
     # from). All the Category/Scenario stages will StartFrom the CategorySetting/StartFrom
-    if ( "StartFrom" %in% names(modelParam_ls$Categories) ) {addr
-      modelParam_ls <- visioneval::mergeParameters(modelParam_ls,categoryParam_ls)
-      # Set the StartFrom (if any) to use for the individual categories
-      # Supports starting from an explicit ModelStage defined in ScenarioDir
+    if ( "StartFrom" %in% names(modelParam_ls$Categories) ) {
+      categoryStartFrom <- visioneval::addParameterSource(
+        list(StartFrom=modelParam_ls$Categories["StartFrom"]),
+        Source=attr(modelParam_ls$Categories,"source")
+      )
+      modelParam_ls <- visioneval::mergeParameters(modelParam_ls,categoryStartFrom)
     }
-
-    # TODO: Complete and verify code with inst/scenarios/VERSPM-pop
 
     # TODO: It might be handy to have a ModelStage diagnostic that reports where the ModelStage gets
     # all its input files (get the list of required files for the stage via index, and report each
