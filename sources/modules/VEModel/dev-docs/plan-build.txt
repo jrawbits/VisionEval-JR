@@ -31,6 +31,17 @@ Issues for ve.build / Makefile / new Github architecture
     3. Src folder (installed into local 'src' folder for debugging)
   # Could add a fourth: VEBase-lib that includes framework, NHTS and SLD, and VEModel
     1. User can construct their own packages to put there
+    2. We may do this internally to support the build process (see above), but when distributing
+       we probably just want to push those into ve-lib (distributing NHTS and SLD is important for
+       re-estimating the models).
+  # We're probably stuck still distributing vast datasets for (re-)estimation.
+    1. Could change the distribution so that users can download (into their ve.runtime/local folder)
+       the estimation data for packages so they only have to retrieve it if they expect to re-estimate.
+    2. So we leave that crap out of the ve-lib built package (just keep estimation results in data
+       directory). Local estimation always revolves around ve.runtime/local, even if using the
+       package data.
+    3. Change the build to create a zip file with ALL the estimation data (but nicer to allow users
+       to download only what they need).
 
 - Local package data architecture
 

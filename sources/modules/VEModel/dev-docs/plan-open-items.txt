@@ -1,6 +1,43 @@
 For building vignettes:
 
   Figure out how to get the "vignettes" directory to build into "inst/docs"
+  That should happen in the module/framework build process in and around copying the package to the
+  src folder for buildin.
+
+For local data estimation task:
+
+  See plan-build.txt
+
+  Goal is to move the estimation task into a parameterized function within the module .R script in
+  the package.
+
+  Then adjust the build process to run each R script in the package (which should just create
+  functions and simple objects), then look for and execute the "MyModuleEstimate" function. That
+  function will push estimated data sets into the package data directory.
+
+  Adjust the framework to have functions to "createModuleDataset" and "fetchModuleData",
+  parameterized by the name of the package, the module and the target directory - look in the
+  existing framework for the build flag (environment variable set during the build). The create
+  function can be called in user space (default destination is the "local/Package/data" folder in
+  ve.runtime; input files are in "local/Package/extdata" or "Package/extdata" for the defaults).
+
+  Per plan-build.txt, probably want to establish distinctive non-R directory names for the
+  estimation input data (could be raw-data like devtools, or "estimation-data" to be more
+  descriptive).
+
+  We'll also use those folders to support "runScript" directives (package is "LocalScripts").
+
+  Adjust all module scripts to have an Estimate function, and adjust the data access functions to
+  use fetchModuleData for every dataset (to allow local overrides).
+
+  Finish re-architecting NHTS so there is a "master" package configured to look for a
+  version-specific package (VE2001NHTS, VE2009NHTS, VE2017NHTS). Local Household Survey is
+  incorporated by creating a "local package" of data - drop the survey suitably formatted into the
+  local/extdata folder, run the NHTS "Estimate" function to create the NHTS dataset for other
+  modules,then re-run Estimate for all the modules that depend on NHTS. That can either be done
+  at build time (by making a new NHTS-like package and configuring to use it) or in local user space
+  by building into local/NHTS/data and then re-running each package's Estimate function (could do
+  that on the fly as part of running a model).
 
 For the visualizer:
 
