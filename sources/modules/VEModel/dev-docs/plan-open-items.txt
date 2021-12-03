@@ -1,10 +1,12 @@
-For building vignettes:
+For scenarios
 
-  Figure out how to get the "vignettes" directory to build into "inst/docs"
-  That should happen in the module/framework build process in and around copying the package to the
-  src folder for buildin.
+  See plan-scenario.txt
 
 For local data estimation task:
+
+  See plan-estimate.txt
+
+For build/install restructuring:
 
   See plan-build.txt
 
@@ -23,6 +25,12 @@ For the visualizer:
     Draw outputconfig from query
 
 For building models:
+
+  Allow the build process to be a "multi-core"/parallel activity (with the dependency groups of the
+  packages set up so we build independent modules in parallel) - how to handle logging the outputs
+  of each - possible enlarging how the build log is maintained (create a log folder for the specific
+  dated build, and sub-folder for each element built in modules). Enable multi-tasking by setting
+  number of available workers (via environment/Makefile variable) to something more than one.
 
   From a model's run script, generate an empty set of input table specifications in some arbitrary output format
   (default in-memory data.frame). This would be the "skeleton" function. Use the new ViEIO approach.
@@ -458,4 +466,9 @@ Structurally turn vignettes into docs
     man for modules/module_docs - integrate all that better
 
   Turn module_docs into regular docs (vignettes)
+
+For building vignettes:
+
+  [DONE] Vignettes will now build from "vignettes" into "docs" during package build
+  [LATER] Come up with some coding standards for writing vignettes
 
