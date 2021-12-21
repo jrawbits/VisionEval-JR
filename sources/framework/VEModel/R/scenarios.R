@@ -141,9 +141,12 @@ ve.scenario.load <- function(fromFile=FALSE) {
                 )
               }
             )
+          )
         }
       )
     }
+    # Make Categories into a named list (for ease of access later when building ModelStages)
+    names(self$Categories) <- sapply(self$Categories,function(c) c$Name)
 
     # Now that we have the Categories, add the full InputPath to each Level
     self$Categories$Levels <- lapply(self$Categories$Levels,
@@ -168,15 +171,8 @@ ve.scenario.load <- function(fromFile=FALSE) {
     # each row of stagesToBuild will become a model stage
     stagesToBuild <- expand.grid(expandCategories,KEEP.OUT.ATTRS=FALSE,stringsAsFactors=FALSE)
 
-    categoryStages <- list()
-    for ( stage in 1:nrow(stagesToBuild ) ) {
-      # Add Category Level InputPath to stage structure
-      # Add Scenario Element identifiers to the model stage structure,
-      # Build Scenario (Name) and Description for the Stage
-      # 
-    }
-    # TODO: Make a ModelStage from each resulting combination of Category/Level. Additional
-    # information in each ModelStage:
+    # Make a ModelStage from each resulting combination of Category/Level. Additional information in
+    # each ModelStage:
     #   1. Combined InputPath (just concatenate the previously built level InputPath from each
     #      included Category Level).
     #   2. named list of Element Name : Element Level Name to identify the ModelStage to the
@@ -184,77 +180,55 @@ ve.scenario.load <- function(fromFile=FALSE) {
     # Need to construct Scenario Name and Description in order to have a Runnable model stage
     # Also need to create the Stage Directory (conventional name)
 
-    # We can prepend NA to the vector of values and we just ignore those as we compile the list of
-    # Scenario properties for building model stages - zero length list (pure base case) means do
-    # not create a ModelStage, otherwise for each Category (column) and Level (value of column)
-    # that is not NA, build a list of the Scenario-Level item. Ultimately for the Scenario-Level
-    # need the Scenario Name (for use by visualizer) and level Name, plus the ScenarioDir/LevelDir
-    # (can just compose - don't need to keep ScenarioDir separately). The ModelStage Dir (and Name)
-    # will be built by flattening character renditions of Scenario Name and Level Name
-    # (SN-SL+...).
-
-    # Look at previous BuildScenarios for ideas - it's too complex and messy, but has the idea of
-    # filtering the scenarios by categories - doesn't have the "StartFrom" idea obviously. Does
-    # check for presence of required files (which are attached to "scenarios",
-    # not "categories") Set that up from the extended example.
-
-    # TODO: visit each scenario that is part of the category level included in the stage and add its
-    # InputPath and descriptor (Scenario Tag, Level) to the ModelStage Levels list.
-
     scenarioList <- list()
-    # Process Categories
-    for ( category in modelParam_ls$ScenarioCategories ) {
-      writeLog(paste("Processing category",category$Name),Level="info")
+    for ( stage in 1:nrow(stagesToBuild ) ) {
+      # Pull out each non-zero level category
+      catLevels <- stagesToBuild[stage,]
+      catLevels <- catLevels[ catLevels != 0 ]
+      if ( length(catLevels)==0 ) next # StartFrom stage
 
-      # Construct levels for this category
-      levels <- category$Levels
+      # Concatenate the category description
+      catNames <- names(catLevels)
+      scenarioName <- paste( catNames, catLevels, sep="=" )
+      scenarioName <- paste( scenarioName, collapse="+")
 
-      catLevel <- lapply(
-        levels,
-        function(level) {
-          catLevelName <- paste0(category,"-",level$Name)
-          list(
-            Name=catLevelName,
-            Description=paste0("(Category: ",category$Label,") ",level$Description),
-            InputPath=file.path(self$scenarioPath,catLevelName)
-          )
-        }
-      )
-
-      # Construct scenarios from combinations
-      if ( length(scenarioList)==0 ) scenarioList <- catLevel else {
-        augmentList <- list()
-        for ( nextLevel in catLevel ) {
-          augmentList <- c(augmentList,lapply(scenarioList,function(scen) c(scen,list(nextLevel))))
-        }
-        scenarioList <- augmentList
+      # Now get the Level information
+      inputPath <- character(0)
+      description <- character(0)
+      elements <- character(0)
+      for ( levelIndex in seq_along(catLevels) ) {
+        catValues <- self$Categories[catNames[levelIndex]]
+        levelValues <- catValues$Inputs[levels[levelIndex]]
+        inputPath <- c(inputPath,levelValues$InputPath)
+        description <- c(description,paste(catValues$Description,levelValues$Description,sep=":"))
+        elementLevels <- sapply(levelValues,function(v) v$Level)
+        names(elementLevels) <- sapply(levelValues,function(v) v$Name)
+        elements <- c( elements,elementLevels )
       }
+      description <- paste(description,collapse="//")
+      scenarioName <- paste( paste(catNames,levels,sep="="),collapse="+" )
+      scenarioList <- c( scenarioList,
+        list(
+          Scenario=scenarioName,    # Also becomes ScenarioDir for results output
+          Description=description,
+          InputPath=inputPath,
+          ScenarioElements=elements
+        )
+      )
     }
 
     # Convert Category-Level construction to ModelStage objects
-    modelStages <- lapply(
-      scenarioList,
-      function(scen) {
-        Dir = paste(sapply(scen,function(sc) sc$Name),collapse="")
-        return(
-          c(
-            list(
-              Name=paste(sapply(scen,function(sc) sc$Name),collapse=""),
-              Dir=Dir
-            ),
-            modelParam_ls[ ! names(modelParam_ls) %in% c("Name","Dir","Description") ]
-          )
-        )
-      }
-    )
+    # Remove Scenario/Description from "StartFrom" model run parameters
+    modelParam_ls <- modelParam_ls[ ! names(modelParam_ls) %in% c("Scenario","Description") ]
+    # Construct model stages
     self$modelStages <- lapply(scenarioList,
       function(stage) {
-        Dir <- paste(sapply(stage,function(sc) sc$Name),collapse="")
+        Dir <- stage$Scenario
         stageParam_ls <- list(
           Dir=Dir,                    # For stage output
           Name=Dir,                   # Root for stage
-          InputPath=sapply(stage,function(sc) sc$InputPath), # character vector
-          Description=paste(sapply(stage,function(sc) sc$Description),collapse="\n")
+          InputPath=stage$InputPath
+          Description=stage$Description
         )
         VEModelStage$new(
           Name = Dir,
