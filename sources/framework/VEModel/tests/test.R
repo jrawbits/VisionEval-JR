@@ -1320,5 +1320,19 @@ test_setup <- function(model=NULL) {
   unlink(conf.file) # Don't leave the runtime visioneval.cnf around
 }
 
+test_load_scenarios <- function(useStages=TRUE,log="info") {
+  # useStages will do the model stage scenario
+  if ( dir.exists(modelPath <- file.path("models","VERSPM-scenario")) ) unlink(modelPath,recursive=TRUE)
+  print(modelPath)
+
+  scenarioVariant <- if ( useStages) "scenarios-ms" else "scenarios-cat"
+
+  # Just install and then open it
+  mod <- installModel("VERSPM-scenario",variant=scenarioVariant,modelName="VERSPM",log=log,confirm=FALSE)
+
+  print(mod,scenarios=TRUE)
+  return(invisible(mod))
+}
+
 # Now set it all up
 rewind()

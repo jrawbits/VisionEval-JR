@@ -273,7 +273,7 @@ ve.model.configure <- function(modelPath=NULL, fromFile=TRUE) {
     # Load default parameter or get from larger runtime environment
     modelParam_ls <- visioneval::addRunParameter(
       Param_ls=modelParam_ls,
-      visioneval::getRunParameter("ResultsDir",Param_ls=Param_ls,Source=TRUE)
+      visioneval::getRunParameter("ResultsDir",Param_ls=Param_ls)
     )
   }
 
@@ -462,27 +462,6 @@ ve.model.configure <- function(modelPath=NULL, fromFile=TRUE) {
         }
       )
     }
-
-    scenarioStages <- list()
-    scenarios <- self$scenarios(fromFile=fromFile)  # re-create VEModelScenario object from file
-    scenarioStages <- scenarios$stages()            # scenario stages may be an empty list
-
-    # It is possible for a model to ONLY have scenarios (if they are "manually" created)
-    # Each "scenario" in that case must be a complete model run
-    # Usually in such cases, it may be easier just to make them Reportable modelStages
-    if ( ! is.list(modelStages) ) {
-      if ( is.list(scenarioStages) && length(scenarioStages) > 0 ) {
-        modelStages <- scenarioStages
-      } else {
-        # If no stages remain, model is invalid
-        writeLog("No model stages found!",Level="error")
-        return(self)
-      }
-    } else if ( is.list(scenarioStages) && length(scenarioStages) > 0 ) {
-      sapply(modelStages, function(s) s$Reportable <- scenarios$reportable(s$Name))
-      modelStages <- c( modelStages, scenarioStages )
-    }
-
   } else {
     # all stage edits in memory should be made to stage$RunParam_ls, not stage$loadedParam_ls
     # stage changes mediated through their files should be reloaded with fromFile=TRUE
@@ -496,9 +475,36 @@ ve.model.configure <- function(modelPath=NULL, fromFile=TRUE) {
     writeLog(paste("Model Stages:",stageNames,collapse=","),Level="info")
   }
 
-  # Save the model RunParam_ls and link the stages
+  # Done with base stages (except for initializing below after scenarios are loaded)
+  self$modelStages <- modelStages
+
+  # DO we need to initstages before scenarios? probably not...
+
+  scenarios <- self$scenarios(fromFile=fromFile)  # re-create VEModelScenario object from file
+  scenarioStages <- scenarios$stages()            # scenario stages may be an empty list
+
+  if ( length(scenarioStages) > 0 ) { # some scenarios are defined
+
+    # It is possible for a model to ONLY have scenarios (if they are "manually" created)
+    # Each "scenario" in that case must be a complete model run
+    # Usually in such cases, it may be easier just to make them Reportable modelStages
+    if ( ! is.list(self$modelStages) ) {
+      if ( is.list(scenarioStages) && length(scenarioStages) > 0 ) {
+        self$modelStages <- scenarioStages
+      } else {
+        # If no stages remain, model is invalid
+        writeLog("No model stages found!",Level="error")
+        return(self)
+      }
+    } else if ( is.list(scenarioStages) && length(scenarioStages) > 0 ) {
+      sapply(self$modelStages, function(s) s$Reportable <- scenarios$reportable(s$Name))
+      self$modelStages <- c( self$modelStages, scenarioStages )
+    }
+  }
+
+  # Link the stages
   writeLog("Initializing Model Stages",Level="info")
-  self$modelStages <- self$initstages( modelStages )
+  self$modelStages <- self$initstages( self$modelStages )
 
   # Update the model status
   self$specSummary <- NULL # regenerate when ve.model.list is next called
@@ -952,7 +958,6 @@ ve.stage.init <- function(Name=NULL,Model=NULL,ScenarioDir=NULL,modelParam_ls=NU
   # Model is the model the stage is attached to
   # ScenarioDir is the root directory to seek the stage folder (default: Model$modelPath)
   # modelParam_ls is the configuration to be used (defaults to Model$RunParam_ls)
-  # StageIsScenario identifies role of stage as a core stage (FALSE) or a scenario (TRU)
   # stageParam_ls has the following elements (which are explicitly provided or come from
   #  a ModelStages specification in the model parameters):
   #
@@ -1032,6 +1037,15 @@ ve.stage.init <- function(Name=NULL,Model=NULL,ScenarioDir=NULL,modelParam_ls=NU
     writeLog(paste(names(stageConfig_ls),collapse=", "),Level="info")
   } else {
     writeLog("stageConfig_ls has no additional parameters",Level="info")
+  }
+
+  # Set up ScenarioElements if present
+  if ( "ScenarioElements" %in% names(stageConfig_ls) ) {
+    writeLog(paste("Scenario elements detected in",self$Name),Level="info")
+    self$ScenarioElements <- stageConfig_ls$ScenarioElements
+  } else {
+    writeLog(paste("No ScenarioElements in",self$Name),Level="info")
+    writeLog(paste(names(stageConfig_ls),collapse=", "),Level="info")
   }
 
   # Set up self$Path (input location)
@@ -1517,7 +1531,7 @@ ve.stage.completed <- function( runStatus=NULL ) {
 
 # Print a model stage summary
 ve.stage.print <- function(details=FALSE,configs=FALSE) {
-  cat(if(!is.null(self$ScenarioData)) "Scenario" else "Stage",": ",self$Name,sep="")
+  cat(if(!is.null(self$ScenarioElements)) "Scenario" else "Stage",": ",self$Name,sep="")
   if ( details ) {
     startFrom <- if ( length(self$StartFrom)>0 && nzchar(self$StartFrom) ) paste0("StartFrom: ",self$StartFrom)
   } else startFrom <- NULL
@@ -1717,7 +1731,7 @@ ve.model.visual <- function(stages=list(),query=NULL,save=FALSE) {
   #     pseudo-metric or filterable parameter
   #   VEModelStage, given a list of "scenarios" (elements from VEModelScenarios Scenarios tag) can say
   #     what level the stage has for that scenario (possibly zero if scenario did not supply changed
-  #     files) - goes in ScenarioData structure (added after scenario stages are built but before
+  #     files) - goes in ScenarioElements structure (added after scenario stages are built but before
   #     they are handed back to the model).
   #   VEModelScenarios can take the exported VEQuery data.frame of results (suitably filtered by
   #     selecting which results and the Year) and generate everything needed for the visualizer
@@ -1802,7 +1816,7 @@ ve.model.print <- function(details=FALSE,configs=FALSE,scenarios=FALSE) {
   }
   cat("Status:", self$printStatus(),"\n")
   if ( private$p.valid ) {
-    scenarioStages <- sapply( self$modelStages, function(s) !is.null(s$ScenarioData) )
+    scenarioStages <- sapply( self$modelStages, function(s) !is.null(s$ScenarioElements) )
     cat("Model Stages:\n")
     for ( s in self$modelStages[ ! scenarioStages ] ) {
       s$print(details,configs)
@@ -2924,7 +2938,7 @@ VEModelStage <- R6::R6Class(
     RunStarted = NULL,              # Sys.time() when model stage run started
     RunCompleted = NULL,            # Sys.time() when model stage run completed
     Results = NULL,                 # A VEResults object (create on demand)
-    ScenarioData = NULL,            # Scenario descriptor for visualizer
+    ScenarioElements = NULL,        # Scenario descriptor for visualizer
 
     # Methods
     initialize=ve.stage.init,       # Create a stage and set its Runnable flag

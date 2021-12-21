@@ -450,7 +450,8 @@ uniqueSources <- function(Param_ls,shorten=NULL) {
     writeLog("'sources' attribute is null in uniqueSources",.traceback(1),Level="info")
     sources <- "NULL"
   } else {
-    sources <- unique(sources$Source)
+    browser()
+    sources <- unique(sources)
     if ( ! is.null(shorten) ) sources <- sub(paste0(shorten,"/"),"",sources)
   }
   return(sources)
