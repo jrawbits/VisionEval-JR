@@ -43,7 +43,8 @@ the Category levels to one or more ScenarioElements and Levels. The visualizer u
 which ModelStages are "in" or "out" for purposes of filtering.
 
 The Permutation approach to auto-generating ModelStages has the following requirements (to reconcile
-with the ScenarioCategory and ScenarioElement):
+with the ScenarioCategory and ScenarioElement). Do not do this expansion if ScenarioElements are
+defined explicitly.
   Scenario Category
     Defaults to a single Category called "Scenarios", with one Category Level per Scenario Element
     Level.
