@@ -189,7 +189,6 @@ test_all_install <- function() {
   )
   variants <- lapply(variants,function(v) v$Variant)
 
-  browser()
   installed <- sapply(
     models,
     function(m) {

@@ -2585,7 +2585,7 @@ openModel <- function(modelPath="",log="error") {
 findStandardModel <- function( model, variant="" ) {
 
   # COVID-19 Joke
-  if ( toupper(variant)=="DELTA" ) return( "Cough, Cough!" )
+  if ( toupper(variant) %in% c("DELTA","OMICRON") ) return( "Cough, Cough!" )
 
   modelIndex <- getModelIndex()
 
@@ -2644,6 +2644,9 @@ findStandardModel <- function( model, variant="" ) {
     modelDirs[[d]]$To <- d
   }
   model_ls$Directories <- modelDirs
+
+  writeLog("findStandardModel: Source path:",Level="info")
+  writeLog(modelFrom,Level="info")
 
   return(model_ls) # model structure for installation
 }

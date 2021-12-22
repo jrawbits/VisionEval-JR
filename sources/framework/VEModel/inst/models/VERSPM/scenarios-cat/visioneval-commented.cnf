@@ -28,7 +28,7 @@ ScenarioElementsDocs:
         Label       : "Descriptive phrase used by Visualizer to describe Category Level"
         Description : "Long description of intent (deviation from base case)"
 
-ScenarioElementss:
+ScenarioElements:
   - Name: B
     ScenarioRoot: B       # If ScenarioRoot not provided, use scenario Name
     Label: "Bicycles"

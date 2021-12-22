@@ -25,7 +25,9 @@ ve.scenario.init <- function( baseModel=NULL, fromFile=FALSE ) {
 }
 
 # Load scenario's visioneval.cnf (constructing self$RunParam_ls and self$loadParam_ls)
+# Then build whatever model stages are defined there
 ve.scenario.load <- function(fromFile=FALSE) {
+
   if ( ! fromFile && ! is.null(self$modelStages) ) return(NULL) # do not reload model stages
 
   # Reload scenario configuration file and then build the scenario stages
@@ -77,23 +79,29 @@ ve.scenario.load <- function(fromFile=FALSE) {
 
   # Trigger for combination scenarios is presence of ScenarioElements
   if ( "ScenarioElements" %in% names(modelParam_ls) ) {
-    writeLog(paste("Parsing Category combination Scenarios from",self$ScenarioDir),Level="info")
+    writeLog(paste("Parsing Category combination Scenarios from",self$scenarioDir),Level="info")
 
     self$Elements <- modelParam_ls$ScenarioElements
 
     # Add the fully built input path to each Level in the Element.
     # Those will be composed via the Category Levels into the InputPath vector for finding
     #   the input files that make up the scenario category level.
-    scenarioRoot <- if ( "ScenarioRoot" %in% names(self$Element) )
-        { self$Element$ScenarioRoot } else { self$Element$Name }
-    self$Elements$Levels <- lapply(self$ElementsLevels,
-      function(level) {
-        level$Path <- file.path(
-          self$scenarioPath,scenarioRoot,level$Name # level$Name is subdirectory inside element$ScenarioRoot
+    self$Elements <- lapply( self$Elements,
+      function(element) {
+        scenarioRoot <- if ( "ScenarioRoot" %in% names(element) ) { element$ScenarioRoot } else { element$Name }
+        element$Levels <- lapply(element$Levels,
+          function(level) {
+            level$Path <- file.path(
+              self$scenarioPath,scenarioRoot,level$Name # level$Name is subdirectory inside element$ScenarioRoot
+            )
+            return(level)
+          }
         )
-        return(level)
+        names(element$Levels) <- sapply(element$Levels,function(lvl) lvl$Name)
+        element
       }
     )
+    names(self$Elements) <- sapply(self$Elements,function(e) e$Name)
 
     # TODO: for diagnostic purposes, list out any Element Levels that do not have at least one
     # unique file. That should probably just be a separate VEModelScenarios function. Here, we're
@@ -104,7 +112,7 @@ ve.scenario.load <- function(fromFile=FALSE) {
       # All the Category/Scenario stages will StartFrom the CategorySetting/StartFrom, which is
       # expected to be an explicit ModelStage in ScenarioDir. That explicit stage will use the
       # overall StartFrom, if any.
-      if ( ! "Category" %in% names(modelParam_ls$ScenarioCategories$Category) ) {
+      if ( ! "Category" %in% names(modelParam_ls$ScenarioCategories) ) {
         stop(
           writeLog("No ScenarioCategories present in model scenario configuration",Level="error")
         )
@@ -148,15 +156,24 @@ ve.scenario.load <- function(fromFile=FALSE) {
     names(self$Categories) <- sapply(self$Categories,function(c) c$Name)
 
     # Now that we have the Categories, add the full InputPath to each Level
-    self$Categories$Levels <- lapply(self$Categories$Levels,
-      function(level) {
-        level$InputPath <- sapply(level$Inputs,function(input) input$Path)
-        if ( ! is.character(level$InputPath) ) {
-          stop(writeLog(paste("Input path for category",level$Name,"is undefined"),Level="error"))
+    for ( category in names(self$Categories) ) {
+      self$Categories[[category]]$Levels <- lapply(self$Categories[[category]]$Levels,
+        function(level) {
+          level$InputPath <- sapply(level$Inputs,
+            function(input) {
+              if ( as.numeric(input$Level)==0 ) return("")
+              e <- self$Elements[[input$Name]]
+              e$Levels[[input$Level]]$Path
+            }
+          )
+          level$InputPath <- level$InputPath[ nzchar(level$InputPath) ]
+          if ( ! is.character(level$InputPath) ) {
+            stop(writeLog(paste("Input path for category",level$Name,"is undefined"),Level="error"))
+          }
+          return(level)
         }
-        return(level)
-      }
-    )
+      )
+    }
     # TODO: It might be handy to have a ModelStage diagnostic that reports where the finished
     # ModelStages get their inputs (listing just the files that are different in each stage from
     # the BaseStage. Perhaps use VEModel$list(inputs=TRUE,stage=Stage$Name,details="INPUTDIR"). 
@@ -183,36 +200,33 @@ ve.scenario.load <- function(fromFile=FALSE) {
     for ( stage in 1:nrow(stagesToBuild ) ) {
       # Pull out each non-zero level category
       catLevels <- stagesToBuild[stage,]
-      catLevels <- catLevels[ catLevels != 0 ]
-      if ( length(catLevels)==0 ) next # StartFrom stage
+      catLevels <- unlist(catLevels[ , catLevels != 0, drop=FALSE ])
+      if ( length(catLevels)==0 ) next # StartFrom stage (no non-zero catLevels)
 
       # Concatenate the category description
       catNames <- names(catLevels)
-      scenarioName <- paste( catNames, catLevels, sep="=" )
-      scenarioName <- paste( scenarioName, collapse="+")
+      scenarioName <- paste( collapse="+", paste( gsub("[^[:alnum:]]","_",catNames), catLevels, sep="=" ) )
 
       # Now get the Level information
       inputPath <- character(0)
       description <- character(0)
       elements <- character(0)
       for ( levelIndex in seq_along(catLevels) ) {
-        catValues <- self$Categories[catNames[levelIndex]]
-        levelValues <- catValues$Inputs[levels[levelIndex]]
+        catValues <- self$Categories[[catNames[levelIndex]]]
+        levelValues <- catValues$Levels[[catLevels[levelIndex]]]
         inputPath <- c(inputPath,levelValues$InputPath)
-        description <- c(description,paste(catValues$Description,levelValues$Description,sep=":"))
-        elementLevels <- sapply(levelValues,function(v) v$Level)
-        names(elementLevels) <- sapply(levelValues,function(v) v$Name)
+        description <- if(length(description)>0) paste(description,catValues$Description,sep=":") else catValues$Description
+        elementLevels <- sapply(levelValues$Inputs,function(v) v$Level)
+        names(elementLevels) <- sapply(levelValues$Inputs,function(v) v$Name)
+        elementLevels <- elementLevels[ as.numeric(elementLevels)!=0 ] # don't explicitly save base level
         elements <- c( elements,elementLevels )
       }
       description <- paste(description,collapse="//")
-      scenarioName <- paste( paste(catNames,levels,sep="="),collapse="+" )
-      scenarioList <- c( scenarioList,
-        list(
-          Scenario=scenarioName,    # Also becomes ScenarioDir for results output
-          Description=description,
-          InputPath=inputPath,
-          ScenarioElements=elements
-        )
+      scenarioList[[length(scenarioList)+1]] <- list(
+        Scenario=scenarioName,    # Also becomes ScenarioDir for results output
+        Description=description,
+        InputPath=inputPath,
+        ScenarioElements=elements
       )
     }
 
@@ -414,6 +428,8 @@ VEModelScenarios <- R6::R6Class(
     modelStages = list(),               # list of VEModelStage object, built during $load, empty if undefined/invalid
     startFrom = NULL,                   # ModelStage to start from (from config, set during $load)
     invalidStages = list(),             # List of diagnostics (generated during "load" by calling "verify")
+    Elements = NULL,                    # list of ScenarioELements for this scenario set
+    Categories = NULL,                  # list of ScenarioCategories for this scenario set
 
     # Functions
     initialize=ve.scenario.init,        # Initializes VEModelScenarios object
