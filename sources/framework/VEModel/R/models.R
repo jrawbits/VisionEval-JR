@@ -1043,7 +1043,7 @@ ve.stage.init <- function(Name=NULL,Model=NULL,ScenarioDir=NULL,modelParam_ls=NU
     self$ScenarioElements <- stageConfig_ls$ScenarioElements
   } else {
     writeLog(paste("No ScenarioElements in",self$Name),Level="debug")
-    writeLog(paste(names(stageConfig_ls),collapse=", "),Level="debug")
+    if ( length(stageConfig_ls)>0 ) writeLog(paste(names(stageConfig_ls),collapse=", "),Level="debug")
   }
 
   # Set up self$Path (input location)

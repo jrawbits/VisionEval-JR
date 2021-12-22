@@ -5,7 +5,7 @@ Notes:
   - Better to make explicit in order to document that input files are being changed
   - If stage has no Dir and Dir does not exist, it's no error and stage gets only the StartFrom inputs
   - Notice from the example stages that only inputs that deviate from the StartFrom stage need to be
-    included: it is bad practice to include an unmodified file in the scenario ModelStages.
+    included. It is bad practice to include an unmodified file in the scenario ModelStages inputs
   - ScenarioCategories / ScenarioElements are auto-generated - a single Category, with one level mapping
     directly to each ModelStage
 
