@@ -316,6 +316,7 @@ readDatastoreTables <- function(Tables_ls, Group, QueryPrep_ls) {
                 readFromTable(ds, tb, Group, ReadAttr = TRUE, envir=query.env)
               if ( !is.na(Tables_ls[[tb]][ds]) && Tables_ls[[tb]][ds] != "" ) { # NA or "" means use default units
                 DsetType <- attributes(Dset_)$TYPE
+                browser( expr = (is.null(DsetType)) )
                 DsetUnits <- attributes(Dset_)$UNITS
                 ToUnits <- Tables_ls[[tb]][ds]
                 if ( !is.null(ToUnits) && is.na(ToUnits) ) ToUnits <- NULL # NULL and NA will mean the same

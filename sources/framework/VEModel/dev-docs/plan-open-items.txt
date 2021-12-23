@@ -1,3 +1,12 @@
+For debugging queries:
+
+  Not finding the "Income" dataset when processing a query. The dataset is reported as
+  being present, but when we try to read it using readFromTable, the dataset is not
+  being found (the check fails). So somehow we missed a place where we should be
+  searching up the DatastorePath.
+
+  Can we run the full query (with income) on the "pop" variant (requires just that search).
+
 For scenarios
 
   See plan-scenario.txt
