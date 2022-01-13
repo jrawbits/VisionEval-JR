@@ -445,7 +445,7 @@ parseUnitsSpec <- function(Spec_ls, ComponentName) {
           attributes(Spec_ls)$WARN <- Msg
           rm(Msg)
         } else if ( length(whereIsCompound)==1 ) { # compound currency unit
-          CompoundCurrency_ <- unlist(strsplit(UnitsSplit_[whereIsCompound],"/"))
+          CompoundCurrency_ <- unlist(strsplit(UnitsSplit_[whereIsCompound],"[*/]")) # multipliers as well as dividers
           if ( length(CompoundCurrency_) > 2 ) {
             # only split on the first "/"
             CompoundCurrency_ <- c(CompoundCurrency_[1],paste(CompoundCurrency_[-1],collapse="/"))
@@ -702,7 +702,8 @@ checkUnits <- function(DataType, Units) {
   names(UT_) <- DT_
   UT_[DT_ %in% c("double", "integer", "character", "logical")] <- "simple"
   UT_[DT_ %in% "compound"] <- "compound"
-  UT_[!UT_ %in% c("simple", "compound")] <- "complex"
+  UT_[DT_ %in% "currency"] <- "currency"
+  UT_[!UT_ %in% c("simple", "compound", "currency")] <- "complex"
   UnitType <- UT_[DataType]
   Result_ls$UnitType <- unname(UnitType)
 
@@ -714,7 +715,7 @@ checkUnits <- function(DataType, Units) {
   }
 
   #Check complex type
-  if (UnitType == "complex") {
+  if (UnitType == "complex" || UnitType == "currency" ) {
     Result_ls$Units <- Units
     #Check that Units are recognized for the specified data type
     AllowedUnits_ <- names(Types()[[DataType]]$units)
@@ -732,9 +733,9 @@ checkUnits <- function(DataType, Units) {
   #Check compound type
   #Define function to identify the data type from a unit
   findTypeFromUnit <- function(Units_) {
-    Complex_ls <- Types()[DT_[UT_ == "complex"]]
+    Complex_ls <- Types()[DT_[UT_ %in% c("currency","complex")]]
     AllUnits_ <- unlist(lapply(Complex_ls, function(x) names(x$units)))
-    UnitsToTypes_ <- gsub("[0-9]", "", names(AllUnits_))
+    UnitsToTypes_ <- gsub("[0-9]", "", names(AllUnits_)) # TODO: why is this needed?
     names(UnitsToTypes_) <- AllUnits_
     UnitsToTypes_[Units_]
   }
@@ -753,6 +754,7 @@ checkUnits <- function(DataType, Units) {
   Result_ls$Elements$Types <- Units_ls$types
   Result_ls$Elements$Units <- Units_ls$units
   Result_ls$Elements$Operators <- Units_ls$operators
+
   #Check whether all element units are correct
   UnitsNotFound <- Units_ls$units[is.na(Units_ls$types)]
   if (length(UnitsNotFound) != 0) {
@@ -842,8 +844,8 @@ checkSpecTypeUnits <- function(Spec_ls, SpecGroup, SpecNum) {
           Msg <-
             paste0("The TYPE specified for the ", SpecGroup, " specification ",
                    "number ", SpecNum, " is 'currency' but the UNITS ",
-                   "specification does not  contain a valid year element. ",
-                   "A valid year element must be specified so that the ",
+                   "specification does not contain a valid YEAR element. ",
+                   "A valid YEAR element must be specified so that the ",
                    "framework knows how to convert currency values to and from ",
                    "the proper year for the module. ",
                    "See the user documentation for how to properly specify a ",
@@ -854,7 +856,7 @@ checkSpecTypeUnits <- function(Spec_ls, SpecGroup, SpecNum) {
           Msg <-
             paste0("The TYPE specified for the ", SpecGroup, " specification ",
                    "number ", SpecNum, " is 'currency' and the UNITS ",
-                   "specification contains a  year element. ",
+                   "specification contains a YEAR element. ",
                    "A year element must NOT be part of the UNITS ",
                    "specification for a ", SpecGroup, " specification because ",
                    "the input file has to specify the nominal year for the ",
@@ -1259,6 +1261,18 @@ checkModuleSpecs <- function(Specs_ls, ModuleName) {
     }
   }
 
+#   stopForCompoundCurrency <- any(
+#     any(inpCurrency <- sapply(Specs_ls$Inp,function(s) grepl("USD/",s$UNITS))),
+#     any(getCurrency <- sapply(Specs_ls$Get,function(s) grepl("USD/",s$UNITS))),
+#     any(setCurrency <- sapply(Specs_ls$Set,function(s) grepl("USD/",s$UNITS)))
+#   )
+#   if ( stopForCompoundCurrency ) {
+#     print( sapply(Specs_ls$Inp[inpCurrency],function(s) paste(s$NAME,s$TYPE,s$UNITS)) )
+#     print( sapply(Specs_ls$Get[getCurrency],function(s) paste(s$NAME,s$TYPE,s$UNITS)) )
+#     print( sapply(Specs_ls$Set[setCurrency],function(s) paste(s$NAME,s$TYPE,s$UNITS)) )
+#     browser()
+#   }
+# 
   #Return errors
   #-------------
   if (length(Errors_) != 0) {
@@ -1504,7 +1518,7 @@ parseInputFieldNames <- function(FieldNames_, Specs_ls, FileName) {
             Fields_ls[[i]]$Error <- c(Fields_ls[[i]]$Error, Msg)
           } else if ( length(whereIsCompound)==1 ) { # compound currency unit
             # Handling something like "USD.2010/DAY"
-            CompoundCurrency_ <- unlist(strsplit(NameSplit_[whereIsCompound],"/"))
+            CompoundCurrency_ <- unlist(strsplit(NameSplit_[whereIsCompound],"[*/]"))
             if ( length(CompoundCurrency_) > 2 ) {
               # only split on the first "/" (handling USD.2008/PRSN/DAY => USD/PRSN/DAY with YEAR=2008
               CompoundCurrency_ <- c(CompoundCurrency_[1],paste(CompoundCurrency_[-1],collapse="/"))
@@ -1988,13 +2002,15 @@ processModuleInputs <- function(ModuleSpec_ls, ModuleName) {
             Data_ <- deflateCurrency(Data_, FromYear, ToYear)
             rm(FromYear, ToYear)
           }
-        }
+          Years_ls <- list(FromYear=FromYear,ToYear=ToYear)
+        } else Years_ls <- NA
+
         #Convert units
         SimpleTypes_ <- c("integer", "double", "character", "logical")
         ComplexTypes_ <- names(Types())[!(names(Types()) %in% SimpleTypes_)]
         if (ThisSpec_ls$TYPE %in% ComplexTypes_) {
           FromUnits <- ThisSpec_ls$UNITS
-          Conversion_ls <- convertUnits(Data_, ThisSpec_ls$TYPE, FromUnits)
+          Conversion_ls <- convertUnits(Data_, ThisSpec_ls$TYPE, FromUnits, Years=Years_ls)
           Data_ <- Conversion_ls$Values
           #Update UNITS to reflect datastore units
           ThisSpec_ls$UNITS <- Conversion_ls$ToUnits

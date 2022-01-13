@@ -33,6 +33,8 @@
 #' @param ToUnits a string identifying the units of measure to convert the
 #' Values_ to. If the ToUnits are 'default' the Values_ are converted to the
 #' default units for the model.
+#' @param Years is a named list with FromYears and ToYears, either of which can be NA.
+#'   If Years is complete and any part of the From/To Units are currencies, deflate them.
 #' @return A list containing the converted values and additional information as
 #' follows:
 #' Values - a numeric vector containing the converted values.
@@ -42,7 +44,7 @@
 #' Warnings - a string containing a warning message or character(0) if no
 #' warning.
 #' @export
-convertUnits <- function(Values_, DataType, FromUnits, ToUnits = "default") {
+convertUnits <- function(Values_, DataType, FromUnits, ToUnits = "default",Years=NA) {
     #Define return value template
     Result_ls <- list(
       Values = Values_,
@@ -102,7 +104,7 @@ convertUnits <- function(Values_, DataType, FromUnits, ToUnits = "default") {
         Elements = list(),
         Errors = character(0)
       )
-      if (ToUnits_ls$UnitType == "complex") {
+      if (ToUnits_ls$UnitType %in% c("currency","complex") ) {
         ToUnits_ls$Units <- getUnits(ToUnits_ls$DataType)
       }
       if (ToUnits_ls$UnitType == "compound") {
@@ -123,18 +125,29 @@ convertUnits <- function(Values_, DataType, FromUnits, ToUnits = "default") {
       ToUnits <- ToUnits_ls$Units
       Result_ls$ToUnits <- ToUnits
     }
+
     #If UnitType is "complex" convert units and exit
     if (FromUnits_ls$UnitType == "complex") {
       Factor <- Types()[[DataType]]$units[[FromUnits]][ToUnits]
       Result_ls$Values <- Values_ * Factor
       return(Result_ls)
     }
+
+    # If UnitType is "currency" deflate currency and exit
+    if (FromUnits_ls$UnitType == "currency") {
+      if (!is.na(Years$ToYear) && !is.na(Years$FromYear) && FromYear != ToYear) {
+        Values_ <- deflateCurrency(Values_, Years$FromYear, Years$ToYear)
+      }
+      Result_ls$Values <- Values_
+      return(Values_)
+    }
+
     #If UnitType is "compound", determine if conversion possible
     #Return error if not.
     compareCompoundUnits <- function(From_ls, To_ls) {
       IsDiffLength <-
-        (length(From_ls$Elements$Units) != length(To_ls$Elements$Units)) |
-        (length(From_ls$Elements$Operators) != length(To_ls$Elements$Operators))
+      (length(From_ls$Elements$Units) != length(To_ls$Elements$Units)) |
+      (length(From_ls$Elements$Operators) != length(To_ls$Elements$Operators))
       if (IsDiffLength) {
         return(FALSE)
       } else {
@@ -155,7 +168,8 @@ convertUnits <- function(Values_, DataType, FromUnits, ToUnits = "default") {
       Result_ls$Errors <- Msg
       return(Result_ls)
     }
-    #If is convertible, then convert values and return result
+
+    #If units are convertible, then convert values and return result
     calcConversionFactor <- function(From_ls, To_ls) {
       Num <- length(From_ls$Elements$Units)
       Formula <- character(0)
@@ -174,7 +188,18 @@ convertUnits <- function(Values_, DataType, FromUnits, ToUnits = "default") {
       eval(parse(text = Formula))
     }
     Factor <- calcConversionFactor(FromUnits_ls, ToUnits_ls)
-    Result_ls$Values <- Values_ * Factor
+    Values_ <- Factor * Values_
+
+    # If any of the From_ls$Elements are "currency" and Years are defined, deflate the Values_
+    if ( ! is.na(Years$ToYear) &&
+         ! is.na(Years$FromYear) &&
+         FromYear != ToYear &&
+         any( sapply( From_ls$Elements$Types,function(t) t=="currency") )
+       ) {
+      Values_ <- deflateCurrency(Values_, Years$FromYear, Years$ToYear)
+    }      
+
+    Result_ls <- Values_
     Result_ls
   }
 

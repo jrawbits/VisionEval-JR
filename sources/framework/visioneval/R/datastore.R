@@ -1522,6 +1522,7 @@ getFromDatastore <- function(ModuleSpec_ls, RunYear, Geo = NULL, GeoIndex_ls = N
   G <- getModelState(envir=envir)
   G$Year <- RunYear
   L$G <- G
+
   #Get data specified in list
   for (i in 1:length(GetSpec_ls)) {
     Spec_ls <- GetSpec_ls[[i]]
@@ -1564,14 +1565,11 @@ getFromDatastore <- function(ModuleSpec_ls, RunYear, Geo = NULL, GeoIndex_ls = N
     # Pass envir and search DatastorePath if present
     Data_ <- readFromTable(Name, Table, DstoreGroup, Index,envir=envir)
     if (any(!is.na(Data_))) {
-      #Convert currency
-      if (Type == "currency") {
-        FromYear <- G$BaseYear
-        ToYear <- Spec_ls$YEAR
-        if (FromYear != ToYear) {
-          Data_ <- deflateCurrency(Data_, FromYear, ToYear)
-        }
-      }
+      #Prepare years for currency conversion
+      FromYear <- G$BaseYear
+      ToYear <- Spec_ls$YEAR
+      Years_ls <- list(FromYear=FromYear,ToYear=ToYear)
+
       #Convert units
       #  when getting the target units: BaseYear may not be present, for example.
       SimpleTypes_ <- c("integer", "double", "character", "logical")
@@ -1580,7 +1578,7 @@ getFromDatastore <- function(ModuleSpec_ls, RunYear, Geo = NULL, GeoIndex_ls = N
         AttrGroup <- switch(
           Group,
           Year = RunYear,
-          BaseYear = G$BaseYear,
+          BaseYear = BaseYear,
           Global = "Global"
         )
         writeLog(
@@ -1593,7 +1591,8 @@ getFromDatastore <- function(ModuleSpec_ls, RunYear, Geo = NULL, GeoIndex_ls = N
         Conversion_ls <- convertUnits(
           Data_, Type,
           getDatasetAttr(Name, Table, AttrGroup, envir=envir)$UNITS,
-          Spec_ls$UNITS
+          Spec_ls$UNITS,
+          Years=Years_ls
         )
         Data_ <- Conversion_ls$Values
       }
@@ -1705,20 +1704,14 @@ setInDatastore <- function(Data_ls, ModuleSpec_ls, ModuleName, Year, Geo = NULL,
     Data_ <- Data_ls[[Group]][[Table]][[Name]]
     if (!is.null(Data_)) {
       #Convert currency
-      if (Type == "currency") {
-        FromYear <- Spec_ls$YEAR
-        ToYear <- BaseYear
-        if (FromYear != ToYear) {
-          Data_ <- deflateCurrency(Data_, FromYear, ToYear)
-          rm(FromYear, ToYear)
-        }
-      }
+      Years_ls <- list(FromYear=Spec_ls$YEAR,ToYear=BaseYear)
+
       #Convert units
       SimpleTypes_ <- c("integer", "double", "character", "logical")
       ComplexTypes_ <- names(Types())[!(names(Types()) %in% SimpleTypes_)]
       if (Type %in% ComplexTypes_) {
         FromUnits <- Spec_ls$UNITS
-        Conversion_ls <- convertUnits(Data_, Type, FromUnits)
+        Conversion_ls <- convertUnits(Data_, Type, FromUnits, Years=Years_ls)
         Data_ <- Conversion_ls$Values
         #Change units specification to reflect default datastore units
         Spec_ls$UNITS <- Conversion_ls$ToUnits
