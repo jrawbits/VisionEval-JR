@@ -33,8 +33,9 @@
 #' @param ToUnits a string identifying the units of measure to convert the
 #' Values_ to. If the ToUnits are 'default' the Values_ are converted to the
 #' default units for the model.
-#' @param Years is a named list with FromYears and ToYears, either of which can be NA.
-#'   If Years is complete and any part of the From/To Units are currencies, deflate them.
+#' @param Years is a named list with FromYears and ToYears, either of which can be not present (or
+#'   set explicitly to NA). Default value is an empty list, so trying to access FromYears or ToYears
+#'   yields NA If Years is complete and any part of the From/To Units are currencies, deflate them.
 #' @return A list containing the converted values and additional information as
 #' follows:
 #' Values - a numeric vector containing the converted values.
@@ -44,7 +45,7 @@
 #' Warnings - a string containing a warning message or character(0) if no
 #' warning.
 #' @export
-convertUnits <- function(Values_, DataType, FromUnits, ToUnits = "default",Years=NA) {
+convertUnits <- function(Values_, DataType, FromUnits, ToUnits = "default",Years=list()) {
     #Define return value template
     Result_ls <- list(
       Values = Values_,
@@ -135,7 +136,7 @@ convertUnits <- function(Values_, DataType, FromUnits, ToUnits = "default",Years
 
     # If UnitType is "currency" deflate currency and exit
     if (FromUnits_ls$UnitType == "currency") {
-      if (!is.na(Years$ToYear) && !is.na(Years$FromYear) && FromYear != ToYear) {
+      if (!is.null(Years$ToYear) && !is.null(Years$FromYear) && Years$FromYear != Years$ToYear) {
         Values_ <- deflateCurrency(Values_, Years$FromYear, Years$ToYear)
       }
       Result_ls$Values <- Values_
@@ -191,10 +192,10 @@ convertUnits <- function(Values_, DataType, FromUnits, ToUnits = "default",Years
     Values_ <- Factor * Values_
 
     # If any of the From_ls$Elements are "currency" and Years are defined, deflate the Values_
-    if ( ! is.na(Years$ToYear) &&
-         ! is.na(Years$FromYear) &&
-         FromYear != ToYear &&
-         any( sapply( From_ls$Elements$Types,function(t) t=="currency") )
+    if ( ! is.null(Years$ToYear) &&
+         ! is.null(Years$FromYear) &&
+         Years$FromYear != Years$ToYear &&
+         any( sapply( FromUnits_ls$Elements$Types,function(t) t=="currency") )
        ) {
       Values_ <- deflateCurrency(Values_, Years$FromYear, Years$ToYear)
     }      
@@ -216,6 +217,8 @@ convertUnits <- function(Values_, DataType, FromUnits, ToUnits = "default",Years
 # convertUnits(1:10, "mass", "MT")
 # convertUnits(1:10, "compound", "GM/MI")
 # convertUnits(1:10, "compound", "MT*KM/YR")
+# Note: needs ModelState_ls with currency Deflators configured
+# convertUnits(1:10, "currency", "USD", Years=list(FromYear=2010,ToYear=2008))
 
 
 #CONVERT BETWEEN DIFFERENT MEASUREMENT MAGNITUDES
@@ -328,8 +331,7 @@ deflateCurrency <- function(Values_, FromYear, ToYear) {
     }
     Result_
   }
-
-
+# Tests:
 # deflateCurrency(1:10, "1999", "2016")
 # deflateCurrency(1:10, 1999, 2016)
 # deflateCurrency(1:10, 2016, 1999)

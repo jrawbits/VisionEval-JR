@@ -791,6 +791,7 @@ checkUnits <- function(DataType, Units) {
 # checkUnits("compound", "MI/KM")
 # checkUnits("compound", "MI/HR")
 # checkUnits("compound", "TRIP/PRSN/DAY")
+# checkUnits("compound", "USD/YR")
 
 
 #CHECK SPECIFICATION TYPE AND UNITS

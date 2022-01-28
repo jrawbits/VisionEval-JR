@@ -136,3 +136,99 @@ extract_bzone <- function(modelDir,Year) {
   results$PctMixedUse = results[3] / results[2] * 100.0
   return(results)
 }
+
+setupModelState <- function(items=list(),envir=NULL) {
+  if ( is.null(envir) ) envir <- modelEnvironment()
+  if ( missing("items") ) {
+    return(envir$ModelState_ls)
+  }
+  if ( ! "ModelState_ls" %in% names(envir) ) {
+    envir$ModelState_ls <- items
+  } else {
+    envir$ModelState_ls[names(items)] <- items
+  }
+  return( invisible(envir$ModelState_ls) )
+}
+
+test_deflate <- function(setupOnly=FALSE) {
+  # Construct a pseudo ModelState_ls with Deflators
+  Deflators <- data.frame(
+    # Just reproduces deflators.csv from sample VERSPM model
+    Year = c(
+      1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008,
+      2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016
+    ),
+    Value = c(
+      172.6, 178, 182.4, 183.8, 186.3, 191.1, 196, 201.1, 208.556, 215.389,
+      215.647, 218.344, 224.59, 229.779, 235.528, 241.215, 244.19,
+      249.426
+    )
+  )
+  setupModelState(list(Deflators=Deflators))
+  if ( ! setupOnly ) {
+    cat('deflateCurrency(1:10, "1999", "2016")\n')
+    print(deflateCurrency(1:10, "1999", "2016"))
+    cat('deflateCurrency(1:10, 1999, 2016)\n')
+    print(deflateCurrency(1:10, 1999, 2016))
+    cat('deflateCurrency(1:10, 2016, 1999)\n')
+    print(deflateCurrency(1:10, 2016, 1999))
+    cat('deflateCurrency(1:10, 1998, 2016) - 1998 not in table\n')
+    print(deflateCurrency(1:10, 1998, 2016))
+    cat('deflateCurrency(1:10, 1999, 2017) - future years not in table\n')
+    print(deflateCurrency(1:10, 1999, 2017))
+  } else {
+    cat("Sample Deflators initialized\n")
+  }
+}
+
+test_convertUnits <- function() {
+  Units <- data.frame(
+    # Just reproduces deflators.csv from sample VERSPM model
+    Type = c(
+      "currency", "distance", "area", "mass", "volume", "time", "energy", "people",
+      "vehicles", "trips", "households", "employment", "activity"
+    ),
+    Units = c(
+      "USD", "MI", "SQMI", "KG", "GAL", "DAY", "GGE", "PRSN", "VEH", "TRIP", "HH",
+      "JOB", "HHJOB"
+    )
+  )
+  setupModelState(list(Units=Units))
+  testStep("Basic Units...")
+  cat('convertUnits(1:10, "energy", "M", "MI")\n')
+  print(convertUnits(1:10, "energy", "M", "MI"))
+  cat('convertUnits(1:10, "distance", "meters", "miles")\n')
+  print(convertUnits(1:10, "distance", "meters", "miles"))
+  cat('convertUnits(1:10, "distance", "M", "miles")\n')
+  print(convertUnits(1:10, "distance", "M", "miles"))
+  cat('convertUnits(1:10, "double", "revenue-miles", "vehicle-miles")\n')
+  print(convertUnits(1:10, "double", "revenue-miles", "vehicle-miles"))
+  cat('convertUnits(1:10, "distance", "M", "MI")\n')
+  print(convertUnits(1:10, "distance", "M", "MI"))
+  cat('convertUnits(1:10, "distance", "M", "M")\n')
+  print(convertUnits(1:10, "distance", "M", "M"))
+  cat('convertUnits(1:10, "time", "YR", "DAY")\n')
+  print(convertUnits(1:10, "time", "YR", "DAY"))
+  testStep("Default Target...")
+  cat('convertUnits(1:10, "time", "YR")\n')
+  print(convertUnits(1:10, "time", "YR"))
+  testStep("Compound Units...")
+  cat('convertUnits(1:10, "compound", "MI/HR", "TON/MI")\n')
+  print(convertUnits(1:10, "compound", "MI/HR", "TON/MI"))
+  cat('convertUnits(1:10, "compound", "MI/HR", "KM/SEC")\n')
+  print(convertUnits(1:10, "compound", "MI/HR", "KM/SEC"))
+  cat('convertUnits(1:10, "compound", "MI/HR", "FT/SEC")\n')
+  print(convertUnits(1:10, "compound", "MI/HR", "FT/SEC"))
+  cat('convertUnits(1:10, "mass", "MT")\n')
+  print(convertUnits(1:10, "mass", "MT"))
+  cat('convertUnits(1:10, "compound", "GM/MI")\n')
+  print(convertUnits(1:10, "compound", "GM/MI"))
+  cat('convertUnits(1:10, "compound", "MT*KM/YR")\n')
+  print(convertUnits(1:10, "compound", "MT*KM/YR"))
+  test_deflate(setupOnly=TRUE)
+  testStep("Currencies...")
+  cat('convertUnits(1:10, "currency", "USD", Years=(FromYear=2010,ToYear=2008))\n')
+  print(convertUnits(1:10, "currency", "USD", Years=list(FromYear=2010,ToYear=2008)))
+  cat('convertUnits(1:10, "compound", "USD/YR", "USD/YR", Years=(FromYear=2010,ToYear=2008))\n')
+  print(convertUnits(1:10, "compound", "USD/YR", "USD/YR", Years=list(FromYear=2010,ToYear=2008)))
+}
