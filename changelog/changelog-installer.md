@@ -16,6 +16,13 @@ The bad installer got distributed, so let that be a lesson regarding the importa
 
 ## Files
 
+qYou can generate a file summary using the following line of code. You should drop the
+changelog file from the list manually (since it will always be one commit out of date).
+
+```
+git diff --compact-summary development-next
+```
+
 The following files were modified in this change:
 ```
  build/Makefile                         |  2 ++
