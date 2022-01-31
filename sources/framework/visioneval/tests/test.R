@@ -17,8 +17,6 @@
 # It will create a temporary folder to use as a runtime
 # and list the available test functions.
 
-# TODO: if not using pkgload from source, require visioneval
-
 if ( ! requireNamespace("stringr",quietly=TRUE) ) {
   stop("Missing required package: 'stringr'")
 }
@@ -229,6 +227,9 @@ test_convertUnits <- function() {
   testStep("Currencies...")
   cat('convertUnits(1:10, "currency", "USD", Years=(FromYear=2010,ToYear=2008))\n')
   print(convertUnits(1:10, "currency", "USD", Years=list(FromYear=2010,ToYear=2008)))
+  cat('deflateCurrency(1:10, "2010", "2008")\n')
+  print(deflateCurrency(1:10, "2010", "2008"))
+  testStep("Compound Currencies...")d
   cat('convertUnits(1:10, "compound", "USD/YR", "USD/YR", Years=(FromYear=2010,ToYear=2008))\n')
   print(convertUnits(1:10, "compound", "USD/YR", "USD/YR", Years=list(FromYear=2010,ToYear=2008)))
 }
