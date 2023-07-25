@@ -1,0 +1,27 @@
+User selects how to collapse Group/Year + Scenario within the same Table
+Generates ExportTable names associated with each combination of Scenario, Group-Year, Table
+  May repeat the same table name (it's a lookup)
+Walk through each result set (AllSpecs_ls) and generate rows of Scenario/Group-Year/Table/Field metadata for each ExportTable
+  Scenario is a metadata field always, for all Tables
+  Group-Year is a metadata field always, for all Tables
+  Then we just add in the additional Scenario/Group-Year/Table/Field
+
+Do that by iterating over all Scenarios and within them all Groups/Years/Fields
+  Visit the Specs and add all the Fields, with ExportTable looked up based on Scenario/Group-Year/Table
+  That creates one Metadata table that can optional be saved to the database.
+
+Iterate over the Scenarios, using Metadata to:
+  Identify the corresponding Export Table (look up by Scenario / Group-Year / Table)
+  Create the ExportTable with necessary Fields (if not already there)
+  Pull out data.frame for Group-Year/Table from the Scenario Datastore (Scenario is a field)
+  Write the data.frame to the ExportTable (append rows)
+
+And that should do it!
+
+For the export format, need to have these operations:
+  Set "database" (place to write tables)
+  Create an ExportTable with its name and Fields (from Metadata)
+  Write a set of rows with compatible fields to the ExportTable
+
+Then we just need to figure out how to realize it.
+Parquet is neat since we can have individual tables but also have them viewable as a single unit.

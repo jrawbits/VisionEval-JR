@@ -329,11 +329,20 @@ ve.results.units <- function(selected=TRUE,display=NULL) {
   return( Units_df[,returnFields] )
 }
 
-# ve.results.export just does ve.results.extract, but it sets saveResults=TRUE
+# ve.results.export just does ve.results.extract, but it sets
+# saveResults=TRUE
+
+# TODO: add "format" argument, defaulting to saveResults.
+# TRUE means "default format" in that case, which will be "csv"
+# Options need to be created to decide how to collapse tables across
+# Years and Scenarios.
+# Extract should work the way it always has: generating single sets
+# of tables.
 ve.results.export <- function(
   saveResults=TRUE,
   ... # dots are just passed through to extract (prefix, saveTo, select, convertUnits, data)
 ) {
+  # Adjust to work with results list...
   return( self$extract(saveResults=saveResults,...) ) # forces saving
 }
 
