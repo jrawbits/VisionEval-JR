@@ -2564,6 +2564,10 @@ ve.model.findstages <- function(stage=character(0),Reportable=TRUE) {
 
 # create a VEResults object or list of VEResults objects (possibly invalid/empty) from the model's
 # Reportable stages. Provide a vector of stage names or indices to filter the list.
+# TODO: ALWAYS return a VEResultsList
+# TODO: Build a function to retrieve (and perhaps consolidate) the metadata for each requested stage
+# TODO: Metadata should always include Scenario (Stage Name) and Year(s)
+# TODO: Don't actually retrieve the results until we're ready to do something with them
 ve.model.results <- function(stage=character(0)) {
 
   if ( ! private$p.valid ) {

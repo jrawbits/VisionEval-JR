@@ -101,6 +101,10 @@ ve.results.index <- function() {
     private$RunParam_ls <- ms$RunParam_ls
   }
 
+  # TODO: mark fields as being in the first (writable) model state path versus earlier ones
+  # so we can pull out just fields explicitly in this stage; not a priority
+  # Could add a column to dsListing, but need to change mergeDatastoreListings to respect it
+  # ThisStage (or similar name) would get set to TRUE for first set, then FALSE for later ones
   msList <- rev(visioneval::getModelStatePaths(dropFirst=FALSE,envir=private$modelStateEnv))
   combinedDatastore <- list()
   if ( length(msList) > 0 ) {
@@ -347,6 +351,13 @@ ve.results.export <- function(
 }
 
 # saveResults, if TRUE, will save a file to the SaveTo location, with the indicated prefix, if any
+# This function does a single set of results (One Year in One Scenario)
+# TODO: Just extract into a list of data.frames (could be a problem for really gigantic model results)
+#   1. Find the metadata for the results (see modelIndex)
+#   2. Generate a list of Group.Table
+#   3. Visit the list of Group.Table (Add Scenario and Year attached to Results)
+#   4. Generate target table for each Scenario.Year.Group.Table (create/open)
+#   5. Extract data.frame and write into target table
 ve.results.extract <- function(
   saveResults=FALSE,
   saveTo=visioneval::getRunParameter("OutputDir",Param_ls=private$RunParam_ls), # directory in which to save
