@@ -117,6 +117,10 @@ ve.query.init <- function(
   if ( !is.null(QuerySpec) || !is.null(FileName) || load ) {
     writeLogMessage("Loading Query...",Level="info")
     self$load(FileName=FileName,QuerySpec=QuerySpec,ModelPath=ModelPath,QueryDir=QueryDir)
+    # in self$load, if QuerySpec is not NULL, no actual load will be
+    # attempted... Just sets up the filename and will create a
+    # separate version of the query file (with a number suffix on its
+    # name).
   }
 
   # Evaluate what is present
@@ -1130,7 +1134,7 @@ ve.query.run <- function(
   }
   visioneval::initLog(Threshold=log,Save=SaveLog,envir=new.env()) # Log level for display in this function
 
-  msg <- writeLogMessage(paste("Running query:",self$QueryName),Level="warn")
+  msg <- writeLogMessage(paste("Running query:",self$QueryName),Level=log)
 
   if ( missing(Model) || is.null(Model) ) {
     Model <- self$Model # Use attached model if available
@@ -1175,7 +1179,7 @@ ve.query.run <- function(
   validResults <- sapply(Results,function(r) r$valid())
   if ( !all(validResults) ) {
     for ( result in Results[!validResults] ) {
-      writeLogMessage(paste("Model Results",result$Name,"is Invalid; not running query."),Level="warn")
+      writeLogMessage(paste("Model Results",result$Name,"is Invalid; not running query."),Level=log)
     }
   }
   Results <- Results[validResults]
@@ -1190,7 +1194,7 @@ ve.query.run <- function(
     # Reload cached results (updates self$QueryResults and check for validity)
     # private$reload returns all the Results, whether or not they
     # have query results
-    writeLogMessage("Checking for cached query results",Level="warn")
+    writeLogMessage("Checking for cached query results",Level=log)
     upToDate <- sapply( private$reload(Results) ,
       function(r) {
         if ( ! "VEQueryResults" %in% class(r) || ! r$valid() ) return(FALSE)
@@ -1223,7 +1227,7 @@ ve.query.run <- function(
   # Run the query on any out-of-date results
   # ResultsToUpdate is a list of VEResults
   if ( (numResults<-length(ResultsToUpdate)) > 0 ) {
-    writeLogMessage(paste(paste("Updating",numResults,"Results:"),paste(sapply(ResultsToUpdate,function(x)x$Name),collapse="\n"),sep="\n"),Level="warn")
+    writeLogMessage(paste(paste("Updating",numResults,"Results:"),paste(sapply(ResultsToUpdate,function(x)x$Name),collapse="\n"),sep="\n"),Level=log)
     doQuery(
       Results=ResultsToUpdate,         # list of VEResults objects for which to generate results
       Specifications=self$getlist(),   # A list of VEQuerySpec
@@ -1233,7 +1237,7 @@ ve.query.run <- function(
     # Results of doQuery are written to the QueryFile in Results$resultsPath
     # self$results will reload them
   } else {
-    writeLogMessage("No results to update.",Level="info")
+    writeLogMessage("No results to update.",Level="error")
   }
 
   # Update self$QueryResults to the list of VEQueryResults that were processed in this run and

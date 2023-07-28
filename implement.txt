@@ -1,11 +1,32 @@
 Change the model$results function to do the following:
   1. Always generate a result list
-  2. Result list should be a full R6 class with manipulation instructions
   3. Opening existing results should create a one-item list by default
   4. Individual results can be pulled out of the list for interrogation the old-fashioned way
   5. Model creates a list of results for selected stages
   6. Result object does not access data until we extract or export - it just locates results
   7. Default is to generate results for Reportable stages
+
+Always generate a result list:
+  * Result list should be a full R6 class with manipulation instructions
+  * To keep the selection working, need dispatch from a results list (apply to all results)
+    Create the full VEResultsList class, with the same interface as VEResults
+    Work on the Results internally; the external selection interface is always by name
+      of the G/T/N. Internally on individual results, we can do the same; and the
+      external interface just applies the selection to all the individual results,
+      and saves the list of what we have selected so we can adjust (do intersection, union,
+      and other set operations on the list of desired G/T/N).
+    May be able to suspend the selection at the level of VEResult: just filter the index
+      for the results (list of G/T/N) when it is requested, using selection criteria
+      applied at the VEResultsList level (and even then, we should just have the
+      consolidated selection and use it when we get to extract/export for the VEResultList)
+    That makes the selection a lot easier to manage! It's just a list of desired G/T/N
+      and we can then also separate out the Year and select elements of the VEResultsList
+      to get the scenarios.
+    Start by fixing up the tests.
+  * Get rid of export interface for a single VEResult. Extract will generate a list of
+      data.frames (including ScenarioName and Year columns) for each G/T.
+  * Move tracking of export output path to the VEResultsList and have all the export stuff
+      done there. Extract and write inside a loop for the individual VEResults
 
 Selection happens with an individual results (need to index into model$results().
   1. Re-implement selection as a list of G/T/N (rather than numeric indices)

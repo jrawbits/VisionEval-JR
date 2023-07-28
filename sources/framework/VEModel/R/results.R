@@ -531,6 +531,10 @@ ve.results.extract <- function(
 }
 
 # Update this selection, or just return what is already selected
+# TODO: make this part of VEResultsList
+
+# The selection will just be a list of G/T/N applied to the master
+# index list, and then applied during extraction to the s
 ve.results.select <- function(select=integer(0)) {  # integer(0) says select all by default. Use NA or NULL to select none
   # if is.null(select) do not change the current results selection
   # integer(0) says reset and select all

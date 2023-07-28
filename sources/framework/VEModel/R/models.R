@@ -2594,42 +2594,45 @@ ve.model.results <- function(stage=character(0)) {
     )
     writeLog("Have you run the model?",Level="warn")
   }
-  if ( length(results)>1 ) {
-    # Create a VEResultsList with two function elements: "extract" and "results"
-    # extract calls $extract on each element of "results"
-    # results returns the "results" list (a bare list of VEResults)
-    # The actual results are stored in an environment attached to each of those functions
 
-    results.env <- new.env()
-    results.env$results <- results # named list of VEResults objects
-    rm(results)
+  # Create a VEResultsList with two function elements: "extract" and "results"
+  # extract calls $extract on each element of "results"
+  # results returns the "results" list (a bare list of VEResults)
+  # The actual results are stored in an environment attached to each of those functions
+  # TODO: Change VEResultsList to a full class with a $new/init function
+  # That class gets the selection interface and manipulation (may be able
+  # to retire/rewrite VESelection). The selection object just becomes a list
+  # of G/T/N
 
-    # Extract from the list - works for everything
-    # selections are problematic since they are tied to specific result sets
-    extract <- function(stage=character(0),...) {
-      # TODO: beef this up to handle an output format/destination
-      # Create output tables, append results to them so a single set of tables
-      #   can accumulate results from all reportable stages.
-      if ( length(stage)==0 ) stage<-names(results)
-      for ( stg in stage ) {
-        results[[stg]]$extract(...)
-      }
-      return(invisible(stage))
+  results.env <- new.env()
+  results.env$results <- results # named list of VEResults objects
+  rm(results)
+
+  # Extract from the list - works for everything
+  # selections are problematic since they are tied to specific result sets
+  extract <- function(stage=character(0),...) {
+    # TODO: beef this up to handle an output format/destination
+    # Create output tables, append results to them so a single set of tables
+    #   can accumulate results from all reportable stages.
+    if ( length(stage)==0 ) stage<-names(results)
+    for ( stg in stage ) {
+      results[[stg]]$extract(...)
     }
-    environment(extract)<-results.env
-
-    # Produce a bare named list of VEResults objects
-    results.func <- function() {
-      return( results ) # A list (for use by query or print)
-    }
-    environment(results.func)<-results.env
-
-    # Get the results path
-    results <- list(env=results.env$results,extract=extract,results=results.func,path=self$modelResults)
-    class(results) <- "VEResultsList" # print function defined below
-  } else if ( length(results)==1 ) {
-    results <- results[[1]]              # Just return the single VEResults object
+    return(invisible(stage))
   }
+  environment(extract)<-results.env
+
+  # Produce a bare named list of VEResults objects
+  results.func <- function() {
+    return( results ) # A list (for use by query or print)
+  }
+  environment(results.func)<-results.env
+
+  # Get the results path
+  results <- list(env=results.env$results,extract=extract,results=results.func,path=self$modelResults)
+  class(results) <- "VEResultsList" # print function defined below
+
+  # TODO: change all the tests to respect that we have a single result
   return(results)
 }
 
