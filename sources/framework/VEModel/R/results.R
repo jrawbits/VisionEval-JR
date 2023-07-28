@@ -39,6 +39,7 @@ self=private=NULL # To avoid global variable warnings
 
 # Initialize a VEResultsList from a list of model stages
 ve.resultslist.init <- function(stages,modelPath) {
+
   self$modelPath <- modelPath
 
   # Build results
@@ -47,7 +48,7 @@ ve.resultslist.init <- function(stages,modelPath) {
     function(stg) VEResults$new(stg$RunPath,ResultsName=stg$Name,ModelStage=stg)
   )
   names(self$Results) <- names(stages)
-  # Build results index (S/G/T/N plus other metadata)
+  # Build results index (S/G/T/N plus other metadata) for use in selecting
   self$resultsIndex <- do.call("rbind", lapply(self$Results,function(r) r$list)
 
   valid <- sapply( self$Results, function(r) r$valid() )
@@ -62,21 +63,32 @@ ve.resultslist.init <- function(stages,modelPath) {
   }
 }
 
-# Extract from the list - works for everything
-# selections are problematic since they are tied to specific result sets
-ve.resultslist.extract <- function(stage=character(0),...) {
-  # TODO: beef this up to handle an output format/destination
+ve.resultslist.extract <-  function(stage=character(0),...) {
+  # Change this to develop a nested list of data.frames
   # Create output tables, append results to them so a single set of tables
   #   can accumulate results from all reportable stages.
-  if ( length(stage)==0 ) stage<-names(results)
+  if ( length(stage)==0 ) stage<-names(self$Results)
   for ( stg in stage ) {
     self$Results[[stg]]$extract(...) # Change mechanism to have the list manage output data.frames and tables
   }
   return(invisible(stage))
 }
 
+ve.resultslist.export <- function() {
+  # export result tables to external data storage format (or internal - wrap "extract")
+}
+
 # Produce a bare named list of VEResults objects
-ve.resultslist.results <- function() return(self$Results)
+ve.resultslist.results <- function(stages=NULL) {
+  if ( missing(stages) ) {
+    return(self$Results)
+  } else {
+    return(self$Results[stages])
+  }
+}
+
+# IDIOM to grab a subset of stages (if not done using model$results):
+#    resultsSubset <- VEResultsList$new(results$results()[vector.of.stages]) # vector.of.stages are names or indices
 
 # Print summary of results in the list
 ve.resultslist.print <- function(...) {
@@ -85,27 +97,48 @@ ve.resultslist.print <- function(...) {
   }
 }
 
-ve.resultslist.export <- function() {
-  # export result tables to external data storage format (or internal - wrap "extract")
+ve.resultslist.list <- function(pattern="", details=FALSE, ...) {
+  # Show details about model fields
+  # selected = TRUE shows just the selected fields
+  # selected = FALSE shows all fields (not just unselected)
+  # pattern matches (case-insensitive regexp) some portion of field name
+  # details = TRUE returns a data.frame self$modelIndex (units, description)
+  # detailx = FALSE returns just the "Name" vector from self$modelIndex
+
+  # TODO: Include the Scenario (stage) in the index reslts...
+  filter <- if ( missing(selected) || selected ) {
+    which( 1:nrow(self$resultsIndex) %in% self$selection$selection )
+  } else {
+    rep(TRUE,nrow(self$resultsIndex))
+  }
+  if ( ! missing(pattern) && is.character(pattern) && nzchar(pattern) ) {
+    filter <- filter & grepl(pattern,self$resultsIndex$Name,ignore.case=TRUE )
+  }
+
+  if ( missing(details) || ! details ) {
+    ret.value <- with( self$resultsIndex[ filter, ], paste(Scenario,Group,Table,Name,sep="/") ) # generates a character vector
+  } else {
+    ret.value <- self$resultsIndex[ filter, ] # Generates a data.frame with all metadata columns
+  }
+  return(unique(ret.value))
 }
 
-ve.resultslist.extract <- function() {
-  # create a nested list of data.frames of all the result tables
+ve.resultslist.select <- function(selection) {
+  if ( missing(select) || is.environment(select) || ( ! is.null(select) && ! is.na(select) ) ) {
+    self$selection <- VESelection$new(self,self$list())
+  } else {
+    self$selection <- selection # TODO: handle either results of self$list or existing VESelection
+  }
+  invisible( self$selection )
 }
 
-ve.resultslist.list <- function() {
-  # TODO: Build a function to consolidate the metadata for each requested stage
-  # TODO: Metadata should always include Scenario (Stage Name) and Year(s)
-}
-
-ve.resultslist.select <- function() {
-  # TODO: move selection to be a list of S/G/T/N (G implies Year)
-  # Use to filter fields during extract/export
-}
-
-ve.resultslist.find <- function() {
-  # TODO: move selection to be a list of S/G/T/N (G implies Year)
-  # Use to filter fields during extract/export
+# Find fields (as objects) within the current selection
+ve.resultslist.find <- function(pattern=NULL,Group=NULL,Table=NULL,Name=NULL,select=FALSE) {
+  selection <- self$select()
+  found <-selection$find(pattern=pattern,Group=Group,Table=Table,Name=Name,as.object=TRUE)
+  # without "select=TRUE", found is an independent selection (not bound to results)
+  if ( select ) found <- self$select(found) # bind selection to results
+  return( found )
 }
 
 #' @export
@@ -120,10 +153,11 @@ VEResultsList <- R6::R6Class(
 
     # methods
     initialize=ve.resultslist.init,
-    print=ve.results.print,          # summary of model results (index)
+    results=ve.resultslist.results   # manipulate the inner list
+    print=ve.resultslist.print,      # summary of model results (index)
     export=ve.resultslist.export,    # move the results to an external data storage format
     extract=ve.resultslist.extract,  # generate nested list of data.frames from model results (for further processing in R)
-    list=ve.resultslist.list,        # show the consolidated modelIndex (used by export to develop metadata table)
+    list=ve.resultslist.list,        # show the consolidated resultsIndex (used by export to develop metadata table)
     select=ve.resultslist.select,    # return the list's selection definition
     find=ve.resultslist.find         # constructs but does not embed the selection definition
   )
@@ -136,17 +170,192 @@ VEResultsList <- R6::R6Class(
 ##########################
 
 # Create VEResults object (manipulates Datastore/ModelState)
-ve.results.init <- function(OutputPath,ResultsName=NULL,ModelStage=NULL) {
-  # OutputPath is the normalized path to a directory containing the model results
+ve.results.init <- function(ResultsPath,ResultsName=NULL,ModelStage=NULL) {
+  # ResultsPath is the normalized path to a directory containing the model results
   #  typically from the last model stage. Expect to find a ModelState.Rda file
   #  and a Datastore in that folder.
-  self$resultsPath <- OutputPath
-  self$Name <- if ( !is.character(ResultsName) ) basename(OutputPath) else ResultsName
+  self$resultsPath <- ResultsPath
+  self$Name <- if ( !is.character(ResultsName) ) basename(ResultsPath) else ResultsName
   self$index()
   private$RunParam_ls <- self$ModelState()$RunParam_ls
   self$modelStage <- ModelStage # may be NULL
   self$selection <- VESelection$new(self)
   return(self$valid())
+}
+
+# Original implementation of extracting tables from a single VEResults
+# TODO: Change to eliminate saving option (move to VEResultsList$export)
+# TODO: Change to use updated selection implementation
+ve.results.extract <- function(
+  saveResults=FALSE,
+  saveTo=visioneval::getRunParameter("OutputDir",Param_ls=private$RunParam_ls), # directory in which to save
+  prefix = "",            # Label to further distinguish output files, if desired (setting also starts saving)
+  select=NULL,            # replaces self$selection if provided; TODO: force selection always to be provided explicitly from VEResultsList
+  convertUnits=TRUE,      # will convert if display units are present; FALSE not to attempt any conversion
+  data=NULL               # NULL (default) means generate both data and metadata if saving, otherwise just data
+                          # TRUE means generate ONLY data (no metadata)
+                          # FALSE means generate ONLY the metadata (no data)
+) {
+  if ( ! self$valid() ) stop("Model State contains no results.")
+  if ( is.null(select) ) select <- self$selection else self$selection <- select
+  if ( any(is.na(select$selection)) || length(select$selection)<1 ) {
+    stop("Nothing selected to extract.")
+  }
+
+  if ( saveResults ) {
+    saveTo <- saveTo[1]
+    outputPath <- if ( isAbsolutePath(saveTo) ) saveTo else file.path(self$resultsPath,saveTo)
+    extractRoot <- visioneval::getRunParameter("ExtractRootName",Param_ls=private$RunParam_ls)
+    extractName <- paste0(extractRoot,"_",visioneval::fileTimeStamp(Sys.time()))
+    outputPath <- file.path(outputPath,extractName)
+    dir.create(outputPath,showWarnings=FALSE,recursive=TRUE)
+    if ( ! dir.exists(outputPath) ) {
+      stop(
+        writeLog( Level="error",
+          c( "Output directory not available:",outputPath )
+        )
+      )
+    }
+    # Write out the selected fields (metadata)
+    utils::write.csv(
+      file=file.path(outputPath,"!SelectedFields.csv"),
+      data.frame(SelectedFields = self$selection$fields()),
+      row.names=FALSE
+    )
+  }
+
+  want.data <- ! is.logical(data) || data
+  want.metadata <- !is.logical(data) || ! data
+
+  metadata <- self$modelIndex[ select$selection, ]
+  if ( convertUnits ) {
+    metadata <- addDisplayUnits(metadata,Param_ls=private$RunParam_ls)
+  } else {
+    metadata$DisplayUnits <- NA
+  }
+  extract <- metadata[ , c("Name","Table","Group","Units", "DisplayUnits") ]
+
+  extractTables <- unique(extract[,c("Group","Table")])
+  extractGroups <- unique(extractTables$Group)
+
+  QueryPrep_ls <- self$queryprep()
+  outputList <- list()
+  results <- list()
+
+  # Construct descriptive file name (hard coded...)
+  lastChanged <- self$ModelState()$LastChanged;
+  timeStamp <- if ( ! is.null(lastChanged) ) {
+    timeStamp <- visioneval::fileTimeStamp(lastChanged)
+  } else {
+    timeStamp <- "timeUnknown"
+  }
+
+  for ( group in extractGroups ) {
+    # Build Tables_ls for readDatastoreTables
+    Tables_ls <- list()
+    Metadata_ls <- list() # list of data.frames with field metadata
+    tables <- extractTables$Table[ extractTables$Group == group ]
+    if ( length(tables)==0 ) next # should not happen given how we built extract
+    for ( table in tables ) {
+      meta <- extract[ extract$Group==group & extract$Table==table, ]
+      fields <- meta[ , c("Name","DisplayUnits") ]
+      dispUnits <- fields$DisplayUnits
+      names(dispUnits) <- fields$Name
+      Tables_ls[[table]] <- dispUnits
+      Metadata_ls[[table]] <- meta
+    }
+
+    # Get a list of data.frames, one for each Table configured in Tables_ls
+    Data_ls <- visioneval::readDatastoreTables(Tables_ls, group, QueryPrep_ls)
+
+    # Report Missing Tables from readDatastoreTables
+    HasMissing_ <- unlist(lapply(Data_ls$Missing, length)) != 0
+    if (any(HasMissing_)) {
+      WhichMissing_ <- which(HasMissing_)
+      Missing_ <- character(0)
+      for (i in WhichMissing_) {
+        Missing_ <- c(
+          Missing_,
+          paste0(
+            names(Data_ls$Missing)[i], " (",
+            paste(Data_ls$Missing[[i]], collapse = ", "), ")"
+          )
+        )
+      }
+      msg <- paste("Missing Tables (Datasets):",paste(Missing_, collapse = "\n"),sep="\n")
+      stop( writeLog( msg, Level="error" ) )
+    }
+
+    # Handle tables with different lengths of data elements ("multi-tables")
+    # readDatastoreTables will have returned a ragged list rather than a data.frame
+
+    # TODO: Make the following unnecessary by fixing VERPAT so it works correctly (a "Table"
+    #   should always have the same number of elements in its Datasets).
+
+    if ( ! all(is.df <- sapply(Data_ls$Data,is.data.frame)) ) {
+      # Unpack "multi-tables"
+      MultiTables <- Data_ls$Data[which(! is.df)]
+      for ( multi in names(MultiTables) ) {
+        # multi is a list of datasets not made into a data.frame by readDatastoreTables
+        multi.data <- MultiTables[[multi]]
+        lens <- sapply(multi.data,length) # vector of lengths of datastores
+        multi.len <- unique(lens)
+        for ( dfnum in 1:length(multi.len) ) { # work through unique dataset lengths
+          dfname <- multi
+          if ( dfnum > 1 ) dfname <- paste(multi,dfnum,sep="_")
+          fordf <- which(lens==multi.len[dfnum])
+          try.df <- try( data.frame(multi.data[fordf]) )
+          if ( ! is.data.frame(try.df) ) {
+            msg <- paste("Could not make data.frame from Datastore Table",multi)
+            stop( writeLog( msg, Level="error" ) )
+          }
+          Data_ls$Data[[dfname]] <- try.df
+        }
+      }
+    }
+
+    # Process the table data.frames into results
+    dataNames <- names(Data_ls$Data)
+    newTableNames <- paste(group,dataNames,sep=".")
+    if ( saveResults ) {
+      # Push each data.frame into a file, and accumulate a list of file names to return
+
+      # group and timeWritten must have one element, dataNames may have many
+      # Files will have length(dataNames)
+      Files <- paste0(paste(group,dataNames,timeStamp,sep="_"),".csv")
+      names(Files) <- dataNames;
+
+      # Write the files (data = .csv) and a metadata file (meta = .metadata.csv)
+      for ( table in dataNames ) {
+        prefix.files <- if ( !is.null(prefix) && !is.na(prefix) && nzchar(prefix[1]) ) {
+          paste(prefix,Files[table],sep="_")
+        } else Files[table]
+        fn <- file.path(outputPath,prefix.files)
+        disp.fn <- sub(paste0(self$resultsPath,"/"),"",fn,fixed=TRUE)
+        df2w <- Data_ls$Data[[table]]
+        writeLog(paste("Extracting",sub("\\.[^.]*$","",disp.fn),paste0("(",nrow(df2w)," rows)")),Level="warn")
+        if ( want.data ) {
+          utils::write.csv(df2w,file=fn,row.names=FALSE)
+        }
+        if ( want.metadata ) {
+          utils::write.csv(Metadata_ls[[table]],file=sub("\\.csv$",".metadata.csv",fn),row.names=FALSE)
+        }
+      }
+
+      # Accumulate results list (names on list are "group.table")
+      names(Files) <- newTableNames
+      results[ names(Files) ] <- as.list(Files)
+    } else {
+      # Otherwise, if not saving, accumulate the list of data.frames
+      # (named as "group.table")
+      if ( ! is.logical(data) || data ) {
+        results[ newTableNames ] <- Data_ls$Data
+      } else { # just the metadata
+        results[ newTableNames ] <- Metadata_ls # use data name Group.Table
+      }
+    }
+  }
+  invisible(results)
 }
 
 # Check results validity (all files present)
@@ -269,6 +478,7 @@ ve.results.index <- function() {
     Name        = fieldGTN$Name, # Should be identical to ds$name
     Description = Description,
     Units       = Units,
+    # TODO: May need some other specification items in order to identify variable type for SQL or other export
     Module      = Module,
     Scenario    = scenario,
     File        = File,          # "" if not an Input
@@ -284,33 +494,6 @@ ve.results.index <- function() {
   row.names(Index) <- 1:nrow(Index) # Row names used for selection by index; may not need with new scheme
   self$modelIndex <- Index
   invisible(self$modelIndex)
-}
-
-ve.results.list <- function(pattern="", details=FALSE, selected=TRUE, ...) {
-  # Show details about model fields
-  # selected = TRUE shows just the selected fields
-  # selected = FALSE shows all fields (not just unselected)
-  # pattern matches (case-insensitive regexp) some portion of field name
-  # details = TRUE returns a data.frame self$modelIndex (units, description)
-  # detail = FALSE returns just the "Name" vector from self$modelIndex
-  
-  if ( ! self$valid() ) stop("Model has not been run yet.")
-
-  filter <- if ( missing(selected) || selected ) {
-    which( 1:nrow(self$modelIndex) %in% self$selection$selection )
-  } else {
-    rep(TRUE,nrow(self$modelIndex))
-  }
-  if ( ! missing(pattern) && is.character(pattern) && nzchar(pattern) ) {
-    filter <- filter & grepl(pattern,self$modelIndex$Name,ignore.case=TRUE )
-  }
-
-  if ( missing(details) || ! details ) {
-    ret.value <- with( self$modelIndex[ filter, ], paste(Group,Table,Name,sep="/") ) # generates a character vector
-  } else {
-    ret.value <- self$modelIndex[ filter, ] # Generates a data.frame with all columns
-  }
-  return(unique(ret.value))
 }
 
 # Helper function to attach DisplayUnits to a list of Group/Table/Name rows in a data.frame
@@ -384,7 +567,7 @@ addDisplayUnits <- function(GTN_df,Param_ls) {
   return(displayUnits) # Minimally includes Group, Table, Name, DisplayUnits, DisplayUnitsFile
 }
 
-# TODO: is this function ever used, or is it still relevant
+# TODO: is this function ever used, or is it still relevant?
 # If kept, move to resultslist
 ve.results.inputs <- function( fields=FALSE, module="", filename="" ) {
   # fields=TRUE, show all Datasets that originated as file inputs (lists all columns within input files)
@@ -437,7 +620,7 @@ ve.results.units <- function(selected=TRUE,display=NULL) {
   if ( ! is.logical(display) || display ) {
     # Add Display Units if requested
     Units_df <- addDisplayUnits(Units_df,Param_ls=private$RunParam_ls)
-    displayUnits <- !is.na(Units_df$DisplayUnits)
+    displayUnits <- !is.na(Units_df$DisplayUnits) # find elements where DisplayUnits are available
     Units_df$Source[ displayUnits ] <- basename(Units_df$DisplayUnitsFile[ displayUnits ])
     if ( is.null(display) ) {
       # merge into single Units Column
@@ -447,30 +630,6 @@ ve.results.units <- function(selected=TRUE,display=NULL) {
     }
   }
   return( Units_df[,returnFields] )
-}
-
-# Update this selection, or just return what is already selected
-# TODO: make this part of VEResultsList
-
-# The selection will just be a list of G/T/N applied to the master
-# index list, and then applied during extraction to the s
-ve.results.select <- function(select=integer(0)) {  # integer(0) says select all by default. Use NA or NULL to select none
-  # if is.null(select) do not change the current results selection
-  # integer(0) says reset and select all
-  # the is.environment test picks of an R6 VESelection object
-  if ( missing(select) || is.environment(select) || ( ! is.null(select) && ! is.na(select) ) ) {
-    self$selection <- VESelection$new(self,select=select)
-  }
-  invisible(self$selection)
-}
-
-# Find fields (as objects) within the current selection
-ve.results.find <- function(pattern=NULL,Group=NULL,Table=NULL,Name=NULL,select=FALSE) {
-  selection <- self$select()
-  found <-selection$find(pattern=pattern,Group=Group,Table=Table,Name=Name,as.object=TRUE)
-  # without "select=TRUE", found is an independent selection (not bound to results)
-  if ( select ) found <- self$select(found) # bind selection to results
-  return( found )
 }
 
 # Wrapper for visioneval::copyDatastore
@@ -536,26 +695,21 @@ VEResults <- R6::R6Class(
     modelStage  =NULL,
     resultsPath =NULL,
     modelIndex  =NULL,
-    selection   =NULL,
 
     # methods
     initialize=ve.results.init,
     index=ve.results.index,          # Index Datastore from ModelState (part of init)
     copy=ve.results.copy,            # Apply visioneval::copyDatastore
     valid=ve.results.valid,          # has the model been run, etc.
-    select=ve.results.select,        # return the object's selection object
-    find=ve.results.find,            # does select() then VESelection$find
     extract=ve.results.extract,      # generate data.frames from model results
-    export=ve.results.export,        # alias for 'extract' except that saving to a file is the default
-    list=ve.results.list,            # show the modelIndex
+    list=ve.results.list,            # show the modelIndex - is this used other than to initialize VEResultsList?
     queryprep=ve.results.queryprep,  # For query or other external access
     print=ve.results.print,          # summary of model results (index)
-    units=ve.results.units,          # Set units on field list (modifies self$modelIndex)
+    units=ve.results.units,          # Set units on field list (modifies self$modelIndex) TODO: Move/wrap in VEResultsList
     elements=ve.results.elements,    # Get scenario elements (named list of scenario levels) for this scenario
     ModelState=ve.results.modelstate # Set/Get the model state for these results
   ),
   private = list(
-    outputPath=NULL,                # root for extract
     RunParam_ls=NULL,
     modelStateEnv=NULL
   )
@@ -639,7 +793,17 @@ ve.select.fields <- function() {
   return(sort(paste(idxFields$Group,idxFields$Table,idxFields$Name,sep="/"))) # Group/Table/Name
 }
 
+# TODO: Here's how to select if we keep the selection as Scenario/Group/Table/Name:
+# 
+#   Here is a generic solution for this type of problem which is very efficient:
+# 
+# data.1.ID <- paste(data.1[,1],data.1[,2],data.1[,3])
+# keep.these.ID <- paste(keep.these[,1],keep.these[,2],keep.these[,3])
+# desired.result <- data.1[data.1.ID %in% keep.these.ID,]
+
 # Internal helper function to make a selection vector out of various other types of objects
+# TODO: Note that parsing gets simpler if we're just keeping the list of selected Scenario/Group/Table/Name
+
 ve.select.parse <- function(select) {
   # Though select can be a vector of field names, they need to be the full Group/Table/Name field names,
   #  so you should get them from ve.select.find, rather than manually construct them.
@@ -715,7 +879,7 @@ allTheKeys = c(
 )
 
 ve.select.addkeys <- function(Group=NULL,Table=NULL,Keys=NULL) {
-  # Helper to move key fields across
+  # Helper to move key fields across into selection
   # "Group" if not specified will be currently selected groups
   # "Table" if not specified will be currently selected tables
   # "Keys" if not specified will be all of them; if provided here,
@@ -734,12 +898,11 @@ ve.select.addkeys <- function(Group=NULL,Table=NULL,Keys=NULL) {
   invisible( self )
 }
 
-
 # Find does NOT alter the object it is called on unless 'select=TRUE'
 # It either produces a new VESelection from the matching elements of self$selection (as.object==TRUE)
-# OR it products a vector of matching element indices (as.object==FALSE)
+# OR it produces a vector of matching element indices (as.object==FALSE)
 ve.select.find <- function(pattern=NULL,Group=NULL,Table=NULL,Name=NULL,as.object=TRUE,select=FALSE) {
-  # if pattern (regexp) given, find names matching pattern (only within the "fields" part)
+  # if pattern (regexp) given, find names matching pattern (only within the "fields"/Name part)
   # if group or table not specified, look in any group or table
   # return vector of indices for matching rows or (as.object==TRUE) a new VESelection object
   searchGroup <- Group

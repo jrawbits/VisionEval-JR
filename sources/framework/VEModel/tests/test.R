@@ -70,7 +70,7 @@ test_00_install <- function(
     if ( all( nzchar(c(variant,modelName)) ) ) installAs <- paste0("test-",modelName,"-",variant)
   }
 
-  rs <- NULL
+  mod <- NULL
   if ( all( nzchar( c(modelName[1],variant[1],installAs[1]) ) ) ) {
     if ( dir.exists(existingModel <- file.path("models",installAs)) ) {
       if ( overwrite ) {
@@ -79,12 +79,12 @@ test_00_install <- function(
         overwrite <- TRUE
       } else {
         message("install opens existing model")
-        rs <- openModel(existingModel,log=log)
+        mod <- openModel(existingModel,log=log)
       }
     }
-    if ( overwrite || is.null(rs) ) {
+    if ( overwrite || is.null(mod) ) {
       testStep(paste("Installing",modelName,"model variant",variant,"from package as",installAs))
-      rs <- installModel(modelName,variant=variant,modelPath=installAs,log=log,confirm=confirm,overwrite=TRUE)
+      mod <- installModel(modelName,variant=variant,modelPath=installAs,log=log,confirm=confirm,overwrite=TRUE)
     }
   } else {
     if ( nzchar(modelName) ) {
@@ -92,17 +92,17 @@ test_00_install <- function(
     } else {
       testStep("Directory of available models")
     }
-    rs <- installModel(modelName=modelName,variant="",log=log,private=TRUE)
+    mod <- installModel(modelName=modelName,variant="",log=log,private=TRUE)
   }
   # NOTE: pkgload bug - print.VEAvailableModels/Variants not recognized for class dispatch...
-  if ( "VEAvailableModels" %in% class(rs) ) {
-    print.VEAvailableModels(rs)
-  } else if ( "VEAvailableVariants" %in% class(rs) ) {
-    print.VEAvailableVariants(rs)
+  if ( "VEAvailableModels" %in% class(mod) ) {
+    print.VEAvailableModels(mod)
+  } else if ( "VEAvailableVariants" %in% class(mod) ) {
+    print.VEAvailableVariants(mod)
   } else {
-    print(rs)
+    print(mod)
   }
-  return(invisible(rs))
+  return(invisible(mod))
 }
 
 test_00_install_all <- function(listonly=FALSE,private=FALSE,overwrite=FALSE,log="warn") {
@@ -218,12 +218,12 @@ test_01_classic <- function(modelName="VERSPM-classic",clear=TRUE,log="info") {
   }
   if ( needInstall ) {
     testStep(paste("Installing classic VERSPM model from package as",modelName))
-    rs <- test_00_install(
+    mod <- test_00_install(
       "VERSPM",variant="classic",installAs=modelName,
       log=log,overwrite=clear,confirm=FALSE
     )
-    modelName <- rs$modelName
-    rm(rs)  # Don't keep the VEModel around - will run manually below
+    modelName <- mod$modelName
+    rm(mod)  # Don't keep the VEModel around - will run manually below
   }
 
   testStep(paste("Running",modelName,"by sourcing scripts/run_model.R in",modelPath))
@@ -239,11 +239,11 @@ test_01_classic <- function(modelName="VERSPM-classic",clear=TRUE,log="info") {
   testStep("Reviewing model status (will get confused by incomplete RunParam_ls)")
 
   setwd(owd)
-  rs <- openModel(modelName)
-  cat("Model Status:",rs$printStatus(),"\n")
-  return(rs)
+  mod <- openModel(modelName)
+  cat("Model Status:",mod$printStatus(),"\n")
+  return(mod)
   # return model object for further analysis (can be re-run in VEModel environment)
-  # rs$run() will ignore classic results and construct a "results" directory,
+  # mod$run() will ignore classic results and construct a "results" directory,
   #   which makes the "classic" model slightly "post-modern"
 }
 
@@ -560,7 +560,7 @@ test_02_model <- function(modelName="VERSPM-Test", oldstyle=FALSE, log="info", b
   testStep("extract model results, show directory")
   br <- bare$results()
   print(br)
-  br$extract(prefix="BareTest")
+  br$extract(prefix="BareTest") # TODO: extract just does data frames; export saves to external storage
   # Or use br$extract(saveResults=TRUE)
   # Or use br$export, which does not require arguments to save
   # br$extract() just returns a list of data.frames...
@@ -750,7 +750,7 @@ test_03_results <- function (existingResults=FALSE,log="info") {
   }
   logLevel(log)
 
-  cat("Results:\n")
+  cat("Results:\n") # rs is a VEResultsList
   print(rs)
   cat("Selection...\n")
   sl <- rs$select() # Get full field list
@@ -822,6 +822,8 @@ test_03_results <- function (existingResults=FALSE,log="info") {
   print(sl$fields())
   print(rs$units())
 
+  # TODO: do we still want to do extractions on selections (i.e. bind
+  # them to results and use as an alternate interface...)?
   testStep("Extracting speed fields using DISPLAY units")
   sl$extract(prefix="DisplayUnits")                 # Using DISPLAY units
 
@@ -860,6 +862,10 @@ test_03_select <- function( log="info" ) {
   testStep("Manipulate model selection to pick and retrieve fields")
   mod <- test_01_run("VERSPM-pop","VERSPM","pop")
   rs <- mod$results("stage-pop-future")
+
+  # TODO: change to work directly on VEResultsList (don't need to
+  # manipulate low-level VEResults)
+
   if ( "VEResultsList" %in% class(rs) ) {
     rs <- rs$results()    # get an actual list
     rs <- rs[length(rs)]  # get the last element of that list, as a list
@@ -1002,7 +1008,6 @@ test_05_build_query <- function(log="info",break.query=TRUE,reset=FALSE) {
   testStep("Set up Queries")
   testStep("Opening test model and caching its results...")
   mod <- test_01_run("VERSPM-query",baseModel="VERSPM",variant="pop",log="warn",reset=reset)
-  rs <- mod$results()
 
   testStep("Show query directory (may be empty)...")
   print(mod$query())
@@ -1089,7 +1094,6 @@ test_05_query <- function(log="info",Force=TRUE,runModel=FALSE) {
   testStep("Set up Queries and Run on Model Results")
   testStep("Opening test model and caching its results...")
   mod <- test_01_run("VERSPM-query",baseModel="VERSPM",variant="pop",log="warn",reset=runModel)
-  rs <- mod$results()
 
   testStep("Show query directory (may be empty)...")
   print(mod$query())
