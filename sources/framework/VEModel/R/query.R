@@ -2259,6 +2259,8 @@ makeLongMeasureDataframe <- function(Values,Scenario="",Year=NULL,Metadata=chara
 
 # doQuery processes a list of VEResults, and generates QueryFile in their Path
 doQuery <- function (
+  # TODO: Results should be a VEResultsList
+  # TODO: iterating over Results should use Results$results()
   Results,             # a list of VEResult object(s) corresponding to Reportable scenarios
   Specifications,      # validated query specification to process
   QueryFile,           # Name of query file in which to save results

@@ -2564,10 +2564,6 @@ ve.model.findstages <- function(stage=character(0),Reportable=TRUE) {
 
 # create a VEResults object or list of VEResults objects (possibly invalid/empty) from the model's
 # Reportable stages. Provide a vector of stage names or indices to filter the list.
-# TODO: ALWAYS return a VEResultsList
-# TODO: Build a function to retrieve (and perhaps consolidate) the metadata for each requested stage
-# TODO: Metadata should always include Scenario (Stage Name) and Year(s)
-# TODO: Don't actually retrieve the results until we're ready to do something with them
 ve.model.results <- function(stage=character(0)) {
 
   if ( ! private$p.valid ) {
@@ -2581,71 +2577,7 @@ ve.model.results <- function(stage=character(0)) {
       writeLog(paste("Model stage(s) not found:",stage,collapse=","),Level="error")
     )
   }
-  results <- lapply(
-    stages,
-    function(stg) VEResults$new(stg$RunPath,ResultsName=stg$Name,ModelStage=stg)
-  )
-  names(results) <- names(stages)
-  valid <- sapply( results, function(r) r$valid() )
-  if ( any( ! valid ) ) {
-    writeLog(
-      paste("No results yet for stage(s): ",names(results)[!valid],collapse=", "),
-      Level="warn"
-    )
-    writeLog("Have you run the model?",Level="warn")
-  }
-
-  # Create a VEResultsList with two function elements: "extract" and "results"
-  # extract calls $extract on each element of "results"
-  # results returns the "results" list (a bare list of VEResults)
-  # The actual results are stored in an environment attached to each of those functions
-  # TODO: Change VEResultsList to a full class with a $new/init function
-  # That class gets the selection interface and manipulation (may be able
-  # to retire/rewrite VESelection). The selection object just becomes a list
-  # of G/T/N
-
-  results.env <- new.env()
-  results.env$results <- results # named list of VEResults objects
-  rm(results)
-
-  # Extract from the list - works for everything
-  # selections are problematic since they are tied to specific result sets
-  extract <- function(stage=character(0),...) {
-    # TODO: beef this up to handle an output format/destination
-    # Create output tables, append results to them so a single set of tables
-    #   can accumulate results from all reportable stages.
-    if ( length(stage)==0 ) stage<-names(results)
-    for ( stg in stage ) {
-      results[[stg]]$extract(...)
-    }
-    return(invisible(stage))
-  }
-  environment(extract)<-results.env
-
-  # Produce a bare named list of VEResults objects
-  results.func <- function() {
-    return( results ) # A list (for use by query or print)
-  }
-  environment(results.func)<-results.env
-
-  # Get the results path
-  results <- list(env=results.env$results,extract=extract,results=results.func,path=self$modelResults)
-  class(results) <- "VEResultsList" # print function defined below
-
-  # TODO: change all the tests to respect that we have a single result
-  return(results)
-}
-
-#' pretty print a list of VEResults objects
-#' 
-#' @param x a VEResultsList object
-#' @param ... Other parameters for generic print function
-#' @export
-print.VEResultsList <- function(x,...) {
-  results <- x$results()
-  for ( nm in names(results)) {
-    print(results[[nm]],name=nm,...) # Call VEResults$print
-  }
+  return(VEResultsList$new(stages,self$modelPath))
 }
 
 # open a Query object for the model from its QueryDir (or report a list
