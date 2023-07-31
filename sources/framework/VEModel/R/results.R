@@ -393,6 +393,33 @@ ve.results.modelstate <- function(ModelState_ls=NULL) {
   return (private$modelStateEnv$ModelState_ls)
 }
 
+ve.results.list <- function(pattern="", details=FALSE, selected=TRUE, ...) {
+  # Show details about model fields
+  # selected = TRUE shows just the selected fields
+  # selected = FALSE shows all fields (not just unselected)
+  # pattern matches (case-insensitive regexp) some portion of field name
+  # details = TRUE returns a data.frame self$modelIndex (units, description)
+  # detail = FALSE returns just the "Name" vector from self$modelIndex
+  
+  if ( ! self$valid() ) stop("Model has not been run yet.")
+
+  filter <- if ( missing(selected) || selected ) {
+    which( 1:nrow(self$modelIndex) %in% self$selection$selection )
+  } else {
+    rep(TRUE,nrow(self$modelIndex))
+  }
+  if ( ! missing(pattern) && is.character(pattern) && nzchar(pattern) ) {
+    filter <- filter & grepl(pattern,self$modelIndex$Name,ignore.case=TRUE )
+  }
+
+  if ( missing(details) || ! details ) {
+    ret.value <- with( self$modelIndex[ filter, ], paste(Group,Table,Name,sep="/") ) # generates a character vector
+  } else {
+    ret.value <- self$modelIndex[ filter, ] # Generates a data.frame with all columns
+  }
+  return(unique(ret.value))
+}
+
 ve.results.index <- function() {
   # Load model state from self$resultsPath
   # Note that if the model is using a non-standard ModelState name,
