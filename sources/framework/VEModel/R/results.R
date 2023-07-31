@@ -64,18 +64,33 @@ ve.resultslist.init <- function(stages,modelPath) {
 }
 
 ve.resultslist.extract <-  function(stage=character(0),...) {
-  # Change this to develop a nested list of data.frames
   # Create output tables, append results to them so a single set of tables
   #   can accumulate results from all reportable stages.
   if ( length(stage)==0 ) stage<-names(self$Results)
+  extracted <- list()
   for ( stg in stage ) {
-    self$Results[[stg]]$extract(...) # Change mechanism to have the list manage output data.frames and tables
+    extracted[[stg]] <- self$Results[[stg]]$extract(...) # Change mechanism to have the list manage output data.frames and tables
   }
-  return(invisible(stage))
+  return(invisible(extracted))
 }
 
 ve.resultslist.export <- function() {
-  # export result tables to external data storage format (or internal - wrap "extract")
+  # TODO: add parameters
+  #   -- Separate tables by Scenario, Group/Year or Both
+  #   -- ConvertUnits (add DisplayUnits for certain field names or types; VE configuration)
+  #   -- Generate a Metadata table at the end
+  #   -- "Connection" to write the tables to (Format, Directory/Database)
+  # Visit each set of Results and do VEResults$extract, then do the writing.
+  #   -- Create table the first time it is encountered
+  #   -- Table may partition Scenario or Group/Year (subset of extracted data)
+  #   -- If table already exists, just append additional rows to it
+  # Copy over the generate S/G/T/N into the "generated metadata" table
+  # extract may generate a new table, so we look up the table name in known tables and if
+  # there is an unknown table, generated metadata will have some of the fields moved from
+  # their original table into that new one. We'll write the metadata accordingly.
+  # There will always be at least on table per "Table/T" element - but we may subset that
+  # into "table per year (all scenarios)" or "table per scenario (all years)" or "table per
+  # scenario-year (one for each combination of scenario and year)"
 }
 
 # Produce a bare named list of VEResults objects
@@ -84,7 +99,7 @@ ve.resultslist.results <- function(stages=NULL) {
     return(self$Results)
   } else {
     return(self$Results[stages])
-  }
+w  }
 }
 
 # IDIOM to grab a subset of stages (if not done using model$results):
@@ -123,6 +138,35 @@ ve.resultslist.list <- function(pattern="", selected=TRUE, details=FALSE, ...) {
   return(unique(ret.value))
 }
 
+# TODO: is this function ever used, or is it still relevant?
+# TODO: written to work on an individual VEResults - now should list all selected
+# We won't necessarily know the input file until after the model is run (otherwise, this function should have been a
+#  member of VEModel)
+ve.resultslist.inputs <- function( fields=FALSE, module="", filename="" ) {
+  # fields=TRUE, show all Fields/Datasets that originated as file inputs (lists all columns within input files)
+  # fields=FALSE, just show the module, file, input directory (lists the input files)
+  # This is a convenience function for processing the results index. Need to ensure File and
+  # InputDir are included in that table.
+  if ( ! self$valid() ) stop("Model has not been run yet.")
+
+  if ( ! missing(fields) && fields ) {
+    ret.fields <- c("Module","Group","Table","Name","File","InputDir","Units","Description")
+  } else {
+    ret.fields <- c("Module","Name","File","InputDir")
+  }
+
+  filter <- nzchar(self$modelIndex$File)
+  if ( !missing(module) && nzchar(module) ) {
+    filter <- filter & grepl(module,self$modelIndex$Module)
+  }
+  if ( !missing(filename) && nzchar(filename) ) {
+    filter <- filter & grepl(filename,self$modelIndex$File)
+  }
+
+  ret.value <- unique(self$modelIndex[ filter, ret.fields ])
+  return( ret.value[order(ret.value$InputDir,ret.value$File),] )
+}
+
 ve.resultslist.select <- function(selection) {
   return.self <- missing(selection)
   if ( return.self ) {
@@ -136,15 +180,13 @@ ve.resultslist.select <- function(selection) {
   invisible( self$selection )
 }
 
-# Find fields (as objects) within the current selection
-# Note: do "Scenario" rather than "Stage" since we'll only look at terminal stages
-# TODO: make this work with non-Reportable (non-terminal) stages; practically, we probably won't select from those
+# Find fields (as objects) within the current results list
+# Note: "Scenarios" correspond to model stages in the model
 ve.resultslist.find <- function(pattern=NULL,Scenario=NULL,Group=NULL,Table=NULL,Name=NULL,select=FALSE) {
-  selection <- self$select()
+  selection <- self$select() # generate a base selection from what is already selected.
   found <-selection$find(pattern=pattern,Scenario=Scenario,Group=Group,Table=Table,Name=Name,as.object=TRUE)
   # without "select=TRUE", found is an independent selection (not bound to results)
-  # TODO: should we even allow unbound selections? Selection should probably always work on a VEResultsList
-  if ( select ) found <- self$select(found) # bind selection to results
+  if ( select ) found <- self$select(found) # create a selection from this set of results
   return( found )
 }
 
@@ -176,72 +218,46 @@ VEResultsList <- R6::R6Class(
 #
 ##########################
 
+# VEResults handles the low-level interactions with the ModelState_ls and Datastore for a
+# single stage. It automatically does virtual "flattening" by walking back up the StartFrom
+# tree. It will generate an index list of all the Group/Table/Name for the specific scenarios
+# that will be later used to generate table specifications for export, and also for selecting
+# subsets of the state results.
+
 # Create VEResults object (manipulates Datastore/ModelState)
 # Extracts tabular data
 ve.results.init <- function(ResultsPath,ResultsName=NULL,ModelStage=NULL) {
   # ResultsPath is the normalized path to a directory containing the model results
-  #  typically from the last model stage. Expect to find a ModelState.Rda file
+  #  typically from a Reportable model stage. Expect to find a ModelState.Rda file
   #  and a Datastore in that folder.
   self$resultsPath <- ResultsPath
   self$Name <- if ( !is.character(ResultsName) ) basename(ResultsPath) else ResultsName
   self$index()
   private$RunParam_ls <- self$ModelState()$RunParam_ls
-  self$modelStage <- ModelStage # may be NULL
-  self$selection <- VESelection$new(self)
+  self$modelStage <- ModelStage # may be NULL; only used to get stage elements for category scenarios via the R visualizer
   return(self$valid())
 }
 
 # Original implementation of extracting tables from a single VEResults
-# TODO: Change to eliminate saving option (move to VEResultsList$export)
-# TODO: Change to use updated selection implementation
+# We won't select or export here: selections and exporting are managed in VEResultsList
+# Also, we won't generate metadata here - just the actual data (VEResultsList will create
+# metadata form the index of combined set of stage results)
+# This function simply gets data from the Datastore for the corresponding stage and converts
+# units if requested.
 ve.results.extract <- function(
-  saveResults=FALSE,
-  saveTo=visioneval::getRunParameter("OutputDir",Param_ls=private$RunParam_ls), # directory in which to save
-  prefix = "",            # Label to further distinguish output files, if desired (setting also starts saving)
-  select=NULL,            # replaces self$selection if provided; TODO: force selection always to be provided explicitly from VEResultsList
-  convertUnits=TRUE,      # will convert if display units are present; FALSE not to attempt any conversion
-  data=NULL               # NULL (default) means generate both data and metadata if saving, otherwise just data
-                          # TRUE means generate ONLY data (no metadata)
-                          # FALSE means generate ONLY the metadata (no data)
+  convertUnits=TRUE      # will convert if display units are present; FALSE not to attempt any conversion
 ) {
-  if ( ! self$valid() ) stop("Model State contains no results.")
-  if ( is.null(select) ) select <- self$selection else self$selection <- select
-  if ( any(is.na(select$selection)) || length(select$selection)<1 ) {
-    stop("Nothing selected to extract.")
+  if ( ! self$valid() ) {
+    bad.results <- if ( ! is.null(self$modelStage) self$modelStage$Name else self$resultsPath )
+    stop("Model Stage contains no results: ",bad.results)
   }
 
-  if ( saveResults ) {
-    saveTo <- saveTo[1]
-    outputPath <- if ( isAbsolutePath(saveTo) ) saveTo else file.path(self$resultsPath,saveTo)
-    extractRoot <- visioneval::getRunParameter("ExtractRootName",Param_ls=private$RunParam_ls)
-    extractName <- paste0(extractRoot,"_",visioneval::fileTimeStamp(Sys.time()))
-    outputPath <- file.path(outputPath,extractName)
-    dir.create(outputPath,showWarnings=FALSE,recursive=TRUE)
-    if ( ! dir.exists(outputPath) ) {
-      stop(
-        writeLog( Level="error",
-          c( "Output directory not available:",outputPath )
-        )
-      )
-    }
-    # Write out the selected fields (metadata)
-    utils::write.csv(
-      file=file.path(outputPath,"!SelectedFields.csv"),
-      data.frame(SelectedFields = self$selection$fields()),
-      row.names=FALSE
-    )
-  }
-
-  want.data <- ! is.logical(data) || data
-  want.metadata <- !is.logical(data) || ! data
-
-  metadata <- self$modelIndex[ select$selection, ]
-  if ( convertUnits ) {
-    metadata <- addDisplayUnits(metadata,Param_ls=private$RunParam_ls)
+  metadata <- self$modelIndex
+    metadata <- addDisplayUnits(self$modelIndex,Param_ls=private$RunParam_ls)
   } else {
-    metadata$DisplayUnits <- NA
+    metadata$DisplayUnits <- metadata$Units
   }
-  extract <- metadata[ , c("Name","Table","Group","Units", "DisplayUnits") ]
+  extract <- metadata[ , c("Scenario","Name","Table","Group","Units", "DisplayUnits") ]
 
   extractTables <- unique(extract[,c("Group","Table")])
   extractGroups <- unique(extractTables$Group)
@@ -250,18 +266,9 @@ ve.results.extract <- function(
   outputList <- list()
   results <- list()
 
-  # Construct descriptive file name (hard coded...)
-  lastChanged <- self$ModelState()$LastChanged;
-  timeStamp <- if ( ! is.null(lastChanged) ) {
-    timeStamp <- visioneval::fileTimeStamp(lastChanged)
-  } else {
-    timeStamp <- "timeUnknown"
-  }
-
   for ( group in extractGroups ) {
     # Build Tables_ls for readDatastoreTables
     Tables_ls <- list()
-    Metadata_ls <- list() # list of data.frames with field metadata
     tables <- extractTables$Table[ extractTables$Group == group ]
     if ( length(tables)==0 ) next # should not happen given how we built extract
     for ( table in tables ) {
@@ -270,7 +277,6 @@ ve.results.extract <- function(
       dispUnits <- fields$DisplayUnits
       names(dispUnits) <- fields$Name
       Tables_ls[[table]] <- dispUnits
-      Metadata_ls[[table]] <- meta
     }
 
     # Get a list of data.frames, one for each Table configured in Tables_ls
@@ -294,11 +300,26 @@ ve.results.extract <- function(
       stop( writeLog( msg, Level="error" ) )
     }
 
+    # This code exists to handle a bad part of the VERPAT design, where base and future
+    # vehicles are loaded into the same table. Fields associated with base and future may
+    # have different lengths (each field is only associated with one). This code will
+    # be used to split out the base and future into different tables based on matching
+    # the lengths of each field column.
+
     # Handle tables with different lengths of data elements ("multi-tables")
     # readDatastoreTables will have returned a ragged list rather than a data.frame
 
-    # TODO: Make the following unnecessary by fixing VERPAT so it works correctly (a "Table"
-    #   should always have the same number of elements in its Datasets).
+    # TODO: When exporting (and exporting table metadata), we need to know this information.
+    # But we can't get it without reading the results datastore, so it's not available
+    # during indexing (the fields look like they're in that main table). So during export
+    # we need add to (or rewrite) the metadata table with updated table names.
+
+    # TODO: That suggests that VEResultsList should use its original index metadata to find the
+    # data to retrieve, but we want to wait to export the metadata table until the end of
+    # the export process. So we should take the metadata at the back end of this process
+    # as the "true" metadata that gets written out, filtered by whatever selection is applied
+    # at the top level - ultimately it means we think we're asking for a single table, but
+    # really we may get more than one (with some fields reclassified into additional tables).
 
     if ( ! all(is.df <- sapply(Data_ls$Data,is.data.frame)) ) {
       # Unpack "multi-tables"
@@ -325,43 +346,7 @@ ve.results.extract <- function(
     # Process the table data.frames into results
     dataNames <- names(Data_ls$Data)
     newTableNames <- paste(group,dataNames,sep=".")
-    if ( saveResults ) {
-      # Push each data.frame into a file, and accumulate a list of file names to return
-
-      # group and timeWritten must have one element, dataNames may have many
-      # Files will have length(dataNames)
-      Files <- paste0(paste(group,dataNames,timeStamp,sep="_"),".csv")
-      names(Files) <- dataNames;
-
-      # Write the files (data = .csv) and a metadata file (meta = .metadata.csv)
-      for ( table in dataNames ) {
-        prefix.files <- if ( !is.null(prefix) && !is.na(prefix) && nzchar(prefix[1]) ) {
-          paste(prefix,Files[table],sep="_")
-        } else Files[table]
-        fn <- file.path(outputPath,prefix.files)
-        disp.fn <- sub(paste0(self$resultsPath,"/"),"",fn,fixed=TRUE)
-        df2w <- Data_ls$Data[[table]]
-        writeLog(paste("Extracting",sub("\\.[^.]*$","",disp.fn),paste0("(",nrow(df2w)," rows)")),Level="warn")
-        if ( want.data ) {
-          utils::write.csv(df2w,file=fn,row.names=FALSE)
-        }
-        if ( want.metadata ) {
-          utils::write.csv(Metadata_ls[[table]],file=sub("\\.csv$",".metadata.csv",fn),row.names=FALSE)
-        }
-      }
-
-      # Accumulate results list (names on list are "group.table")
-      names(Files) <- newTableNames
-      results[ names(Files) ] <- as.list(Files)
-    } else {
-      # Otherwise, if not saving, accumulate the list of data.frames
-      # (named as "group.table")
-      if ( ! is.logical(data) || data ) {
-        results[ newTableNames ] <- Data_ls$Data
-      } else { # just the metadata
-        results[ newTableNames ] <- Metadata_ls # use data name Group.Table
-      }
-    }
+    results[ newTableNames ] <- names(Data_ls$Data)
   }
   invisible(results)
 }
@@ -431,10 +416,6 @@ ve.results.index <- function() {
     private$RunParam_ls <- ms$RunParam_ls
   }
 
-  # TODO: mark fields as being in the first (writable) model state path versus earlier ones
-  # so we can pull out just fields explicitly in this stage; not a priority
-  # Could add a column to dsListing, but need to change mergeDatastoreListings to respect it
-  # ThisStage (or similar name) would get set to TRUE for first set, then FALSE for later ones
   msList <- rev(visioneval::getModelStatePaths(dropFirst=FALSE,envir=private$modelStateEnv))
   combinedDatastore <- list()
   if ( length(msList) > 0 ) {
@@ -486,7 +467,7 @@ ve.results.index <- function() {
     Name        = fieldGTN$Name, # Should be identical to ds$name
     Description = Description,
     Units       = Units,
-    # TODO: May need some other specification items in order to identify variable type for SQL or other export
+    # TODO: May need some other specification fields in order to identify variable type for SQL or other export
     Module      = Module,
     Scenario    = scenario,
     File        = File,          # "" if not an Input
@@ -576,38 +557,12 @@ addDisplayUnits <- function(GTN_df,Param_ls) {
   return(displayUnits) # Minimally includes Group, Table, Name, DisplayUnits, DisplayUnitsFile
 }
 
-# TODO: is this function ever used, or is it still relevant?
-# If kept, move to resultslist
-# We won't necessarily know the input file until after the model is run (otherwise, this function should have been a
-#  member of VEModel)
-ve.results.inputs <- function( fields=FALSE, module="", filename="" ) {
-  # fields=TRUE, show all Datasets that originated as file inputs (lists all columns within input files)
-  # fields=FALSE, just show the module, file, input directory (lists the input files)
-  if ( ! self$valid() ) stop("Model has not been run yet.")
-
-  if ( ! missing(fields) && fields ) {
-    ret.fields <- c("Module","Group","Table","Name","File","InputDir","Units","Description")
-  } else {
-    ret.fields <- c("Module","Name","File","InputDir")
-  }
-
-  filter <- nzchar(self$modelIndex$File)
-  if ( !missing(module) && nzchar(module) ) {
-    filter <- filter & grepl(module,self$modelIndex$Module)
-  }
-  if ( !missing(filename) && nzchar(filename) ) {
-    filter <- filter & grepl(filename,self$modelIndex$File)
-  }
-
-  ret.value <- unique(self$modelIndex[ filter, ret.fields ])
-  return( ret.value[order(ret.value$InputDir,ret.value$File),] )
-}
-
 # Return a named list of ScenarioElements and Levels for this set of
 # results (from the ModelStage) - for use with category scenarios.
 ve.results.elements <- function() {
   # Get scenario element names plus level values for associated model stage
   # Model stage must have scenario elements to use Visualizer
+  if ( is.null(self$modelStage) ) return(list()) # need the modelStage to get elements
   elements <- self$modelStage$ScenarioElements
   if ( !is.character(elements) ) {
     return(list())
@@ -1038,26 +993,9 @@ ve.select.none <- function() {
   invisible(self)
 }
 
-# Build data.frames based on selected groups, tables and dataset names
-# Just turns inside out: find the results attached to this selection, then extract those
-#   using the VEResultsList extract function
-# TODO: also dispatch "export" back to VEResultsList$export
-# Export is a different function since it will first figure out destination table
-#   then visit each VEResult, extract just its selected rows, and write those out.
-#   Aim there is to prevent having to load the entire (possibly humongous) set of results
-#   into memory prior to exporting: lets us do it in manageable bites.
-ve.select.extract <- function(
-  saveResults=FALSE,
-  saveTo=visioneval::getRunParameter("OutputDir",Param_ls=private$RunParam_ls),
-  prefix="",
-  convertUnits=TRUE,
-  data=NULL
-) {
-  # Delegates to the result object, setting its selection in the process
-  invisible( self$results$extract(saveResults=saveResults,saveTo=saveTo,prefix=prefix,select=self,convertUnits=convertUnits,data=data) )
-}
-
 #' Conversion method to turn a VESelection into a vector of selection indices
+#'
+#' Mostly used internally.
 #'
 #' @param x a VESelection object (or something that can be coerced to one)
 #' @param ... Additional arguments to support generic signature
@@ -1066,7 +1004,7 @@ ve.select.extract <- function(
 as.integer.VESelection <- function(x,...) x$selection
 
 # The VESelection R6 class
-# This interoperates with VEResultsList to keep track of what to print
+# This interoperates with VEResultsList to keep track of what subsets of results data
 
 #' @export
 VESelection <- R6::R6Class(
@@ -1074,26 +1012,24 @@ VESelection <- R6::R6Class(
   public = list(
     # public data
     selection = integer(0),
-    results = NULL,
+    results = NULL,  # a VEResultsList object
 
     # methods
-    initialize=ve.select.initialize,
-    copy=ve.select.copy,          # Create a new selection object with the same results and indices
-    print=ve.select.print,        # Print list of fields or (details=TRUE) the subset of results$modelIndex
-    show=ve.select.show,          # retrieve the selected subset of results$modelIndex (data.frame)
-    valid=ve.select.valid,        # is the selection valid against results$modelIndex
-    extract=ve.select.extract,    # extract the selection from associated results
-    export=ve.select.extract,     # export the extracted selection (eventually split out "saving a table" from "getting a table")
-    find=ve.select.find,          # general search facility for selecting group/table/name
-    parse=ve.select.parse,        # interpret different ways of specifying a selection (number, field descriptor)
-    select=ve.select.select,      # assign - set self to other selection value
-    add=ve.select.add,            # "union" - indices are included from either selection
-    addkeys=ve.select.addkeys,    # add keys (e.g. HhID, BZone) for already SELECTED Tables (uses "or")
-    remove=ve.select.remove,      # "setdiff" - keep indices that are not in the other selection
-    and=ve.select.and,            # "intersection" - keep indices in both selections
-    or=ve.select.add,             # alias for "add" (just expressed as a logical operation)
-    all=ve.select.all,            # select all indices (resets the selection)
-    none=ve.select.none,          # select no indices (empty selection) - usually as the basis for adding in certain ones
+    initialize=ve.select.initialize, # Initial selection for a results list
+    copy=ve.select.copy,             # Create a new selection object with the same results and indices
+    print=ve.select.print,           # Print list of fields or (details=TRUE) the subset of results$modelIndex
+    show=ve.select.show,             # retrieve the selected subset of results$modelIndex (data.frame)
+    valid=ve.select.valid,           # is the selection valid against results$modelIndex
+    find=ve.select.find,             # general search facility for selecting group/table/name
+    parse=ve.select.parse,           # interpret different ways of specifying a selection (number, field descriptor)
+    select=ve.select.select,         # assign - set self to other selection value
+    add=ve.select.add,               # "union" - indices are included from either selection
+    addkeys=ve.select.addkeys,       # add keys (e.g. HhID, BZone) for already SELECTED Tables (uses "or")
+    remove=ve.select.remove,         # "setdiff" - keep indices that are not in the other selection
+    and=ve.select.and,               # "intersection" - keep indices in both selections
+    or=ve.select.add,                # alias for "add" (just expressed as a logical operation)
+    all=ve.select.all,               # select all indices (resets the selection)
+    none=ve.select.none,             # select no indices (empty selection) - usually as the basis for adding in certain ones
 
     # Field lists (read-only)
     groups=ve.select.groups,

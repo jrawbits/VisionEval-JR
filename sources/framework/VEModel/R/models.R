@@ -2562,15 +2562,18 @@ ve.model.findstages <- function(stage=character(0),Reportable=TRUE) {
 #                                Model Results                                 #
 ################################################################################
 
-# create a VEResults object or list of VEResults objects (possibly invalid/empty) from the model's
-# Reportable stages. Provide a vector of stage names or indices to filter the list.
+# create a VEResultsList object (possibly invalid/empty) from the model's Reportable stages. If
+# stages are named explicitly, the results for the named stages will be included even if they are
+# "StartFrom" stages or are otherwise not reportable.
+# This function will return even if the model has not been run, or has incomplete stages: the
+# stages with missing results will show up as "Not Run Yet" and will be ignored for export, etc.
 ve.model.results <- function(stage=character(0)) {
 
   if ( ! private$p.valid ) {
     writeLog(paste0("Invalid model: ",self$printStatus()),Level="error")
     return( NULL )
   }
-  stages <- self$findstages(stage)
+  stages <- self$findstages(stage) # empty vector (default) gets all Reportable stages
   if ( length(stages)==0 ) {
     writeLog(paste("Available stages:",names(self$modelStages),collapse=", "),Level="error")
     stop(
