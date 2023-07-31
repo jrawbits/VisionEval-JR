@@ -566,7 +566,7 @@ test_02_model <- function(modelName="VERSPM-Test", oldstyle=FALSE, log="info", b
   # br$extract() just returns a list of data.frames...
 
   cat("Directory:\n")
-  print(bare$dir(output=TRUE,all.files=TRUE))
+  print(bare$dir(outputs=TRUE,all.files=TRUE))
 
   testStep("clear the bare model extracts")
   cat("Interactive clearing of outputs (not results):\n")
@@ -709,7 +709,7 @@ test_02_multicore <- function(model=NULL, log="info", workers=3) {
   return(invisible(coreModel))
 }
 
-# results parameter if provided should be a VEResults object
+# existingResults parameter if provided should be a VEResultsList object
 test_03_results <- function (existingResults=FALSE,log="info") {
 
   testStep("Manipulate Model Results in Detail")
@@ -720,7 +720,7 @@ test_03_results <- function (existingResults=FALSE,log="info") {
   # An individual stage can also be called out explicitly (and in that case, it does not
   #   need to be Reportable).
 
-  rs <- if ( ! existingResults ) {
+  rs <- if ( missing(existingResults) || ! existingResults ) {
     logLevel("warn")
     mod <- test_01_run("VERSPM-pop","VERSPM",var="pop",log="warn") # use staged model to exercise DatastorePath
     # Testing model copy
@@ -737,7 +737,7 @@ test_03_results <- function (existingResults=FALSE,log="info") {
     print(rs)
     cat("Selection after clearing...\n")
     sl <- rs$select()
-    print(sl)
+    print(sl)             # TODO: What is the expected behavior?
     rm(cp) # Should be no results
 
     testStep("Pull out results and selection from VERSPM-pop test model...")
@@ -757,6 +757,12 @@ test_03_results <- function (existingResults=FALSE,log="info") {
   print(head(capture.output(print(sl)),n=12))
 
   # Do some basic field extraction - list fields
+  cat("Scenarios\n")
+  print(sl$scenarios())  # Lists only reportable stages, implemented as sl$stages(Reportable=TRUE)
+  cat("Scenarios (identified as 'stages')\n")
+  print(sl$stages())     # List all of them, even if not reportable
+  cat("Scenarios (using 'stages' function)\n")
+  print(sl$stages(Reportable=TRUE)))
   cat("Groups\n")
   print(sl$groups())
   cat("Tables\n")
@@ -766,7 +772,8 @@ test_03_results <- function (existingResults=FALSE,log="info") {
   print(fld[sample(length(fld),20)])
   
   # Select some subsets by group, table or field name and extract those...
-  # Can we easily identify group names, table names, field names and zero in on selecting them?
+  # These will show all scenarios, which in the population model is only one
+  # See one of the multi-scenario tests for what happens with scenarios and selections
   testStep("Select some Groups")
   cat("Only the years...\n")
   sl$select( sl$find(Group="Years") )
@@ -855,6 +862,7 @@ test_03_results <- function (existingResults=FALSE,log="info") {
   return(rs) 
 }
 
+# Test selection manipulation (for single-scenario model)
 test_03_select <- function( log="info" ) {
 
   logLevel(log)
@@ -1001,7 +1009,7 @@ test_05_query_extract <- function(log="info") {
 test_05_build_query <- function(log="info",break.query=TRUE,reset=FALSE) {
   # Process the standard query list for the test model
   # If multiple==TRUE, copy the test model and its results a few times, then submit the
-  # list of all the columnopies to VEQuery. Each column of results will be the same (see
+  # list of all the column copies to VEQuery. Each column of results will be the same (see
   # test_06_scenarios for a run that will generate different results in each column).
   # if break.query, do some deliberately bad stuff to see the error messages
 
@@ -1354,6 +1362,7 @@ test_05_queryfilter <- function(runModel=FALSE,log="info") {
 
 # Torture test the query mechanism
 # Give it a non-existent query via queryName, for example...
+# TODO: need many more broken things to test...
 test_06_fullquery <- function(Force=TRUE,runModel=FALSE,queryName="Full-Query",log="info") {
   logLevel("warn")
   testStep("Test Full-Query.VEqry")
@@ -1738,7 +1747,8 @@ test_06_scenarios <- function(
 
   scenarioVariant <- if (useStages) "scenarios-ms" else "scenarios-cat"
   scenarioModelName <- paste0("VERSPM-",scenarioVariant)
-  testStep(paste("Selecting, installing, and running scenarios as",if(useStages)"Model Stages"else"Scenario Combinations"))
+  running <- if ( run) ", installing, and running" else " and installing"
+  testStep(paste(paste0("Selecting",running," scenarios as",if(useStages)"Model Stages"else"Scenario Combinations"))
 
   existingModel <- dir.exists(modelPath <- file.path("models",scenarioModelName))
   if ( run ) {
@@ -1775,6 +1785,73 @@ test_06_scenarios <- function(
     mod <- test_00_install("VERSPM",variant=scenarioVariant,installAs=scenarioModelName,log=log,confirm=FALSE)
     return(mod)
   }
+}
+
+test_06_scenario_results <- function(
+  install=FALSE,
+  extract = TRUE
+  multicore=TRUE, # or set to number of workers (default is 3)
+  log="info"
+) {
+  logLevel(log)
+
+  mod <- test_01_run("VERSPM-scenarios-ms",baseModel="VERSPM",variant="scenarios-ms",reset=install,log=log,confirm=FALSE,multicore=multicore)
+  testStep("Examine Model Results")
+  rs <- mod$results()
+  print(class(rs))
+
+  testStep("Printing scenario model")
+  print(mod)
+  testSTep("Printing scenario model results")
+  print(rs)
+
+  if ( extract ) {
+    testStep("Extracting model Results")
+    rs.extract <- rs$extract()
+    print(class(rs.extract))
+    print(names(rs.extract))
+
+    testStep("Exporting model Results (show directory)")
+    rs$export()
+    mod$dir(outputs=TRUE)
+  }
+
+  # TODO: do some model selections (individual scenarios, etc.)
+  # TODO: exercise differt table consolidations
+
+  invisible(list(Model=mod,Reslts=rs))
+}
+
+test_06_scenario_selection <- function(
+  install=FALSE,
+  extract = TRUE
+  multicore=TRUE, # or set to number of workers (default is 3)
+  log="info"
+) {
+  logLevel(log)
+  testStep("Set up scenario model")
+  pre.run <- test_06_scenario_results(install=install,extract=FALSE,multicore=multicore,log="warn")
+  mod <- pre.run$Model
+  rs  <- pre.run$Results)
+
+  testStep("List available scenarios")
+  testStep("Select one scenario")
+  testStep("Extract all tables for that scenario")
+  testStep("Select only Households table in that scenario")
+  testStep("Export to CSV")
+
+  testStep("Test idiom of subsetting results after generation")
+  rs.subset <- VEResultsList$new(rs$results()["stage-pop-future"])
+  rs.subset$export() # TODO: separate tables per scenario (to code the name)
+  
+  testStep("Revert Selection to all Scenarios")
+  # TODO: testStep("Export to Parquet in CSV with tables split by Scenario and Year")
+  testStep("Export to SQLite (single tables for all scenarios and years)")
+  testStep("Export to SQLite (one set of tables for each scenario, only global for base year)")
+  testStep("Export to SQLite (one set of table for each year - all scenarios in each year table, include Global)")
+
+  testStep("Return model and results")
+  return(pre.run)
 }
 
 test_07_extrafields <- function(reset=FALSE,installSQL=TRUE,log="info") {
