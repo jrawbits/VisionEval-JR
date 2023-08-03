@@ -581,6 +581,34 @@ ve.query.getlist <- function() {
 # "Name" is always included to support cbind
 defaultMetadata <- c("Units","Description")
 
+# TODO: In "Wide" format, keep the "By" fields in their own columns: that will be a bit more work if
+# different queries have different combinations of By fields, but the logic is already implemented
+# for Long format, and we'll want it for any extraction that is intended to be analyzed in a
+# database system.
+
+# TODO: Perhaps implement the same "Extractor" logic for queries as for regular data:
+# Generate metric vectors for each Scenario/Year and add those to a list of metric columns
+# that are then later formatted by the Extractor into "Long" and "Wide". That would simplify
+# injecting the By columms, because we could just review all the vectors at the end to figure
+# out how to make them conform for purposes of being in a data.frame (or some other output).
+
+# OutputReceiver:
+#   Connect to "table location" (identify a directory, open a DBI connection)
+#   Create table (given a set of data that will go into it)
+#   Append rows to table - Create/Recreate could just be an option on a single "writeToTable"
+#   function that the Extractor will process
+
+# Ahead of that, we'll assemble a list of unreconciled vectors, accumulate them in a list Review all
+# their column names and make sure all rows are present (with NAs if needed) then just "cbind" them
+# together. That's a lot easier if we don't have to preserve the data.frame structure along the way
+# (just make a list of conforming vectors, then magically wave the wand over it and *poof* it's a
+# data.frame). For long format, we make each row into vectors (and then conform the names at the
+# end), and then just "rbind" instead of "cbind".
+
+# "long" and "wide" will build different vectors and assemble them differently.
+
+# The logic will be to generate columns where each one is a set of metrics
+
 # make a data.frame of all (and only) the valid query results
 ve.query.extract <- function(
   Results=NULL, Measures=NULL, Years=NULL,
