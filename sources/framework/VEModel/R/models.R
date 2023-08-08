@@ -2573,6 +2573,7 @@ ve.model.results <- function(stage=character(0)) {
     writeLog(paste0("Invalid model: ",self$printStatus()),Level="error")
     return( NULL )
   }
+
   stages <- self$findstages(stage) # empty vector (default) gets all Reportable stages
   if ( length(stages)==0 ) {
     writeLog(paste("Available stages:",names(self$modelStages),collapse=", "),Level="error")
@@ -2580,7 +2581,7 @@ ve.model.results <- function(stage=character(0)) {
       writeLog(paste("Model stage(s) not found:",stage,collapse=","),Level="error")
     )
   }
-  return(VEResultsList$new(stages,self$modelPath))
+  return(VEResultsList$new(stages,self))
 }
 
 # open a Query object for the model from its QueryDir (or report a list

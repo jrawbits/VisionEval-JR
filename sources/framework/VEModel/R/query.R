@@ -610,6 +610,7 @@ defaultMetadata <- c("Units","Description")
 # The logic will be to generate columns where each one is a set of metrics
 
 # make a data.frame of all (and only) the valid query results
+# the results is a single data.frame with attributes
 ve.query.extract <- function(
   Results=NULL, Measures=NULL, Years=NULL,
   wantMetadata=TRUE, wantData=TRUE, longScenarios=FALSE, exportOnly=FALSE) {
@@ -992,30 +993,15 @@ ve.query.outputconfig <- function() {
 }
 
 # Put the results of the query into a data.frame or csv (or eventually sql or another tabular receptacle.)
-# Export should be able to filter by Measure name, Year of Data (some scenarios will have more than
-# one year), and specific ModelStage name (for Results).
 # ... are parameters passed to ve.query.extract (Measures, Years, longScenarios, wantMetadata, wantData, exportOnly
-ve.query.export <- function(format="csv",OutputDir=NULL,SaveTo=NULL,Results=NULL,...) {
-  needOutputDir <- missing(OutputDir) || ! is.null(OutputDir)
-  if ( ! is.null(self$Model) ) {
-    OutputPath <- self$Model$modelResults # Absolute path to ResultsDir for model
-    if ( needOutputDir ) OutputDir <- self$Model$setting("OutputDir")
-    QueryExtractFile <- self$Model$setting("QueryExtractTemplate")
-  } else if ( !is.null(Results) ) {
-    firstResult <-Results$results()[[1]] 
-    OutputPath <- firstResult$resultsPath # Results for this scenario
-    Param_ls <- firstResult$ModelState()$RunParam_ls
-    if ( needOutputDir ) OutputDir <- visioneval::getRunParameter("OutputDir",Param_ls=Param_ls)
-    QueryExtractFile <- visioneval::getRunParameter("QueryExtractTemplate",Param_ls=Param_ls)
-  } else {
-    stop( writeLogMessage("No Query Results to export.",Level="error") )
-  }
-  OutputPath <- file.path(OutputPath,OutputDir)
-  if ( ! dir.exists(OutputPath) ) dir.create(OutputPath)
+# TODO: change this to use exporter (export.R) to write a data.frame obtained from "extract". This
+# function will just mediate between the data.frame and an external storage location.
 
-  if ( format != "csv" ) {
-    stop( writeLogMessage("Currently only supporting .csv export",Level="error") )
-  }
+# TODO: can we pass an "extract" data.frame explicitly, rather than forcing it to regenerate here?
+ve.query.export <- function(extract=NULL,exporter="VEExporter.CSV",connection=NULL,partition=NULL,...) {
+  # TODO: retire the following in favor of setting up the exporter
+  # The following should be pushed into the default initializer for VEExporter.CSV
+  # saveTo and OutputDir used to be parameters
 
   if ( missing(Results) || is.null(Results) ) {
     if ( ! is.null(self$Model) ) Results <- self$Model$results()
@@ -1023,31 +1009,55 @@ ve.query.export <- function(format="csv",OutputDir=NULL,SaveTo=NULL,Results=NULL
     stop( writeLogMessage("No results to query",Level="error") )
   }
 
-  # Extract results into data.frame
-  Results_df <- self$extract(Results=Results,...)
+  # Set up the exporter (create it externally and pass as a parameter for non-standard locations
+  if ( missing(exporter) ) {
+    # Configure standard output location for default CSV extraction
+    # TODO: could push this into the CSV Exporter itself, except we need to know
+    #   the current model. So perhaps rather than pass connection and partition (or in addition) we
+    #   can pass the complete settings list from associated Model or Results, then look up the
+    #   Exporter defaults for that type (thus allowing "out of the box" functionality) but also
+    #   permitting global configuration of each connection type.
+    if ( ! is.null(self$Model) ) {
+#       OutputPath <- self$Model$modelResults # Absolute path to ResultsDir for model
+#       if ( needOutputDir ) OutputDir <- self$Model$setting("OutputDir")
+      QueryExtractFile <- self$Model$setting("QueryExtractTemplate")
+    } else if ( !is.null(Results) ) {
+      firstResult <-Results$results()[[1]] 
+      OutputPath <- firstResult$resultsPath # Results for this scenario
+      Param_ls <- firstResult$ModelState()$RunParam_ls
+      if ( needOutputDir ) OutputDir <- visioneval::getRunParameter("OutputDir",Param_ls=Param_ls)
+      QueryExtractFile <- visioneval::getRunParameter("QueryExtractTemplate",Param_ls=Param_ls)
+    } else {
+      stop( writeLogMessage("No Query Results to export.",Level="error") )
+    }
+    OutputPath <- file.path(OutputPath,OutputDir)
+    if ( ! dir.exists(OutputPath) ) dir.create(OutputPath)
+  } else if ( ! inherits(exporter,"VEExporter") ) {
+    exporter <- newExporter(exporter,connection,partition)
+  } else if ( ! missing(partition) && !is.null(partition) ) {
+    exporter$partition(partition)
+  }
+
+  # Extract results into data.frame (pass control parameters to self$extract via ...)
+  # Alternatively, can extract prior to calling export and just pass the resulting data.frame to export
+  if ( missing(extract) || is.null(extract) || !is.data.frame(extract) ) {
+    extract <- self$extract(Results=Results,...)
+  }
 
   # Then write the data.frame
+  # TODO: all the format and output location is managed by the exporter
   # TODO: support other output file formats (different extension, alternate way to format SaveTo)
-  if ( format=="csv" ) {
-    if ( ! is.character(SaveTo) ) {
-      ExtractFile <- QueryExtractFile
-    } else {
-      ExtractFile <- SaveTo
-    }
-    if ( any(grepl("%(queryname|timestamp)%",ExtractFile)) ) {
-      ExtractFile <- stringr::str_replace(ExtractFile,"%queryname%",self$QueryName)
-      ExtractFile <- stringr::str_replace(ExtractFile,"%timestamp%",format(Sys.time(),"%Y_%m_%d-%H_%M"))
-    }
-    if ( ! grepl("\\.csv$",ExtractFile[1]) ) ExtractFile <- paste0(ExtractFile[1],".csv")
-
-    SaveTo <- file.path(OutputPath,ExtractFile)
-    utils::write.csv(Results_df,file=SaveTo,row.names=FALSE)
-  } else {
-    stop(
-      writeLog(paste("Unsupported export format:",format),Level="error")
-    )
+  ExtractFile <- QueryExtractFile
+  if ( any(grepl("%(queryname|timestamp)%",ExtractFile)) ) {
+    ExtractFile <- stringr::str_replace(ExtractFile,"%queryname%",self$QueryName)
+    ExtractFile <- stringr::str_replace(ExtractFile,"%timestamp%",format(Sys.time(),"%Y_%m_%d-%H_%M"))
   }
-  return(invisible(Results_df))
+  # TODO: the following should be part of the CSV exporter (force file extension)
+  # if ( ! grepl("\\.csv$",ExtractFile[1]) ) ExtractFile <- paste0(ExtractFile[1],".csv")
+
+  exporter$write(extract,Table=ExtractFile)
+
+  return(invisible(exporter))
 }
 
 # Helper function to locate OutputDir given Results (VEModel or VEResults) for exporting query

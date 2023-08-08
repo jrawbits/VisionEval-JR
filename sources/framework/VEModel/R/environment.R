@@ -160,6 +160,8 @@ loadRuntimeConfig <- function() {
 
 #GET RUNTIME SETUP
 #=================
+
+# TODO: Add VEResults as a supported object type (and return the RunParam_ls from its model state.
 #' Return runtime base RunParam_ls (loading it if not present)
 #'
 #' \code{getSetup} gets a subset of the current runParameters by name. It does NOT
@@ -168,7 +170,7 @@ loadRuntimeConfig <- function() {
 #' @param paramNames is a character vector of parameter names identifying a subset of runParameters
 #'   to retrieve. If not provided, return all defined parameters (but not any that are defaulted).
 #' @param object identifies which parameter set to get. NULL (default) returns runtime parameters.
-#'   Otherwise object should be a VEModel or a VEModelStage.
+#'   Otherwise object should be a VEModel, a VEModelStage, or a VEResults object
 #' @param fromFile a logical value; if TRUE, return base configuration file (loadedParam_ls),
 #'   otherwise parameters as configured into model's RunParam_ls.
 #' @param reload a logical; if TRUE and retrieving ve.runtime configuration, re-read configuration
@@ -178,6 +180,8 @@ loadRuntimeConfig <- function() {
 getSetup <- function(object=NULL,paramNames=NULL,fromFile=TRUE,reload=FALSE) {
   if ( is.list(object) ) { # assume its a Param_ls list
     RunParam_ls <- object
+  } else if ( inherits(object,"VEResults") ) {
+    RunParam_ls <- VEResults$RunParam_ls
   } else if ( is.null(object) ) {
     if ( reload ) ve.env$RunParam_ls <- ve.env$loadedParam_ls <- loadRuntimeConfig()
     object <- ve.env

@@ -38,9 +38,9 @@ self=private=NULL # To avoid global variable warnings
 ##############################
 
 # Initialize a VEResultsList from a list of model stages
-ve.resultslist.init <- function(stages,modelPath) {
+ve.resultslist.init <- function(stages,model) {
 
-  self$modelPath <- modelPath
+  self$Model <- model
 
   # Build results
   self$Results <- lapply(
@@ -49,7 +49,7 @@ ve.resultslist.init <- function(stages,modelPath) {
   )
   names(self$Results) <- names(stages)
   # Build results index (S/G/T/N plus other metadata) for use in selecting
-  self$resultsIndex <- do.call("rbind", lapply(self$Results,function(r) r$list)
+  self$resultsIndex <- do.call("rbind", lapply( self$Results,function(r) r$list() )
 
   valid <- sapply( self$Results, function(r) r$valid() )
 
@@ -63,43 +63,91 @@ ve.resultslist.init <- function(stages,modelPath) {
   }
 }
 
-ve.resultslist.extract <-  function(stage=character(0),...) {
-  # Create output tables, append results to them so a single set of tables
-  #   can accumulate results from all reportable stages.
-  if ( length(stage)==0 ) stage<-names(self$Results)
-  extracted <- list()
-  for ( stg in stage ) {
-    extracted[[stg]] <- self$Results[[stg]]$extract(...) # Change mechanism to have the list manage output data.frames and tables
-  }
-  return(invisible(extracted))
+# export results using the data.frame exporter by default
+ve.resultslist.extract <-  function(exporter="VEExporter.Dataframe",...) {
+  return(invisible(self$export(exporter=exporter,...)$data())
 }
 
-ve.resultslist.export <- function() {
-  # TODO: add parameters
-  #   -- Separate tables by Scenario, Group/Year or Both
-  #   -- ConvertUnits (add DisplayUnits for certain field names or types; VE configuration)
-  #   -- Generate a Metadata table at the end
-  #   -- "Connection" to write the tables to (Format, Directory/Database)
-  # Visit each set of Results and do VEResults$extract, then do the writing.
-  #   -- Create table the first time it is encountered
-  #   -- Table may partition Scenario or Group/Year (subset of extracted data)
-  #   -- If table already exists, just append additional rows to it
-  # Copy over the generate S/G/T/N into the "generated metadata" table
-  # extract may generate a new table, so we look up the table name in known tables and if
-  # there is an unknown table, generated metadata will have some of the fields moved from
-  # their original table into that new one. We'll write the metadata accordingly.
-  # There will always be at least on table per "Table/T" element - but we may subset that
-  # into "table per year (all scenarios)" or "table per scenario (all years)" or "table per
-  # scenario-year (one for each combination of scenario and year)"
+# Export results from each set in the results list to an exporter
+# If selection is not defined, use the selection embedded in the results list (default=everything)
+# exporter=NULL uses the system default exporter (if undefined in visioneval.cnf, use "csv")
+# Otherwise it can be a character string (default="csv") or a pre-constructed VEExporter
+# Connection (string) and Partition parameters are passed to exporter factory (see export.R for
+# docs).
+# wantMetadata TRUE will generate a top-level tabel from the selection parameter list
+# convertUnits TRUE will use an available display_units.csv conversion table (FALSE use raw Datastore units)
+ve.resultslist.export <- function(
+  selection=NULL,     # what we get from selecting a subset using VEResultsList$select() and VESelection operations
+  exporter="VEExporter.CSV",connection=NULL,partition=NULL, # see export.R for docs on exporter, connection, partition
+  wantMetadata=TRUE,
+  convertUnits=TRUE
+) {
+
+  # Set up the exporter (defaults to CSV - use $extrct to default to list of data.frames)
+  if ( ! inherits(exporter,"VEExporter") ) {
+    exporter <- newExporter(exporter,connection,partition)
+  } else if ( ! missing(partition) && !is.null(partition) ) {
+    exporter$partition(partition)
+  }
+
+  # Apply a selection if provided, otherwise use entire list of outputs
+  # Reduces the modelIndex to a subset then figures out S/G/T/N from whatever is left
+  selection <- if ( ! is.null(selection) ) {
+    self$select(selection)$list()
+  } else self$list() # different from self$select, self$list does not deep-copy the selection
+
+  # TODO: decide whether a selection is a set of selected indexes or the results of applying that
+  # to the index table. If the latter, do the index table reduction here; lines below presume
+  # we have the actual table.
+
+  # partition the selection into stages/scenarios and iterate across just those results
+  selected.stages <- unique(selection$Scenario) # names of scenario
+
+  for ( stage in selected.stages ) {
+    result.selection <- selection[selection$Scenario==stage,c("Group","Table","Name","Units")]
+    # Just the elements selected for this stage
+    data <- result$extract(selection=result.selection,convertUnits=convertUnits) # Generates a list of data.frames
+    # data is a named list of Group, each being a named list of Tables
+    for ( group in names(data) ) {
+      for ( table in names(data[[group]]) ) {
+        # Get the table name this way since result$extract may spawn new tables (VERPAT hack)
+        # group[[table]] is a data.frame
+        exporter$writeTable( data[[group]][[table]], Scenario=stage, Group=group, Table=table ) # exporter will partition...
+        # NOTE: exporter will create, write or re-write tables (re-write happens if the data we're
+        # writing includes fields that were not in the table as originally written). Rewrite is
+        # unlikely to occur unless we're merging different stage and groups into a single table
+        # and the stages have significantly different ModelScripts.
+      }
+    }
+  }
+      
+  if ( wantMetadata ) {
+    # TODO: Use self$Model to access model parameters (via VEModel::getSetup)
+    # TODO: pick a metadata name - ideally it's a configuration parameter
+    # TODO: develop an "Exporter" block for visioneval.cnf that will be part of the model's
+    #       RunParam_ls (with suitable defaults). That means if the ResultsList is associated with a
+    #       model, we should have the model around so we can ask about its settings.
+    #       The Exporter block can set up default connection information...     
+   
+    # write the selection table to the exporter connection
+    metadataName <- "Metadata"
+    exporter$writeTable( selection, Table=metadataName ) # Unspecified Scenario/Group: place in connection "root"
+  }
+
+  # Printing the returned exporter will show the list of tables created and connection summary
+  # doing exporter$data will enable pulling out a list of tables into data.frames
+  return(invisible(exporter))
 }
 
 # Produce a bare named list of VEResults objects
+# Probably don't ever need this except for the idiom below for getting a subset of results from
+# this list. But scenarios can also be selected using the standard selection facility.
 ve.resultslist.results <- function(stages=NULL) {
   if ( missing(stages) ) {
     return(self$Results)
   } else {
     return(self$Results[stages])
-w  }
+  }
 }
 
 # IDIOM to grab a subset of stages (if not done using model$results):
@@ -172,7 +220,7 @@ ve.resultslist.select <- function(selection) {
   if ( return.self ) {
     self$selection <- VESelection$new(self,self$list())
   } else {
-    if ( ! inherits("VESelection", selection) || self$modelPath != selection$modelPath ) {
+    if ( ! inherits("VESelection", selection) || self$Model$modelPath != selection$modelPath ) {
       # see if we can make a selection (stop inside $new if selection can't be interpreted)
       selection <- VESelection$new(self,selection)
     } else self$selection <- selection
@@ -195,6 +243,7 @@ VEResultsList <- R6::R6Class(
   "VEResultsList",
   public = list(
     # public data
+    Model        = NULL,
     Results      = NULL,
     modelPath    = NULL,
     selection    = NULL,
@@ -232,38 +281,35 @@ ve.results.init <- function(ResultsPath,ResultsName=NULL,ModelStage=NULL) {
   #  and a Datastore in that folder.
   self$resultsPath <- ResultsPath
   self$Name <- if ( !is.character(ResultsName) ) basename(ResultsPath) else ResultsName
-  self$index()
-  private$RunParam_ls <- self$ModelState()$RunParam_ls
+  self$index() # Will find model state
+  self$RunParam_ls <- self$ModelState()$RunParam_ls
   self$modelStage <- ModelStage # may be NULL; only used to get stage elements for category scenarios via the R visualizer
   return(self$valid())
 }
 
-# Original implementation of extracting tables from a single VEResults
-# We won't select or export here: selections and exporting are managed in VEResultsList
-# Also, we won't generate metadata here - just the actual data (VEResultsList will create
-# metadata form the index of combined set of stage results)
-# This function simply gets data from the Datastore for the corresponding stage and converts
-# units if requested.
+# Get tables of data from the Datastore for a specific stage/scenario
+# Return a list of groups containing data.frames for each table/name set within the group
 ve.results.extract <- function(
-  convertUnits=TRUE      # will convert if display units are present; FALSE not to attempt any conversion
+  selection,             # data.frame of Group/Table/Name/Units elements for this stage
+  convertUnits=TRUE      # will convert if display units are present; FALSE not to attempt any conversion (use Units from selection)
 ) {
   if ( ! self$valid() ) {
-    bad.results <- if ( ! is.null(self$modelStage) self$modelStage$Name else self$resultsPath )
+    bad.results <- if ( ! is.null(self$modelStage) ) self$modelStage$Name else self$resultsPath )
     stop("Model Stage contains no results: ",bad.results)
   }
+  scenarioName <- if ( is.null(self$modelStage) basename(self$resultsPath) else self$modelStage$Name )
 
-  metadata <- self$modelIndex
-    metadata <- addDisplayUnits(self$modelIndex,Param_ls=private$RunParam_ls)
+  if ( convertUnits) {
+    selection <- addDisplayUnits(selection,Param_ls=self$RunParam_ls)
   } else {
-    metadata$DisplayUnits <- metadata$Units
+    selection$DisplayUnits <- selection$Units
   }
-  extract <- metadata[ , c("Scenario","Name","Table","Group","Units", "DisplayUnits") ]
+  extract <- selection[ , c("Scenario","Name","Table","Group","Units", "DisplayUnits") ]
 
   extractTables <- unique(extract[,c("Group","Table")])
   extractGroups <- unique(extractTables$Group)
 
   QueryPrep_ls <- self$queryprep()
-  outputList <- list()
   results <- list()
 
   for ( group in extractGroups ) {
@@ -274,7 +320,7 @@ ve.results.extract <- function(
     for ( table in tables ) {
       meta <- extract[ extract$Group==group & extract$Table==table, ]
       fields <- meta[ , c("Name","DisplayUnits") ]
-      dispUnits <- fields$DisplayUnits
+      dispUnits <- fields$DisplayUnits # Will just be fields$Units if not converting
       names(dispUnits) <- fields$Name
       Tables_ls[[table]] <- dispUnits
     }
@@ -309,54 +355,50 @@ ve.results.extract <- function(
     # Handle tables with different lengths of data elements ("multi-tables")
     # readDatastoreTables will have returned a ragged list rather than a data.frame
 
-    # TODO: When exporting (and exporting table metadata), we need to know this information.
-    # But we can't get it without reading the results datastore, so it's not available
-    # during indexing (the fields look like they're in that main table). So during export
-    # we need add to (or rewrite) the metadata table with updated table names.
-
-    # TODO: That suggests that VEResultsList should use its original index metadata to find the
-    # data to retrieve, but we want to wait to export the metadata table until the end of
-    # the export process. So we should take the metadata at the back end of this process
-    # as the "true" metadata that gets written out, filtered by whatever selection is applied
-    # at the top level - ultimately it means we think we're asking for a single table, but
-    # really we may get more than one (with some fields reclassified into additional tables).
-
     if ( ! all(is.df <- sapply(Data_ls$Data,is.data.frame)) ) {
       # Unpack "multi-tables"
-      MultiTables <- Data_ls$Data[which(! is.df)]
-      for ( multi in names(MultiTables) ) {
-        # multi is a list of datasets not made into a data.frame by readDatastoreTables
-        multi.data <- MultiTables[[multi]]
-        lens <- sapply(multi.data,length) # vector of lengths of datastores
-        multi.len <- unique(lens)
-        for ( dfnum in 1:length(multi.len) ) { # work through unique dataset lengths
-          dfname <- multi
-          if ( dfnum > 1 ) dfname <- paste(multi,dfnum,sep="_")
-          fordf <- which(lens==multi.len[dfnum])
-          try.df <- try( data.frame(multi.data[fordf]) )
-          if ( ! is.data.frame(try.df) ) {
-            msg <- paste("Could not make data.frame from Datastore Table",multi)
-            stop( writeLog( msg, Level="error" ) )
+      MultiTables <- Data_ls$Data[which(! is.df)] # usually, there's just one of these...
+      if ( length(MultiTables) > 0 ) {
+        for ( multi in names(MultiTables) ) {
+          # multi is a list of datasets not made into a data.frame by readDatastoreTables
+          multi.data <- MultiTables[[multi]]
+          lens <- sapply(multi.data,length) # vector of lengths of datastores
+          multi.len <- unique(lens)
+          for ( dfnum in 1:length(multi.len) ) { # work through unique dataset lengths
+            dfname <- paste(multi,multi.len[dfnum],sep="_") # Encode the length onto the table name
+            fordf <- which(lens==multi.len[dfnum])
+            try.df <- try( data.frame(multi.data[fordf]) )
+            if ( ! is.data.frame(try.df) ) {
+              msg <- paste("Could not make data.frame from Datastore Table",multi)
+              stop( writeLog( msg, Level="error" ) )
+            }
+            Data_ls$Data[[dfname]] <- try.df
           }
-          Data_ls$Data[[dfname]] <- try.df
         }
+        # Remove original tables (they will now have names like "Vehicles.13747" and "Vehicles.15444")
+        # That way we can later merge equivalent tables across multiple scenarios depending on the
+        # conosolidation strategy in VEResultsList$export.Okay
+        Data_ls$Data <- Data_ls$Data[-which(names(Data_ls$Data) %in% names(MultiTables))]
       }
     }
+    # Now visit each of the resulting data.frames and prepend the Scenario column
+    # TODO: Or do we want to elevate this to VEResultsList$export?
+    Data_ls$Data <- lapply(Data_ls$Data,function(df) cbind(Scenario=scenarioName,df))
+    # TODO: stop around here and look at the columns of Data_ls$Data
 
     # Process the table data.frames into results
-    dataNames <- names(Data_ls$Data)
-    newTableNames <- paste(group,dataNames,sep=".")
-    results[ newTableNames ] <- names(Data_ls$Data)
+    results[[ group ]] <- Data_ls$Data
   }
-  invisible(results)
+  invisible(results) # results will be a named list of groups from the stage results, with each group list
+                     # contains the tables extracted for that group.
 }
 
 # Check results validity (all files present)
 ve.results.valid <- function() {
-  valid <- ! is.null(private$RunParam_ls) &&
+  valid <- ! is.null(self$RunParam_ls) &&
            dir.exists(self$resultsPath) &&
            !is.null(self$modelIndex) && length(self$modelIndex)>0
-  modelStatePath <- file.path(self$resultsPath,visioneval::getRunParameter("ModelStateFile",Param_ls=private$RunParam_ls))
+  modelStatePath <- file.path(self$resultsPath,visioneval::getRunParameter("ModelStateFile",Param_ls=self$RunParam_ls))
   valid <- valid && all(file.exists(modelStatePath))
   return(valid)
 }
@@ -439,8 +481,8 @@ ve.results.index <- function() {
     return(list())
   }
   self$ModelState(ms) # save ModelState
-  if ( is.null(private$RunParam_ls) && is.list( ms ) ) {
-    private$RunParam_ls <- ms$RunParam_ls
+  if ( is.null(self$RunParam_ls) && is.list( ms ) ) {
+    self$RunParam_ls <- ms$RunParam_ls
   }
 
   msList <- rev(visioneval::getModelStatePaths(dropFirst=FALSE,envir=private$modelStateEnv))
@@ -470,7 +512,7 @@ ve.results.index <- function() {
   InputDir[ is.na(InputDir) ] <- ""
   File <- sapply(ds$attributes, attributeGet, "FILE",simplify=TRUE) # should yield a character vector
   File[ is.na(File) ] <- ""
-  scenario <- rep(visioneval::getRunParameter("Scenario",Default="Unknown Scenario",Param_ls=private$RunParam_ls),length(Description))
+  scenario <- rep(visioneval::getRunParameter("Scenario",Default="Unknown Scenario",Param_ls=self$RunParam_ls),length(Description))
 
   splitGroupTableName <- strsplit(ds$groupname, "/")
   if ( length(Description) != length(splitGroupTableName) ) stop("Inconsistent table<->description correspondence")
@@ -507,13 +549,13 @@ ve.results.index <- function() {
   # Reduces the raw Datastore index to just the Fields ("Name"s) in the Datastore
   ccases <- stats::complete.cases(Index[,c("Group","Table","Name")])
   Index <- Index[ccases,]
-  row.names(Index) <- 1:nrow(Index) # Row names used for selection by index; may not need with new scheme
   self$modelIndex <- Index
   invisible(self$modelIndex)
 }
 
 # Helper function to attach DisplayUnits to a list of Group/Table/Name rows in a data.frame
 # Need to do this in VEResults since we need access to the model state...
+# TODO: Move this to VEResultsList (using Param_ls from Model or first VEResults)
 addDisplayUnits <- function(GTN_df,Param_ls) {
   # GTN_df is a data.frame with "Group","Table","Name" rows for each Name/field for which display
   #  units are sought. Always re-open the DisplayUnits file, as it may have changed since the last
@@ -616,7 +658,7 @@ ve.results.units <- function(selected=TRUE,display=NULL) {
   returnFields <- c("Group","Table","Name","Units","Source")
   if ( ! is.logical(display) || display ) {
     # Add Display Units if requested
-    Units_df <- addDisplayUnits(Units_df,Param_ls=private$RunParam_ls)
+    Units_df <- addDisplayUnits(Units_df,Param_ls=self$RunParam_ls)
     displayUnits <- !is.na(Units_df$DisplayUnits) # find elements where DisplayUnits are available
     Units_df$Source[ displayUnits ] <- basename(Units_df$DisplayUnitsFile[ displayUnits ])
     if ( is.null(display) ) {
@@ -1076,7 +1118,8 @@ VESelection <- R6::R6Class(
 #' @description
 #' `openResults` opens a directory containing VisionEval model run results and
 #'    returns a VEObject instance that can be used to extract the results or
-#'    to perform queries.
+#'    to perform queries. Limited probing occurs to attempt to identify the model
+#'    that might contain these results.
 #'
 #' @details
 #' See `vignette(package='VEModel')` for available help and reference materials.
@@ -1093,9 +1136,21 @@ VESelection <- R6::R6Class(
 #' @param path A relative or absolute path to a directory (default is the working directory)
 #'   in which VisionEval results can be found for a single model run, stage or scenario
 #'   combination.
-#' @return A VEResults object giving access to the VisionEval results in `path`
+#' @return A VEResultsList object giving access to the VisionEval results in (or below) `path`
 #' @export
 openResults <- function(path=NULL) {
   if ( ! dir.exists(path) ) path <- getwd()
-  return(VEResults$new(path))
+
+  # Start by seeing if path is model or a child or grandchild of a model.
+  # 
+  # If not valid, look for parent directory and try to open a model there and get its results list
+  # If no VEModel "overhead", see if there are sub-directories and open each of those as a separate
+  #   VEResults object in the VEResultsList
+
+  # TODO: If we start in a subfolder of a model, generate a results list attached to that model, but
+  #   only including the subdirectory stage. If we start in a 'results' directory (no ModelState,
+  #   but with subdirectories containing Datastores, open the model from the first subdirectory and
+  #   if the model is in the path, attach it to the Results list (which will contain all the
+  #   subdirectoreis).
+  return(VEResultsList$new(...))
 }
