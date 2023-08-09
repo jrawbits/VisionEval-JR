@@ -2581,7 +2581,7 @@ ve.model.results <- function(stage=character(0)) {
       writeLog(paste("Model stage(s) not found:",stage,collapse=","),Level="error")
     )
   }
-  return(VEResultsList$new(stages,self))
+  return(VEResultsList$new(stages=stages,model=self))
 }
 
 # open a Query object for the model from its QueryDir (or report a list

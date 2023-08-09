@@ -37,55 +37,105 @@ self=private=NULL # To avoid global variable warnings
 #
 ##############################
 
-# Initialize a VEResultsList from a list of model stages
-ve.resultslist.init <- function(stages,model) {
+# Initialize a VEResultsList from a model or list of model stages
+ve.resultslist.init <- function(stages=NULL,model=NULL,) {
 
-  self$Model <- model
+  # Set up the model, if provided explicitly
+  if ( ! missing(model) && ! is.null(model) && inherits(model,"VEModel") ) self$Model <- model
 
-  # Build results
-  self$Results <- lapply(
-    stages,
-    function(stg) VEResults$new(stg$RunPath,ResultsName=stg$Name,ModelStage=stg)
-  )
-  names(self$Results) <- names(stages)
-  # Build results index (S/G/T/N plus other metadata) for use in selecting
-  self$resultsIndex <- do.call("rbind", lapply( self$Results,function(r) r$list() )
+  # Find model stages from which to get results
+  if ( missing(stages) || ! all(inherits(stages,"VEModelStage")) ) {
+    if ( ! is.null(self$Model) ) stages <- self$Model$stages() else stages <- NULL
+  } else {
+    # have stages; check model consistency and set self$Model
+    modelNames <- unique(sapply(stages,function(s), s$Model$modelName))
+    if ( length(modelNames)==1 ) {
+      if ( is.null(self$Model) ) {
+        self$Model <- stages[[1]]$Model
+      } else if ( self$Model$modelName != stages[[1]]$Model$modelName ) {
+        writeLog(Level="error",paste("Model stages do not come from model:",self$Model$modelName))
+        writeLog(Level="error",modelNames)
+        stages <- NULL
+        self$Model <- NULL
+      }
+    } else {
+      writeLog(Level="error","Model stage results must all come from the same model:")
+      writeLog(Level="error",paste(modelNames,collapse=", "))
+      stages <- NULL
+      self$Model <- NULL # fall through to "invalid"
+    }
+  }
 
-  valid <- sapply( self$Results, function(r) r$valid() )
+  # If we have stages, get the results for them
+  if ( ! is.null(stages) ) {
+    self$Results <- lapply(
+      stages,
+      function(stg) VEResults$new(stg$RunPath,ResultsName=stg$Name,ModelStage=stg)
+    )
+    names(self$Results) <- names(stages)
+  } else self$Results <- NULL
+  
+  if ( ! is.null(self$Model) && ! is.null(self$Results) ) { # found something
+    # Build results index (S/G/T/N plus other metadata) for use in selecting
+    self$resultsIndex <- do.call("rbind", lapply( self$Results,function(r) r$list() ) )
+    valid <- sapply( self$Results, function(r) r$valid() )
+  } else {
+    valid <- FALSE # Didn't find anything...
+  }
 
-  # Validation warning (stages missing results)
+  # Validation error (stages missing results)
   if ( any( ! valid ) ) {
+    if ( ! is.null(self$Results) && length(self$Results)>0 ) {
+      msg <- paste("No results yet for stage(s): ",names(self$Results)[!valid],collapse=", ")
+    } else {
+      msg <- paste0(
+        "Could not create result list for ",
+        "model=",model,
+        "; stages=",stages,
+        "; results=",results
+      )
+    }
     writeLog(
-      paste("No results yet for stage(s): ",names(self$Results)[!valid],collapse=", "),
-      Level="warn"
+      msg,
+      Level="error"
     )
     writeLog("Have you run the model?",Level="warn")
-  }
+    self$valid <- FALSE
+  } else self$valid <- TRUE
+
+  # Finally, pull the RunParam_ls and loadedParam_ls out of the model
+  # Provides interface for environment.R/getSetup
+  self$RunParam_ls <- self$Model$RunParam_ls
+  self$loadedParam_ls <- self$Model$loadedParam_ls
 }
 
 # export results using the data.frame exporter by default
-ve.resultslist.extract <-  function(exporter="VEExporter.Dataframe",...) {
-  return(invisible(self$export(exporter=exporter,...)$data())
-}
+# Connection won't be used here (though we could use it to generate other table types such as data
+# tables / tibbles). Partitioning can be changed from the system/model defaults
+ve.resultslist.extract <-  function(exporter="data.frame",connection=NULL,partition=NULL,wantMetadata=FALSE,convertUnits=TRUE) {
+  return(invisible(self$export(exporter=exporter)$data())
+} # shortcut to generate a list of data.frames via the export function
 
 # Export results from each set in the results list to an exporter
 # If selection is not defined, use the selection embedded in the results list (default=everything)
-# exporter=NULL uses the system default exporter (if undefined in visioneval.cnf, use "csv")
-# Otherwise it can be a character string (default="csv") or a pre-constructed VEExporter
-# Connection (string) and Partition parameters are passed to exporter factory (see export.R for
-# docs).
+# The selection needs to come from the same model as the VEResultsList.
+# Missing exporter uses the system default exporter ("csv")
+# Otherwise it can be a character string (default="csv") or a pre-constructed VEExporter sub-class object
+# connection (string or list, as expected by the exporter sub-class) and partition (character
+# vector) are passed to exporter factory if exporter is not pre-constructed (see export.R for
+# docs). If they're missing, the Model or system or default values will be sought (in that order).
 # wantMetadata TRUE will generate a top-level tabel from the selection parameter list
 # convertUnits TRUE will use an available display_units.csv conversion table (FALSE use raw Datastore units)
 ve.resultslist.export <- function(
   selection=NULL,     # what we get from selecting a subset using VEResultsList$select() and VESelection operations
-  exporter="VEExporter.CSV",connection=NULL,partition=NULL, # see export.R for docs on exporter, connection, partition
-  wantMetadata=TRUE,
-  convertUnits=TRUE
+  exporter="csv",connection=NULL,partition=NULL, # see export.R for docs on exporter, connection, partition
+  wantMetadata=TRUE,  # Generate a metadata table at the root of the output
+  convertUnits=TRUE,  # Use "display_units.csv" to convert units for selected fields (otherwise Datastore units)
 ) {
 
-  # Set up the exporter (defaults to CSV - use $extrct to default to list of data.frames)
+  # Set up the exporter (defaults to CSV - use $extract to default to list of data.frames)
   if ( ! inherits(exporter,"VEExporter") ) {
-    exporter <- newExporter(exporter,connection,partition)
+    exporter <- newExporter(exporter,connection,partition,self$Model)
   } else if ( ! missing(partition) && !is.null(partition) ) {
     exporter$partition(partition)
   }
@@ -107,31 +157,25 @@ ve.resultslist.export <- function(
     result.selection <- selection[selection$Scenario==stage,c("Group","Table","Name","Units")]
     # Just the elements selected for this stage
     data <- result$extract(selection=result.selection,convertUnits=convertUnits) # Generates a list of data.frames
-    # data is a named list of Group, each being a named list of Tables
+    # data is a named list of Groups, each being a named list of Tables, each of which is a data.frame
     for ( group in names(data) ) {
       for ( table in names(data[[group]]) ) {
-        # Get the table name this way since result$extract may spawn new tables (VERPAT hack)
-        # group[[table]] is a data.frame
-        exporter$writeTable( data[[group]][[table]], Scenario=stage, Group=group, Table=table ) # exporter will partition...
-        # NOTE: exporter will create, write or re-write tables (re-write happens if the data we're
-        # writing includes fields that were not in the table as originally written). Rewrite is
-        # unlikely to occur unless we're merging different stage and groups into a single table
-        # and the stages have significantly different ModelScripts.
+        # The exporter's partitioning scheme will create tables and merge data.frames as requested
+        # To see what got created, print the exporter returned from this function
+        exporter$writeTable( data[[group]][[table]], Scenario=stage, Group=group, Table=table )
       }
     }
   }
       
   if ( wantMetadata ) {
-    # TODO: Use self$Model to access model parameters (via VEModel::getSetup)
-    # TODO: pick a metadata name - ideally it's a configuration parameter
-    # TODO: develop an "Exporter" block for visioneval.cnf that will be part of the model's
-    #       RunParam_ls (with suitable defaults). That means if the ResultsList is associated with a
-    #       model, we should have the model around so we can ask about its settings.
-    #       The Exporter block can set up default connection information...     
-   
-    # write the selection table to the exporter connection
-    metadataName <- "Metadata"
-    exporter$writeTable( selection, Table=metadataName ) # Unspecified Scenario/Group: place in connection "root"
+    # write the Metadata to the exporter connection
+    # By leaving out Scenario and Group, they will be ignored for a "name" or "merge" partition and
+    # if the partition is "folder", then the Table name will be used instead. We might eventually
+    # allow the Exporter partitioning to specific what Scenario or Group a missing table goes in,
+    # which would let us put the metadata in the Global Scenario and the Metadata Group within it,
+    # for example. See VEQuery$export for use of Scenario=NULL and Group=NULL explicitly).
+    metadataName <- self$Model$setting("MetadataName")
+    exporter$writeTable( selection, Table=metadataName )
   }
 
   # Printing the returned exporter will show the list of tables created and connection summary
@@ -188,6 +232,7 @@ ve.resultslist.list <- function(pattern="", selected=TRUE, details=FALSE, ...) {
 
 # TODO: is this function ever used, or is it still relevant?
 # TODO: written to work on an individual VEResults - now should list all selected
+# TODO: could we just add the input files and directories to standard metadata?
 # We won't necessarily know the input file until after the model is run (otherwise, this function should have been a
 #  member of VEModel)
 ve.resultslist.inputs <- function( fields=FALSE, module="", filename="" ) {
@@ -243,11 +288,13 @@ VEResultsList <- R6::R6Class(
   "VEResultsList",
   public = list(
     # public data
-    Model        = NULL,
-    Results      = NULL,
-    modelPath    = NULL,
-    selection    = NULL,
-    resultsIndex = NULL, # consolidated datastore index for all stages
+    Model          = NULL,
+    Results        = NULL,
+    valid          = FALSE,
+    selection      = NULL,
+    resultsIndex   = NULL,  # consolidated datastore index for all stages
+    RunParam_ls    = NULL,  # interface for environment.R/getSetup which is used to find export directories
+    loadedParam_ls = NULL,
 
     # methods
     initialize=ve.resultslist.init,
@@ -283,6 +330,7 @@ ve.results.init <- function(ResultsPath,ResultsName=NULL,ModelStage=NULL) {
   self$Name <- if ( !is.character(ResultsName) ) basename(ResultsPath) else ResultsName
   self$index() # Will find model state
   self$RunParam_ls <- self$ModelState()$RunParam_ls
+  self$loadedParam_ls <- self$RunParam_ls # establish interface for environment.R/getSetup
   self$modelStage <- ModelStage # may be NULL; only used to get stage elements for category scenarios via the R visualizer
   return(self$valid())
 }
@@ -734,10 +782,12 @@ VEResults <- R6::R6Class(
   "VEResults",
   public = list(
     # public data
-    Name        =NULL,
-    modelStage  =NULL,
-    resultsPath =NULL,
-    modelIndex  =NULL,
+    Name           = NULL,
+    modelStage     = NULL,
+    resultsPath    = NULL,
+    modelIndex     = NULL,
+    RunParam_ls    = NULL,
+    loadedParam_ls = NULL,
 
     # methods
     initialize=ve.results.init,
@@ -753,7 +803,6 @@ VEResults <- R6::R6Class(
     ModelState=ve.results.modelstate # Set/Get the model state for these results
   ),
   private = list(
-    RunParam_ls=NULL,
     modelStateEnv=NULL
   )
 )
@@ -775,7 +824,7 @@ VEResults <- R6::R6Class(
 # set of model results - if same, treat like vector of integers; if different, first generate
 # a character vector of S/G/T/N (and only select the ones that are present in this
 # selection/resultset).
-ve.select.initialize <- function( results, select=integer(0) ) {
+ve.select.init <- function( results, select=integer(0) ) {
   # default select (integer(0)) selects everything
   # self$selection is just a list of integers pointing to rows
   #  in self$results$modelIndex
@@ -1084,21 +1133,21 @@ VESelection <- R6::R6Class(
     results = NULL,  # a VEResultsList object
 
     # methods
-    initialize=ve.select.initialize, # Initial selection for a results list
-    copy=ve.select.copy,             # Create a new selection object with the same results and indices
-    print=ve.select.print,           # Print list of fields or (details=TRUE) the subset of results$modelIndex
-    show=ve.select.show,             # retrieve the selected subset of results$modelIndex (data.frame)
-    valid=ve.select.valid,           # is the selection valid against results$modelIndex
-    find=ve.select.find,             # general search facility for selecting group/table/name
-    parse=ve.select.parse,           # interpret different ways of specifying a selection (number, field descriptor)
-    select=ve.select.select,         # assign - set self to other selection value
-    add=ve.select.add,               # "union" - indices are included from either selection
-    addkeys=ve.select.addkeys,       # add keys (e.g. HhID, BZone) for already SELECTED Tables (uses "or")
-    remove=ve.select.remove,         # "setdiff" - keep indices that are not in the other selection
-    and=ve.select.and,               # "intersection" - keep indices in both selections
-    or=ve.select.add,                # alias for "add" (just expressed as a logical operation)
-    all=ve.select.all,               # select all indices (resets the selection)
-    none=ve.select.none,             # select no indices (empty selection) - usually as the basis for adding in certain ones
+    initialize=ve.select.init, # Initial selection for a results list
+    copy=ve.select.copy,       # Create a new selection object with the same results and indices
+    print=ve.select.print,     # Print list of fields or (details=TRUE) the subset of results$modelIndex
+    show=ve.select.show,       # retrieve the selected subset of results$modelIndex (data.frame)
+    valid=ve.select.valid,     # is the selection valid against results$modelIndex
+    find=ve.select.find,       # general search facility for selecting group/table/name
+    parse=ve.select.parse,     # interpret different ways of specifying a selection (number, field descriptor)
+    select=ve.select.select,   # assign - set self to other selection value
+    add=ve.select.add,         # "union" - indices are included from either selection
+    addkeys=ve.select.addkeys, # add keys (e.g. HhID, BZone) for already SELECTED Tables (uses "or")
+    remove=ve.select.remove,   # "setdiff" - keep indices that are not in the other selection
+    and=ve.select.and,         # "intersection" - keep indices in both selections
+    or=ve.select.add,          # alias for "add" (just expressed as a logical operation)
+    all=ve.select.all,         # select all indices (resets the selection)
+    none=ve.select.none,       # select no indices (empty selection) - usually as the basis for adding in certain ones
 
     # Field lists (read-only)
     groups=ve.select.groups,
@@ -1106,12 +1155,6 @@ VESelection <- R6::R6Class(
     fields=ve.select.fields
   )
 )
-
-# TODO: the following function should not be for a single result set, but rather a
-# VEResultsList. It should interpret the path as possibly a root for multiple scenarios
-# and also attempt to find and open the associated model by looking up one level. So
-# we should be able, in effect, to open a Model or bare results as long as we can find
-# the key pieces...
 
 #' Open VisionEval results from a directory
 #'
@@ -1122,35 +1165,41 @@ VESelection <- R6::R6Class(
 #'    that might contain these results.
 #'
 #' @details
-#' See `vignette(package='VEModel')` for available help and reference materials.
-#'   The basic use of `openModel` is also described in the VisionEval Getting-Started
-#'   document on the VisionEval website (also in the VisionEval installer).
+#' See the VEModel walkthrough and tests, as well as the online VisionEval documentation for
+#'   available help and reference materials. The basic use of `openModel` is also described in the
+#'   VisionEval Getting-Started document on the VisionEval website (also in the VisionEval
+#'   installer). `openResults` is a shortcut function for opening a model and its results from
+#'   within the "results" directory. Usually, it's simpler to open the model and call its $results
+#'   function; This function cuts out one step and leaps straight to the results.
 #'
-#' The path provided as a parameter needs to contain ModelState.Rda and Datastore, using the names
-#'   for those elements in the VisionEval run parameters ModelStateFile and DatastoreName
-#'   respectively. Generally, it is most reliable to open an output using the model object returned
-#'   by VEModel::openModel, since that will ensure that the same run environment is used to find the
-#'   result files as when those results were created. The openResults file does not load any
-#'   configurations.
+#' The path provided as a parameter is either a model name (in "models" folder), an absolute path to
+#'   a model, or a path to a directory containing ModelState.Rda (in which case the model that
+#'   created those results will be sought by working up the directory tree. If no path is provided,
+#'   The model search will start in the current directory
 #'
 #' @param path A relative or absolute path to a directory (default is the working directory)
-#'   in which VisionEval results can be found for a single model run, stage or scenario
-#'   combination.
-#' @return A VEResultsList object giving access to the VisionEval results in (or below) `path`
+#'   that will be used to find a VisionEval model and open its results.
+#' @return A VEResultsList object giving access to the VisionEval results for the model identified
+#'   by `path`
 #' @export
 openResults <- function(path=NULL) {
-  if ( ! dir.exists(path) ) path <- getwd()
-
-  # Start by seeing if path is model or a child or grandchild of a model.
-  # 
-  # If not valid, look for parent directory and try to open a model there and get its results list
-  # If no VEModel "overhead", see if there are sub-directories and open each of those as a separate
-  #   VEResults object in the VEResultsList
-
-  # TODO: If we start in a subfolder of a model, generate a results list attached to that model, but
-  #   only including the subdirectory stage. If we start in a 'results' directory (no ModelState,
-  #   but with subdirectories containing Datastores, open the model from the first subdirectory and
-  #   if the model is in the path, attach it to the Results list (which will contain all the
-  #   subdirectoreis).
-  return(VEResultsList$new(...))
+  # We're going to look for a model and then open its results
+  # normalizePath will handle passing a model name (which will then be sought
+  #   in the "models" subdirectory of the VE_RUNTIME).
+  if ( missing(path) || is.null(path) ) path <- getwd()
+  path <- normalizePath(path,RootDir=getSetup("ModelRoot"),mustWork=TRUE)
+  # RootDir is ignored if path is already an absolute path (e.g. from getwd())
+  if ( nzchar(dir(path,pattern="(rda|rdata)$",ignore.case=TRUE)[1]) ) {
+    # Look for model in parent of results
+    searchPath <- dirname(path)
+  } else {
+    searchPath <- path # Presume we're looking at a model or VE_RUNTIME
+  }
+  mod <- openModel(searchPath)
+  if ( ! mod$valid() ) {
+    # If model not found in partent
+    searchPath <- dirname(searchPath)
+    mod <- openModel(searchPath)
+  }
+  return(VEResultsList$new(model=mod)) # will return results from mod, or invalid message
 }

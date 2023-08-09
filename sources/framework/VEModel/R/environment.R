@@ -100,18 +100,19 @@ runtimeEnvironment <- function() { ve.env }
 # The package defaults will override.
 
 default.parameters.table = list(
-  ModelRoot           = "models",
-  ScriptsDir          = "scripts",        # Will collapse to '.' if not already present
-  ResultsDir          = "results",        # Will create if not already present
-  OutputDir           = "output",         # Will create if not already present
+  ModelRoot           = "models",         # Used to search in VERuntime for model setups
+  ScriptsDir          = "scripts",        # Will collapse to '.' if directory does not exist
+  ResultsDir          = "results",        # Used by the model to hold results for each model stage
+  OutputDir           = "output",         # Used by various exporters to hold file-based results
   QueryDir            = "queries",        # Home for defined queries within the ModelDir
   ScenarioDir         = "scenarios",      # Root for defined scenarios
   ScenarioConfig      = "scenarios.cnf",  # Configuration file for scenarios
-  ExtractRootName     = "Extract",        # used by VEResults$extract to make "output/Extract_<timestamp>"
+  ExtractRootName     = "Extract",        # used by VEResultsList$export to make "output/Extract_<timestamp>" folder
+  MetadataName        = "Metadata",       # used by VEResultsList$export to name metadata table within output
   DisplayUnitsFile    = "display_units.csv",
-  QueryFileName       = "New-Query",
-  QueryOutputTemplate = "Query_%queryname%.Rda",
-  QueryExtractTemplate= "QueryExtract_%queryname%_%timestamp%",
+  QueryFileName       = "New-Query",              # For making a VEQuery file
+  QueryOutputTemplate = "Query_%queryname%.Rda",  # For the generated outputs (in stage results folder next to Datastore)
+  QueryExtractTemplate= "QueryExtract_%queryname%_%timestamp%", # For VEQuery$export to create table in output folder
   RunStatusDelay      = 60,               # seconds between status updates when multi-processing
   RunPollDelay        = 2                 # seconds between status poll for multi-process completion
 )
@@ -170,7 +171,7 @@ loadRuntimeConfig <- function() {
 #' @param paramNames is a character vector of parameter names identifying a subset of runParameters
 #'   to retrieve. If not provided, return all defined parameters (but not any that are defaulted).
 #' @param object identifies which parameter set to get. NULL (default) returns runtime parameters.
-#'   Otherwise object should be a VEModel, a VEModelStage, or a VEResults object
+#'   Otherwise object should be a VEModel, a VEModelStage, or a VEResultsList object
 #' @param fromFile a logical value; if TRUE, return base configuration file (loadedParam_ls),
 #'   otherwise parameters as configured into model's RunParam_ls.
 #' @param reload a logical; if TRUE and retrieving ve.runtime configuration, re-read configuration
