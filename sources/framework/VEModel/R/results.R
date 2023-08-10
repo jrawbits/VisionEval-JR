@@ -136,9 +136,8 @@ ve.resultslist.export <- function(
   # Set up the exporter (defaults to CSV - use $extract to default to list of data.frames)
   if ( ! inherits(exporter,"VEExporter") ) {
     exporter <- openExporter(exporter,connection,partition,self$Model)
-  } else if ( ! missing(partition) && !is.null(partition) ) {
-    exporter$partition(partition)
   }
+  # Just ignore connection and partition if we're passing a pre-built exporter
 
   # Apply a selection if provided, otherwise use entire list of outputs
   # Reduces the modelIndex to a subset then figures out S/G/T/N from whatever is left
@@ -154,28 +153,28 @@ ve.resultslist.export <- function(
   selected.stages <- unique(selection$Scenario) # names of scenario
 
   for ( stage in selected.stages ) {
-    result.selection <- selection[selection$Scenario==stage,c("Group","Table","Name","Units")]
+    stage.selection <- selection[selection$Scenario==stage,]
     # Just the elements selected for this stage
-    data <- result$extract(selection=result.selection,convertUnits=convertUnits) # Generates a list of data.frames
+    data <- result$extract(
+      selection=stage.selection[,c("Group","Table","Name","Units")],convertUnits=convertUnits) # Generates a list of data.frames
     # data is a named list of Groups, each being a named list of Tables, each of which is a data.frame
     for ( group in names(data) ) {
       for ( table in names(data[[group]]) ) {
+        # Generate input Metadata (fields in this S/G/T) which the exporter will merge with the
+        # output metadata (table and field actually written).
+        Metadata <- stage.selection[stage.selection$Group==group & stage.selection$Table==table,]
+
         # The exporter's partitioning scheme will create tables and merge data.frames as requested
         # To see what got created, print the exporter returned from this function
-        exporter$writeTable( data[[group]][[table]], Scenario=stage, Group=group, Table=table )
+        exporter$write( data[[group]][[table]], Table=table, Metadata=Metadata )
       }
     }
   }
       
   if ( wantMetadata ) {
-    # write the Metadata to the exporter connection
-    # By leaving out Scenario and Group, they will be ignored for a "name" or "merge" partition and
-    # if the partition is "folder", then the Table name will be used instead. We might eventually
-    # allow the Exporter partitioning to specific what Scenario or Group a missing table goes in,
-    # which would let us put the metadata in the Global Scenario and the Metadata Group within it,
-    # for example. See VEQuery$export for use of Scenario=NULL and Group=NULL explicitly).
-    metadataName <- self$Model$setting("MetadataName")
-    exporter$writeTable( selection, Table=metadataName )
+    # write the Metadata to the exporter connection using name and location for metadata configured
+    # in the connection description (usually a table with a distinctive name in the connection root)
+    exporter$writeMetadata()
   }
 
   # Printing the returned exporter will show the list of tables created and connection summary

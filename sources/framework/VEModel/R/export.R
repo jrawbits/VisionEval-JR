@@ -38,6 +38,7 @@ self=private=NULL # To avoid global variable warnings
 #    write       ## a data.frame plus partition flags (perhaps passed as ...)
 #                ## default for unsupplied parameters is to ignore them (treating them as 'merge"
 #                ## and not checking if they are really there)
+#    writeMetadata ## dump accumulated metadata to a specific output table
 #    list        ## log of tables that have been built during export
 #    print       ## just cat the list
 #    data        ## convert selected table names into the corresponding data.frame
@@ -94,69 +95,14 @@ VEExporter <- R6::R6Class(
   "VEExporter",
   public = list(
     # public data
+    Locked       = FALSE, # Locked is true if the exporter is loaded from a file and the connection has data in it
+                          # We can override that behavior by setting "reset=TRUE" in the 
     Partition    = NULL,  # default is c(Scenario="merge",Group="merge",Table="name") # probably never want to change Table partition
     Connection   = NULL,  # may be named list or character vector or string depending on derived class needs
     TableList    = list() # Names in this list are table IDs of created tables, elements of the list are lists of the
                           # fields that exist in the tables (name and type). Should we keep this list in "partition
                           # format"? Would make it easier to generate $data as a hierarchy.
 
-    # TODO: need some clear structure fot the "table navigator"
-    # It depends on the partitioning scheme and the S/G/T passed in through VEExporter$writeTable
-    # For the file system, the "folder" elements become a directory path (below connection root)
-    # and the "name" elements are just coded into the table name (e.g. prepended with underscore
-    # separators). For non-file-system exporters, the "folder" gets mapped over to "name", which
-    # may just boil down to a different separator ("_" versus "/")
-    # So it's a function of a VEPartition (initialized from the "partition" structure or a default)
-    # And we just need to tell VEPartition whether to map "folder" to "name", and how to organize
-    # the hierarchy of locations:
-    #   1. "Database" or root folder
-    #   2. "TablePath" which is all the "folder" elements in the partition
-    #   3. "TableName" which is root tablename
-    #   4. "TimeStamp" (established when the Exporter is initialized
-    # For CSV we need a connection directory, folder subdirectories (if any), and table-file name
-    # For DBI we need a database and a table name (composed of folder and name elements)
-    # For SQLite we need a connection directory with database file, and table-file name (all folder/name elements)
-    # For Dataframe we need nested indices
-    # So the partitioner may receive S/G/T from the $write function and it returns the following that
-    #   will be processed in the Exporter subclass:
-    #   1. A string ("path") of folder elements, possibly empty if the partition has no "folders", built
-    #      using a defined path separator - that might enable us not to make the partition itself aware
-    #      of the "folder" versus "name" issue for the DBI exporter: we just set the separator
-    #      correctly and let the exporter subclass figure out how to mash up the path and name.
-    #   2. A string ("name" of the table) built from partition name elements using a defined separator
-    #      and a table name template for that specific exporter (configurable in the "connection")
-    # Internally, the partitioner needs to track whether the table it identified is "new" or "existing"
-    # So we can internally do our own "locator" built by joining path and name into a single string,
-    #   to create a single "hash" - then we add that a list of known table locations.
-    # Eventually, when we do the parquet format, we might want to partition within tables based on other
-    #   fields (notably Marea or Azone), so we might have room to include additional data fields for
-    #   the partitions - allow the partition to continue on beyond S/G/T by naming Marea or Azone.
-    #   Then, if the data.frame has a column with a matching name, and the partition is "folder"
-    #   we'll just haul out subsets of the data.frame and treat them as separate tables (allowing us
-    #   to create additional sub-partitions) - two steps for that: establishing an additional "folder"
-    #   or "name" in the partition, and then when the data.frame is presented, check for the column
-    #   pull out the distinct values, and process the data.frame in partitioned chunks. The key when
-    #   we do the $write is to know if the additional partition field has already been appiied - but
-    #   since we're keeping the S/G/T/N/Zone columns in the tables, we could just presume that if the
-    #   Zone (or any other field in the data.frame) is present, we should check its independent
-    #   values and write them differently.
-    # One catch: the "Group" is "Year" for scenario tables, or "Global". So we might, in the Global
-    #   group, need to inject a Year column that says "Global".
-    # Then we can just do the sub-partitioning scheme every time: find the column, see if it has
-    #   multiple values that need to be partitioned, and do it.
-    # So the VEPartition class will initialize from the partitioning scheme, it will receive a
-    #   data.frame, and it will return a list of lists with the following attributes that will be submitted
-    #   to the low-level functions to actually write the subset of data:
-    #     list(
-    #       Existing = TRUE/FALSE (really, "Append" versus "Create")
-    #       Path = String (all the folder elements joined together with the sub-exporter path separator)
-    #       Name = String (all the name elements joined together with 
-    #       Rows = vector of row numbers in the data.frame of what to write (default is ALL)
-    #       Locator = String (mashup of Path+Name to determine uniqueness)
-    #     )
-    #   if a required partition element does not exist in the Table data (and is not null), we'll include
-    #   it in the path or name. If it is null and doesn't exist in the Table data, we skip it.
- 
     # methods
     # No "initialize" function needed for super-class
     connection=ve.exporter.connection, # stash connection scheme (subclasses will do other things with it)
@@ -347,12 +293,13 @@ exporterList <- list(
 #' @param Model A VEModel object; if present, unfurnished settings for the desired exporter will be
 #'   sought in the model configuration. Default is no Model, in which case default or global
 #'   parameters will be used, if they are present, and otherwise connection defaults.
-#' @param tag A character string identifying the set of configuration keys to be used for this
-#'   driver from the "Exporter" block in visioneval.cnf (sought in Model, global, defaults in that
-#'   order)
+#' @param load A character vector identifying a .VEexport file (if relative, must have Model and
+#'   file is sought in Model OutputDir). The file will contain the connection and partition
+#'   information. The resulting exporter is read-only, but can be copied to a different connection
+#'   with a possibly different partitioning scheme.
 #' @return A VEResults object giving access to the VisionEval results in `path`
 #' @export
-openExporter <- function(exporter="Unknown",connection=NULL,partition=NULL,Model=NULL) {
+openExporter <- function(exporter="Unknown",connection=NULL,partition=NULL,Model=NULL,load=NULL) {
   # Look up "exporter" as a character string
   # If exporter is already a VEExporter, just return it
   if ( inherits(exporter,"VEExporter") ) {
@@ -372,7 +319,7 @@ openExporter <- function(exporter="Unknown",connection=NULL,partition=NULL,Model
   }
 
   # If connection or partition is not supplied, the exporter class initialization will look up the
-  #   defaults using tag in the "Exporter" block from Model and system and default visioneval.cnf in
-  #   that order.See the docs for the specific exporter types.
-  return( exporterList[[exporter]]$new(connection=connection,partition=partition,Model=Model,tag=exporter) )
+  #   defaults using config (tag in the "Exporter" block from Model and system and default visioneval.cnf in
+  #   that order).See the docs for the specific exporter types.
+  return( exporterList[[exporter]]$new(connection=connection,partition=partition,config=list(Model=Model,Tag=exporter)) )
 }
