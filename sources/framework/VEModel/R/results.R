@@ -135,7 +135,7 @@ ve.resultslist.export <- function(
 
   # Set up the exporter (defaults to CSV - use $extract to default to list of data.frames)
   if ( ! inherits(exporter,"VEExporter") ) {
-    exporter <- newExporter(exporter,connection,partition,self$Model)
+    exporter <- openExporter(exporter,connection,partition,self$Model)
   } else if ( ! missing(partition) && !is.null(partition) ) {
     exporter$partition(partition)
   }

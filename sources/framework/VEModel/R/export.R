@@ -100,6 +100,63 @@ VEExporter <- R6::R6Class(
                           # fields that exist in the tables (name and type). Should we keep this list in "partition
                           # format"? Would make it easier to generate $data as a hierarchy.
 
+    # TODO: need some clear structure fot the "table navigator"
+    # It depends on the partitioning scheme and the S/G/T passed in through VEExporter$writeTable
+    # For the file system, the "folder" elements become a directory path (below connection root)
+    # and the "name" elements are just coded into the table name (e.g. prepended with underscore
+    # separators). For non-file-system exporters, the "folder" gets mapped over to "name", which
+    # may just boil down to a different separator ("_" versus "/")
+    # So it's a function of a VEPartition (initialized from the "partition" structure or a default)
+    # And we just need to tell VEPartition whether to map "folder" to "name", and how to organize
+    # the hierarchy of locations:
+    #   1. "Database" or root folder
+    #   2. "TablePath" which is all the "folder" elements in the partition
+    #   3. "TableName" which is root tablename
+    #   4. "TimeStamp" (established when the Exporter is initialized
+    # For CSV we need a connection directory, folder subdirectories (if any), and table-file name
+    # For DBI we need a database and a table name (composed of folder and name elements)
+    # For SQLite we need a connection directory with database file, and table-file name (all folder/name elements)
+    # For Dataframe we need nested indices
+    # So the partitioner may receive S/G/T from the $write function and it returns the following that
+    #   will be processed in the Exporter subclass:
+    #   1. A string ("path") of folder elements, possibly empty if the partition has no "folders", built
+    #      using a defined path separator - that might enable us not to make the partition itself aware
+    #      of the "folder" versus "name" issue for the DBI exporter: we just set the separator
+    #      correctly and let the exporter subclass figure out how to mash up the path and name.
+    #   2. A string ("name" of the table) built from partition name elements using a defined separator
+    #      and a table name template for that specific exporter (configurable in the "connection")
+    # Internally, the partitioner needs to track whether the table it identified is "new" or "existing"
+    # So we can internally do our own "locator" built by joining path and name into a single string,
+    #   to create a single "hash" - then we add that a list of known table locations.
+    # Eventually, when we do the parquet format, we might want to partition within tables based on other
+    #   fields (notably Marea or Azone), so we might have room to include additional data fields for
+    #   the partitions - allow the partition to continue on beyond S/G/T by naming Marea or Azone.
+    #   Then, if the data.frame has a column with a matching name, and the partition is "folder"
+    #   we'll just haul out subsets of the data.frame and treat them as separate tables (allowing us
+    #   to create additional sub-partitions) - two steps for that: establishing an additional "folder"
+    #   or "name" in the partition, and then when the data.frame is presented, check for the column
+    #   pull out the distinct values, and process the data.frame in partitioned chunks. The key when
+    #   we do the $write is to know if the additional partition field has already been appiied - but
+    #   since we're keeping the S/G/T/N/Zone columns in the tables, we could just presume that if the
+    #   Zone (or any other field in the data.frame) is present, we should check its independent
+    #   values and write them differently.
+    # One catch: the "Group" is "Year" for scenario tables, or "Global". So we might, in the Global
+    #   group, need to inject a Year column that says "Global".
+    # Then we can just do the sub-partitioning scheme every time: find the column, see if it has
+    #   multiple values that need to be partitioned, and do it.
+    # So the VEPartition class will initialize from the partitioning scheme, it will receive a
+    #   data.frame, and it will return a list of lists with the following attributes that will be submitted
+    #   to the low-level functions to actually write the subset of data:
+    #     list(
+    #       Existing = TRUE/FALSE (really, "Append" versus "Create")
+    #       Path = String (all the folder elements joined together with the sub-exporter path separator)
+    #       Name = String (all the name elements joined together with 
+    #       Rows = vector of row numbers in the data.frame of what to write (default is ALL)
+    #       Locator = String (mashup of Path+Name to determine uniqueness)
+    #     )
+    #   if a required partition element does not exist in the Table data (and is not null), we'll include
+    #   it in the path or name. If it is null and doesn't exist in the Table data, we skip it.
+ 
     # methods
     # No "initialize" function needed for super-class
     connection=ve.exporter.connection, # stash connection scheme (subclasses will do other things with it)
@@ -127,27 +184,24 @@ VEExporter <- R6::R6Class(
 
 #' @export
 VEExporter.Dataframe <- R6::R6Class(
-  # Default class just accumulates data.frames in memory
-  # Connection may create a different storage class (e.g. data table / tibble / data.frame)
+  # Accumulates data.frames in memory
+  # Connection may create a different storage class (e.g. data table / tibble / data.frame or even arrow)
+  #   Later, when $data is called, it will produce the desired type automatically
   "VEExporter.Dataframe",
   inherit = VEExporter,
   public = list(
-    # public data
-    createTable  = ve.exporter.dataframe.create, # adds data.frame to internal list using partition scheme
-    writeTable   = ve.exporter.dataframe.write,  # appends data.frame to existing internal list element using partition scheme
-                                                 # will add extra columns if new rows are non-conforming
     # methods
+    # implementing methods
+    createTable = ve.exporter.csv.createTable,
+    writeTable  = ve.exporter.csv.writeTable,
+    readTable   = ve.exporter.csv.readTable,
+
     # override functions...
     initialize=ve.exporter.dataframe.init,     # initialize exporter
     list=ve.exporter.dataframe.list,           # list tables existing within this exporter
     print=ve.exporter.dataframe.print,         # print list of tables
-    data=ve.exporter.dataframe.data,           # return list of data.frames corresponding to list of table names
+    data=ve.exporter.dataframe.data            # return list of data.frames corresponding to list of table names
 
-    # implementation methods
-    # for the following, "table" is a table navigator (folder, folder, name) as stored in TableList
-    createTable = function(data,table) NULL, # Create or re-create a Table from scratch (includes append)
-    writeTable  = function(data,table) NULL, # Append data to existing table (restructure as needed)
-    readTable   = function(table) NULL       # Read named table into a data.frame
   ),
   private = list(
     exportedData = list()   # will be hierarchical named list of data.frames (hierarchy per partitioning)
@@ -172,19 +226,14 @@ VEExporter.CSV <- R6::R6Class(
     # implementing methods
     createTable = ve.exporter.csv.createTable,
     writeTable  = ve.exporter.csv.writeTable,
+    readTable   = ve.exporter.csv.readTable,
 
     # methods
     initialize = ve.exporter.csv.initialize, # Set up output directory and partitioning; use super$initialize for partition
     connectionn = ve.exporter.csv.connection,# Set up output directory
     list=ve.exporter.csv.list,               # list tables existing within this exporter
     print=ve.exporter.csv.print,             # print list of tables
-    data=ve.exporter.csv.data,               # return list of data.frames corresponding to list of table names
-
-    # implementation methods
-    # for the following, "table" is a table navigator (folder, folder, name) as stored in TableList
-    createTable = function(data,table) NULL, # Create or re-create a Table from scratch (includes append)
-    writeTable  = function(data,table) NULL, # Append data to existing table (restructure as needed)
-    readTable   = function(table) NULL       # Read named table into a data.frame
+    data=ve.exporter.csv.data                # return list of data.frames corresponding to list of table names
   ),
   private = list(
     Directory = NULL,    # Default to "OutputDir/Export_<Timestamp>" in initializer
@@ -205,8 +254,9 @@ VEExporter.DBI <- R6::R6Class(
   "VEExporter.DBI",
   public = list( 
     # implementing methods
-    createTable = ve.exporter.dbi.createTable,
-    writeTable  = ve.exporter.dbi.writeTable,
+    createTable = ve.exporter.csv.createTable,
+    writeTable  = ve.exporter.csv.writeTable,
+    readTable   = ve.exporter.csv.readTable,
 
     # methods
     initialize = ve.exporter.dbi.initialize, # Set up output directory and partitioning; use super$initialize
@@ -214,13 +264,8 @@ VEExporter.DBI <- R6::R6Class(
                                              # Driver defaults to SQLite; Connection is a list of arguments passed to
                                              # DBI::dbConnect via do.call.
     connection = ve.exporter.dbi.connection, # Update connection, prior to first write operation
-    data=ve.exporter.dbi.data,               # return list of data.frames corresponding to list of table names
+    data=ve.exporter.dbi.data                # return list of data.frames corresponding to list of table names
 
-    # implementation methods
-    # for the following, "table" is a table navigator (folder, folder, name) as stored in TableList
-    createTable = function(data,table) NULL, # Create or re-create a Table from scratch (includes append)
-    writeTable  = function(data,table) NULL, # Append data to existing table (restructure as needed)
-    readTable   = function(table) NULL       # Read named table into a data.frame
   ),
   private = list(
     Connection = NULL,    # Default Database is "OutputDir/Results_<TimeStamp>.sqlite3
@@ -247,7 +292,7 @@ exporterList <- list(
 #' Instantiate a VisionEval Exporter (VEExporter species) using a lookup name
 #'
 #' @description
-#' `newExporter` creates a VEExporter object to receive data exported from model results or
+#' `openExporter` creates a VEExporter object to receive data exported from model results or
 #' query results.
 #'
 #' @details
@@ -275,7 +320,7 @@ exporterList <- list(
 #' `c("Scenario"="merge",Group="merge",Table="name")` - that is, the Table name will always be
 #' forced into the name.
 #'
-#' NOTE: Any connection or partition provided when calling newExporter will override anything
+#' NOTE: Any connection or partition provided when calling openExporter will override anything
 #'   defined in the global or Model environment.
 #'
 #' NOTE: In keeping with usual DBI protocol, the "sql"/"dbi" connections will NOT create a database.
@@ -294,9 +339,9 @@ exporterList <- list(
 #'   model-specific visioneval.cnf and those will be used by default.
 #'
 #' @param exporter A character string selecting an exporter from the known list (see
-#'   newExporter()). If none is provided, return a list of known exporter names.
+#'   openExporter()). If none is provided, return a list of known exporter names.
 #' @param connection A string or named list specific to the exporter type that will open a
-#connection to the ' output location. See the documentation for each individual exporter.
+#'   connection to the ' output location. See the documentation for each individual exporter.
 #' @param partition A named character string specifying partition strategy for items being written.
 #'   default partition is c(Scenario=folder,Group=folder,Table=name). See Details.
 #' @param Model A VEModel object; if present, unfurnished settings for the desired exporter will be
@@ -307,7 +352,7 @@ exporterList <- list(
 #'   order)
 #' @return A VEResults object giving access to the VisionEval results in `path`
 #' @export
-newExporter <- function(exporter="Unknown",connection=NULL,partition=NULL,Model=NULL) {
+openExporter <- function(exporter="Unknown",connection=NULL,partition=NULL,Model=NULL) {
   # Look up "exporter" as a character string
   # If exporter is already a VEExporter, just return it
   if ( inherits(exporter,"VEExporter") ) {

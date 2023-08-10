@@ -1,0 +1,132 @@
+The Partitioning plan in brief:
+
+Create a VEPartition object initialized from the partition scheme
+
+Partition scheme is a named character vector with fields to partition on:
+  c(Scenario="folder",Group="merge",Table="name")
+
+If the element is "ignore", NULL (or simply doesn't exist), it is not partitioned and the
+table locator will not include that element (that's a risk for a table like "Marea" that
+exists in both Global and Year groups - but we can handle that degenerate case by adding
+missing columns when we push another Group of data (and there will just be NA's in the
+columns that are present in one group but not another).
+
+The partition scheme can include ANY column from ANY table (intended principally for
+things like Marea or Azone, but could also pull things out based on Bzone tags for
+EJ zones or whatever). If the column is not present in the table, it is treated as
+a "none" partition for writing that table.
+
+To get the table location information for a data.frame via the Exporter $write function,
+We send the data.frame (which won't get modified, and thus won't get copied) into the
+VEPartition $partition function. The partitioning scheme that was used to initialize
+VEPartition gets applied to the data and we return a list of lists with the following
+structure (one for each subset of the data.frame that needs to be written to a different
+table). Often there will just be one of these and "Rows" will just be 1:nrow(data)
+
+  list(
+    Action  = one of c("Append","Create")
+    PathSeparator = Character # defined by the exporter class
+    NameSeparator = Character # defined by the exporter class
+    Path    = Vector (all the folder elements in order, named by the field used to select that path element)
+    Name    = Vector (all the name elements in order, named by the field used to select that element)
+    Rows    = vector of row numbers in the data.frame of what to write (default is ALL)
+    Locator = String (mashup of Path+Name to determine uniqueness)
+  )
+The order of Path and Name elements depends on the original partitioning vector listing
+the fields in order.
+
+The VEExporter $write function then does not need to say what we're partitioning on: It
+finds the columns in the table on which we have a defined partition, and if the column
+does not exist, then for just that table the partition occurs as if the column were not in
+the partition (and there is no mention of it in the Path or Name or Locator elements). So
+we could actually partition by "Year" rather than "Group" and any Global table would
+just end up at a location that doesn't have a Year. We could still do a "Global" field
+and have a partitioning for that - so we could then merge all the Years, and if there is
+a table like Marea that exists in both Global and a Year, we could do "name" partitioning
+for Global and "merge" for Year and end up with one "Marea" table that has all the Years
+and one "Global_Marea" table that has the global stuff separately. This is so cool!
+
+So that means we won't partition on "Group" per se - we'll do Global= and Year= and
+have it all revolve around what's actually in the table rather than how it got looked
+up in the Datastore.
+
+The $partition function when it is applied returns a list of locator structures above,
+and the specific exporter will then use Path and Name to figure out where to write the
+data, and it will use the Rows element to figure out what to write (or append) to each
+physical table. So it iterates through the list of locators and writes the subset to
+each table.
+
+The $list function returns a human readable version of the table descriptor part of the
+locator.
+
+The VEPartition $locations function returns the Path/Name part of the Locator structure
+for each table that the exporter has written, and it is used internally by the VEExporter
+$data function (which delegates to the exporter-specific readTable function) to visit each
+of the known tables and get the data in the table. We can ask $data either for a flat
+return (all the tables, in a named list with names from the single-string Locator) or a
+hierarchical return (where the Path is broken by separator into separate elements and we
+index down into the elements, so each folder/path element becomes a list, whose elements
+are the next path element, and on down until we get to tables, which will be the
+data.frame read out from the Datastore).
+
+If we wanted to get wildly useful, we can also take an exporter and copy its data to
+a different exporter (e.g. load up partitioned CSV data into a possibly differently
+partitioned SQL). We would just visit each table and apply the new expoter's partition
+scheme to each of the tables we find - they will get separated and merged just the
+way we want. So that gives us a tool for repackaging exported data.
+
+Is there any way to save exporter state in the root of a connection (perhaps a
+magic table name - the table contains the partitioning scheme that was applied,
+along with the file locations.
+
+So then we could set up an exporter with a connection, and if we do VEExporter $load
+and if there is a partitioning scheme already there, we can load that up and
+create a "finished" exporter object. So that would let us do this beautiful thing:
+
+1. Run a model with sixteen scenarios
+2. Define and run three more scenarios using "continue" (so earlier ones don't get re-run
+3. Open an existing export and stock up the partitioning scheme and known locations
+   Might require two tables: Partition and Locations (i.e. the existing tables)
+4. Then we can just export the new scenarios to the existing export (need to figure
+   out how not to rewrite any scenarios that were already done)
+
+Or we can use that loaded export to write to a different partitioning scheme on a
+different connection / different VEExporter object - just visit each table in the
+$data of the old scheme, and write it to the new exporter.
+
+Probably want to do the exporter descriptor as a standalone structure (.VEexport file
+format) which we can build, open, "run" on a particular model and generate that in the
+results "output" directory so we can just pop open an export and work on it again in
+R. We'd want to be able to mark tables that contain specific Scenarios, Global, Year,
+Table for the $data function so we can just get tables with the desired information
+(and perhaps, for Years, do the subsetting, so we could, e.g. call out into a data
+frame only the rows for Year=2045).
+
+That gives us an insanely convenient data explorer that we can use to both inspect,
+load into data.frames, and re-export into a different file tree/database/internal
+data format (any of the exporter types).
+
+The .VEexport might come in two species: (1) a configuration (which we could place right into
+the Exporter section of visioneval.cnf - fully specified with respect to connection and
+partitioning, under some arbitrary name that also specifies the driver (so rather than let
+the VEExporter introspect to look up its configuration, we make it explicit what to use,
+including the driver - that is done via newExporter or openExporter (perhaps that's the
+name of the factory function). (2) the same config, but now augmented with a dump of
+what has been placed into that export (so we won't overwrite it)
+
+That also gives us a chance to add Queries to the raw exported output. The Query field in
+the generated query output is the QueryName, and so we can write and partition those
+(though we'll blunder into Year and Scenario partitioning which we would prefer to be
+"merge").
+
+So that's an argument for having different partitions applied to different types of
+export. So if the partition descriptor is a character vector, we apply it to everything.
+Or it can be a named list of character vectors with the name being one of
+c("Datastore","Query"). If there is no specific "Query" partitioning, we would want to
+"merge" Long format queries (run on an additional set of Scenarios) and always separate
+the Wide scenario format.
+
+We could then make the visualizer file preparation into a special partitioning
+applied to Queries (and one that expects to have additional attributes used to
+generate auxiliary tables for categories, scenarios and data). All of those are
+just tables, and all of them can be re-exported...
