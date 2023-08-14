@@ -13,6 +13,74 @@ NULL
 
 self=private=NULL # To avoid global variable warnings
 
+############################
+#
+###### Implement VEPartition
+#
+############################
+
+# VEPartition will take a partition description (named character vector of partition actions)
+# Basic format is c(Field="action",Field2="action",...)
+# Actions are the following:
+#   "none" or "merge"  : ignore the fields - just there as documentation...
+#   "path" or "folder" : partition data on this element and add its value to the list of "paths"
+#   "name"             : partition data on this element and add its value to the list of "names
+# Constructor copies the vector (or installs a default), dropping the none/merge elements
+#
+# Other main function is $partition with this interface:
+# $partition(data,Table,Scenario=NULL,Group=NULL)
+#    data is a table with 0 or more of the partition fields in it
+#    Table is the base name for the table
+#    Optional Scenario and Group entries get pushed as columns into the Metadata element of the TableLoc structure
+#
+# Partition returns a list of Partition structures that define one or more partitions for the data
+#    Range : a numeric vector of rows in this partition
+#    TableLoc : a structure describing the Table:
+#       Path : a character vector of path elements describing the Table in the connection (prepended to Table name
+#              perhaps as folders
+#       Name : a character vector of path elements describing the Table in the connection (appended to Table name)
+#       Table : root table name
+#       TableLoc : a string built from Path, Name and Table describing this entry
+#       THe VEExporter will keep a list of all generated TableLocs using The TableLoc name for lookup
+
+#' @export
+VEPartition <- R6::R6Class(
+  "VEPartition",
+  public = list(
+    # public data
+    Locked       = FALSE, # Locked is true if the exporter is loaded from a file and the connection has data in it
+                          # We can override that behavior by setting "reset=TRUE" in the 
+    Partition    = NULL,  # default is c(Scenario="merge",Group="merge",Table="name") # probably never want to change Table partition
+    Connection   = NULL,  # may be named list or character vector or string depending on derived class needs
+    TableList    = list() # Names in this list are table IDs of created tables, elements of the list are lists of the
+                          # fields that exist in the tables (name and type). Should we keep this list in "partition
+                          # format"? Would make it easier to generate $data as a hierarchy.
+
+    # methods
+    initialize=ve.exporter.init        # call from subclasses to establish internal connection and partition
+    connection=ve.exporter.connection, # stash connection scheme (subclasses will do other things with it)
+    partition=ve.exporter.partition,   # change partition scheme (subclasses will do other things with it)
+
+    write=ve.exporter.write,           # write rows onto a table (creating if necessary)
+    list=ve.exporter.list,             # list tables that have been created within this exporter
+    print=ve.exporter.print,           # print list of table identifiers
+    data=ve.exporter.data,             # return list of data.frames corresponding to list of table names (all or some of self$list)
+                                       # generates a partitioned (nested) list of data.frames (each level is a "folder"
+
+    # implementation methods
+    # for the following, "table" is a table navigator (folder, folder, name) as stored in TableList
+    createTable = function(data,table) NULL, # Create or re-create a Table from scratch (includes append)
+    writeTable  = function(data,table) NULL, # Append data to existing table (restructure as needed)
+    readTable   = function(table) NULL       # Read named table into a data.frame
+  )
+)
+
+###########################
+#
+###### Implement VEExporter
+#
+###########################
+
 # TODO: how to implement the exporter:
 # Interface:
 #    initialize  ## Individual Exporter classes will receive connection, partition, and
@@ -43,12 +111,6 @@ self=private=NULL # To avoid global variable warnings
 #    list        ## log of tables that have been built during export
 #    print       ## just cat the list
 #    data        ## convert selected table names into the corresponding data.frame
-
-###########################
-#
-###### Implement VEExporter
-#
-###########################
 
 ve.exporter.init <- function(tag=NULL,connection=NULL,partition=NULL) {
   # We may be able to live without subclassed Exporters
