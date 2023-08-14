@@ -2,6 +2,88 @@ The Partitioning plan in brief:
 
 TODO: 8/14/2023
 
+Notes while implementing:
+
+Don't rush to implement the re-partitioning scheme (need to consult the Metadata for the copied
+Exporter).
+
+Don't rush to implement the save/load exporter either. For now, we'll just spin them up from the
+Datastore each time.
+
+Don't rush to implement the selections. For now, we'll just select everything (the complete
+field list). Later doing the subset with searches on names should be very straightforward.
+
+Implement VEPartition as an object that can take a data.frame and partition it into sets of rows
+according to the partition scheme and what's in the data.frame (returns a control list of physical
+table locators indicating range of rows to select from the data.frame). So we can have two elements:
+the Range (a vector of data.frame row indices), the TableLoc, and the Metadata for the Table implied
+by TableLoc (S/G/T/N + N's Metadata columns, plus formatted table name). For the data.frame
+connection, formatted table name is a pre-formatted set of R index code that will select out nested
+Scenario/Group/Table depending on the folder partitioning. Like "['Scenario-']['2045']['Household']"
+The Metadata piece from the TableLoc is what gets written to the Metadata table in the connection.
+
+Implement VEConnection as a thing that presents an interface to Create/Append/Read data given a
+data.frame (for Create/Append, subsetted using the $partition Range element) and a partition table
+spec (The TableLoc, with path, folders, table, and Metadata) as is returned from VEPartition.
+Returned from Create/Write is the Metadata with the DBTable column added, containing a spec usable
+to find the table later (e.g. if we open the Metadata $list for the exporter and look up an S/G/T/N
+and pull out DBTable to get the actual data - used in the $data function, just by iterating through
+unique DBTables).
+
+Other VEConnection pieces include saving TablePrefix, TableSuffix, and obviously whatever internal
+low-level communication info is needed for the individual types.
+
+It will implement these functions:
+  initialize from a Driver + Connection
+    can handle TablePrefix and TableSuffix
+  driver can be specified with a "tag" for standard known drivers (csv, sql) or anything
+    else we care to create (specify in visioneval.cnf under Exporters: Tag:)
+  we can use an existing connection (and just reconnect to it, for use in a new exporter to the same place)
+  initialize parameters:
+    tag (optional - pull missing configuration parameters from there)
+    TablePrefix
+    TableSuffix (default here can be timestamp)
+    ... which has things like:
+      rootFolder (for CSV or SQLite type)
+      con (for DBI - an existing DBI connection created outside)
+      dbDriver is a function we can call (probably only relevant for DBI connection type)
+  Still want to mediate that via openExporter to get the right Connection Class.
+  The openExporter / VEExporter connection parameter is something that has all the elements except
+    "tag" (tag selects the class of VEConnection; connection list is passed to it to supplant the
+    defaults). "tag" is opened first, reaching for system defaults (built in) if not overwritten.
+    Then the connection list is used via do.call to the constructor adding in the defaults for the
+    tag if any, then the items from visioneval.cnf (Exporter:Tag) and then the items in the list
+    passed here.
+
+  Any of those can be passed in via ... if not provided explicitly
+  makeTableName from a TableLoc (from VEPartition)
+  listTables on the connection (from its internal list of what has been written)
+  dropTable (also removes the tablename from listTables)
+  writeTable (dropping if 'overwrite=TRUE', creating if non-existent or appending; use a TableLoc to identify which table)
+  readTable(given a TableLoc or an element returned from listTables; fail if no table)
+
+DataFrame:
+  Interprets TableLoc per the partition into folders (lists) containing other folders containing Tables
+  makeTableName produces an index list into the dimensions
+CSV:
+  OutputFolder = results/outputs + Model Results Folder where tables are actually created
+    (constructor builds from RootFolder + (ModelName,Timestamp))
+  Table filenames concatenated from Name elements plus Table
+  Full Table Path is stored back into Metadata (with file.path separators) relative to RootFolder
+SQLite:
+  RootFolder = results/outputs
+  Database File (constructor builds from RootFolder + SQLite database template(ModelName,Timestamp))
+  Just wraps the more general DBI Connection by defaulting the table name path and using the
+  RSQLite::SQLite() driver.
+  Table names inside the database file concatenated from Path and Name elements plus Table
+  Full Table Path is stored back into 
+DBI/SQL:
+  Database connection (arbitrary, per DBI Rules). Essentially like this:
+    con <- dbConnect(RSQLite::SQLite(), ":memory:)
+  Table names inside the database concatenated from Path and Name elements
+  Track Driver and Connection (Connection is a possibly empty list of parameters passed to dbCnnect)
+  Full Table Path is the connection description (Driver=,Connection=) and TableName
+
 Get the Partition and basic exporter working
 Create a test function for exporting specifically (not just within results testing, but could be)
 Run all the results tests (since the results got reorganized).
@@ -20,13 +102,21 @@ The factory class pretty much hides the details - we'll get the VEExporter inter
 and if we later re-delegate to the conneciton within a single class it should be transparent.
 
 Partition scheme is a named character vector with fields to partition on:
-  c(Scenario="folder",Group="merge",Table="name") # Don't need to include Table as it will always be "name"
+  c(Scenario="folder",Group="merge") # Don't need to include Table as it will always be "name"
 
-Alternatively, the partition scheme can be a list:
-  list(
-    Datastore=c(Scenario="folder",Year="merge"), # Table is a name passed to the $write function of VEExporter
-    Query=c() # Table gets written "as is" to the indicated Table name on the connection root
-  )
+"database" partition will attempt to write to a database tagged with the given name.
+   So we could stuff "Global" stuff into a different database
+   Connection can have multiple databases identified by name ( partition: (Database="altDB" which
+   is then applied to construct the Table in that database with whatever other partitioning).
+   Throw an error if Database is specified in the write and not found in the connection (or perhaps
+   create the first database as the "default").
+
+"merge" or "none" partition makes explicit the default, which is to ignore that field in picking out
+  the Table.
+"folder" partition adds that element to the Table path
+"name" partition encodes the element in the Table name
+"database" partition is attached to a field passed in that pulls out a different database connection
+  (don't run to implement that)
 
 The partition scheme can include ANY column from ANY table (intended principally for things like
 Marea or Azone, but could also pull things out based on Bzone custom field tags for EJ zones or

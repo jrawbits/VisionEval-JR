@@ -38,7 +38,8 @@ self=private=NULL # To avoid global variable warnings
 #    write       ## a data.frame plus partition flags (perhaps passed as ...)
 #                ## default for unsupplied parameters is to ignore them (treating them as 'merge"
 #                ## and not checking if they are really there)
-#    writeMetadata ## dump accumulated metadata to a specific output table
+#    metadata    ## a function to turn self$TableList into a writable data.frame
+#    writeMetadata ## helper to write self$metadata()
 #    list        ## log of tables that have been built during export
 #    print       ## just cat the list
 #    data        ## convert selected table names into the corresponding data.frame
@@ -49,20 +50,59 @@ self=private=NULL # To avoid global variable warnings
 #
 ###########################
 
+ve.exporter.init <- function(tag=NULL,connection=NULL,partition=NULL) {
+  # We may be able to live without subclassed Exporters
+  # connection is a VEConnection object; if NULL, create a default one
+  # partition is a VEPartition object; if NULL, use the default one for VEConnection$tag
+}
+
 ve.exporter.connection <- function(connection) {
-  self$Connection <- connection
+  self$Connection <- VEConnection$new(connection) # connection is a set of parameter structures
 }
 
 ve.exporter.partition <- function(partition) {
-  self$Partition <- partition
+  self$Partition <- VEPartition$new(partition)
 }
 
 # subclasses will do more with Connection and Partition prior to saving them
 # May rewrite "folder" to "name" e.g.
 # Folders will get created as data is written
 
-ve.exporter.write <- function(data,Scenario=NULL,Group=NULL,Table=NULL) {
-  # Start by using S/G/T and the partition to create the table identifer
+ve.exporter.write <- function(data, Table, Metadata=NULL, Scenario=NULL, Group=NULL ) {
+  # The ... parameters (which must be named) are used to control the partitioning
+  # Optional Scenario and Group are injected into the internal metadata. It is recommended (to avoid
+  #   table collisions like Marea) to specify the VEPartition using Global and Year rather than
+  #   relying on Group. Scenario and Group, if present, are added as additional columns to Table
+  #   if they are not already present. They will be run through the Partition to figure out
+  #   what to do with them. Group can be compared internally to "Global" partition (and injected as
+  #   a field if not present in data) and if it's not Global, subject it to the "Year" partition
+  #   (and inject a "Year" field into data.
+  # Metadata parameter, if provided, is a data.frame with a Name column and additional
+  #   columns to specify things like Units and Description (or possibly other metadata from
+  #   the field specification...). If Metadata is not provided, use row.names(data) as the
+  #   Name field in the internal Metadata, and perhaps also push that into the written Table.
+  # Table must be provided as the root name for the Table being written. Table is used
+  #   to select the recipient for the partitioned data. The actual Table name written
+  #   will be composed of a database element, path elements, name elements, the Table name
+  #   and built by the connection object (adding any TablePrefix or TableSuffix elements
+  #   configured in the connection.
+  # NOTE: if data.partition is empty, we won't partition; we'll just write Table
+  #   with its name (plus any connection adjustments for prefix/suffix/timestamp
+  # TOTO: add the partitioning variables to the TableList we're building internally
+  #   We may inject columns if there are new partition elements (set to NA if not used
+  #   for the table
+  # TODO: Append the data.partition to the TableList for metadata.creation
+  # TODO: finish this implementation
+  # So we can just throw data and the data.partition to VEPartition to get a list of
+  #   "bites" that will get appended to the corresponding partition table (creating the
+  #   table if it does not already exist.
+  # Partitioner returns list of folder and name components (and perhaps the Database when
+  #   we get to implementing different databases as partitions). Table prefix handed in
+  #   through the connection gets jammed on the front of the table name (expansion of
+  #   the table name prefix).
+  # We don't have to submit any partition information, in which case the table is written
+  #   to the connection root 
+  # Should append the rows from data to the corresponding table
   # Then see if the table is in the list of created tables (self$Tables, which is a hierarchical
   #   named list with "folders" containing "folders" containing "tables")
   # If it is not in the list, create it and add the table structure to the list
@@ -74,7 +114,16 @@ ve.exporter.write <- function(data,Scenario=NULL,Group=NULL,Table=NULL) {
   # Return the table name written
 }
 
+ve.exporter.metadata <- function() {
+  # TODO: write a single metadata table that includes lists of what got written to which table
+  # Essentially a flat dump of self$TableList
+  self$write(self$list(namesOnly=FALSE),Table=
+}
+
 ve.exporter.list <- function(namesOnly=TRUE) {
+  # namesOnly is intended for interactive use to list out the tables in the export (as written)
+  # if this function is used internally, set namesOnly to False, or if its really deeply
+  #   internal, just access self$TableList (the "metadata")
   if ( isTRUE(namesOnly) ) names(self$TableList) else self$TableList
 }
 
@@ -86,6 +135,18 @@ ve.exporter.data <- function(tables=NULL) { # tables: a nested named list of tab
   # Iterate down through tables and build a parallel list of nested data.frames
   # Each data frame is returned via readTable which reaches through the partitions (what does a
   # "folder" mean in terms of locating the table? - the individual exporters will need to handle that).
+}
+
+ve.exporter.metadata <- function() {
+  # TODO: reformat self$TableList with a single list of tables that have been written
+  #   to the data.store. Should list S/G/T/N plus TableName (one row per N), and include
+  #   the Units actually written plus the N description. Might be easier to expand G to
+  #   "Global"/Year or find some way to conflate those even though we want to partition
+  #   them separately. Perhaps push the Global vs year down into the partition (by examining
+  #   the field 
+# helper function to write the Metadata
+ve.exporter.writeMetadata(data, Table="Metadata") {
+  self$write( self$metadata(), Table=Table)
 }
 
 #' @export
@@ -104,7 +165,7 @@ VEExporter <- R6::R6Class(
                           # format"? Would make it easier to generate $data as a hierarchy.
 
     # methods
-    # No "initialize" function needed for super-class
+    initialize=ve.exporter.init        # call from subclasses to establish internal connection and partition
     connection=ve.exporter.connection, # stash connection scheme (subclasses will do other things with it)
     partition=ve.exporter.partition,   # change partition scheme (subclasses will do other things with it)
 

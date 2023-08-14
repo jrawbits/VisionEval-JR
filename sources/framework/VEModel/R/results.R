@@ -113,7 +113,10 @@ ve.resultslist.init <- function(stages=NULL,model=NULL,) {
 # Connection won't be used here (though we could use it to generate other table types such as data
 # tables / tibbles). Partitioning can be changed from the system/model defaults
 ve.resultslist.extract <-  function(exporter="data.frame",connection=NULL,partition=NULL,wantMetadata=FALSE,convertUnits=TRUE) {
-  return(invisible(self$export(exporter=exporter)$data())
+  export <- self$export(exporter=exporter,
+    connection=connection,partition=partition,
+    wantMetadata=wantMetadata,convertUnits=convertUnits)
+  return(invisible(structure($data(),Exporter=export)
 } # shortcut to generate a list of data.frames via the export function
 
 # Export results from each set in the results list to an exporter
@@ -141,6 +144,8 @@ ve.resultslist.export <- function(
 
   # Apply a selection if provided, otherwise use entire list of outputs
   # Reduces the modelIndex to a subset then figures out S/G/T/N from whatever is left
+  # Default is everything available in the VEResultsList
+  # TODO: make sure list produces the full list...
   selection <- if ( ! is.null(selection) ) {
     self$select(selection)$list()
   } else self$list() # different from self$select, self$list does not deep-copy the selection
@@ -150,13 +155,19 @@ ve.resultslist.export <- function(
   # we have the actual table.
 
   # partition the selection into stages/scenarios and iterate across just those results
+  # Note that the export partitioning is controlled by the partition parameter (or the default
+  # for the type of exporter, which can be externally configured in visioneval.cnf), so if
+  # all the Household tables (e.g.) are to be gathered into one containing all the scenarios,
+  # the exporter will handle that by visiting each stage and appending its Household results
+  # to the exporter Household output.
   selected.stages <- unique(selection$Scenario) # names of scenario
 
   for ( stage in selected.stages ) {
     stage.selection <- selection[selection$Scenario==stage,]
     # Just the elements selected for this stage
-    data <- result$extract(
-      selection=stage.selection[,c("Group","Table","Name","Units")],convertUnits=convertUnits) # Generates a list of data.frames
+    data <- result$extract( # That's the VERresult$extract (below)
+      selection=stage.selection[,c("Scenario","Group","Table","Name","Units")],
+      convertUnits=convertUnits) # Generates a list of data.frames
     # data is a named list of Groups, each being a named list of Tables, each of which is a data.frame
     for ( group in names(data) ) {
       for ( table in names(data[[group]]) ) {
@@ -166,14 +177,18 @@ ve.resultslist.export <- function(
 
         # The exporter's partitioning scheme will create tables and merge data.frames as requested
         # To see what got created, print the exporter returned from this function
-        exporter$write( data[[group]][[table]], Table=table, Metadata=Metadata )
+
+        # Need to distinguish group=Global versus group=Year=Y
+        exporter$write( data[[group]][[table]], Scenario=stage, Group=group, Table=table, Metadata=Metadata )
       }
     }
   }
       
   if ( wantMetadata ) {
     # write the Metadata to the exporter connection using name and location for metadata configured
-    # in the connection description (usually a table with a distinctive name in the connection root)
+    # in the connection description (usually a table with a distinctive name in the connection
+    # root). The Metadata will identify what was written, and where (in the exporter outputs)
+    # it was written to.
     exporter$writeMetadata()
   }
 
@@ -184,7 +199,8 @@ ve.resultslist.export <- function(
 
 # Produce a bare named list of VEResults objects
 # Probably don't ever need this except for the idiom below for getting a subset of results from
-# this list. But scenarios can also be selected using the standard selection facility.
+# this list. But scenarios can also be selected using the standard selection facility, or they
+# can be selected when calling VEModel$results.
 ve.resultslist.results <- function(stages=NULL) {
   if ( missing(stages) ) {
     return(self$Results)
@@ -208,7 +224,7 @@ ve.resultslist.list <- function(pattern="", selected=TRUE, details=FALSE, ...) {
   # Show details about model fields
   # selected = TRUE shows just the selected fields
   # selected = FALSE shows all fields (not just unselected)
-  # pattern matches (case-insensitive regexp) some portion of field name
+  # pattern matches (case-insensitive regexp) some portion of field names (not groups or tables)
   # details = TRUE returns a data.frame self$modelIndex (units, description)
   # details = FALSE returns just the "Name" vector from self$modelIndex
 
@@ -242,9 +258,9 @@ ve.resultslist.inputs <- function( fields=FALSE, module="", filename="" ) {
   if ( ! self$valid() ) stop("Model has not been run yet.")
 
   if ( ! missing(fields) && fields ) {
-    ret.fields <- c("Module","Group","Table","Name","File","InputDir","Units","Description")
+    ret.fields <- c("Scenario","Module","Group","Table","Name","File","InputDir","Units","Description")
   } else {
-    ret.fields <- c("Module","Name","File","InputDir")
+    ret.fields <- c("Scenario","Module","Name","File","InputDir")
   }
 
   filter <- nzchar(self$modelIndex$File)
@@ -274,6 +290,8 @@ ve.resultslist.select <- function(selection) {
 
 # Find fields (as objects) within the current results list
 # Note: "Scenarios" correspond to model stages in the model
+# We're using the "end user" friendly word for "reportable stages". The resultslist can be
+# generated with base stages - see VEModel$results.
 ve.resultslist.find <- function(pattern=NULL,Scenario=NULL,Group=NULL,Table=NULL,Name=NULL,select=FALSE) {
   selection <- self$select() # generate a base selection from what is already selected.
   found <-selection$find(pattern=pattern,Scenario=Scenario,Group=Group,Table=Table,Name=Name,as.object=TRUE)
@@ -337,7 +355,7 @@ ve.results.init <- function(ResultsPath,ResultsName=NULL,ModelStage=NULL) {
 # Get tables of data from the Datastore for a specific stage/scenario
 # Return a list of groups containing data.frames for each table/name set within the group
 ve.results.extract <- function(
-  selection,             # data.frame of Group/Table/Name/Units elements for this stage
+  selection,             # data.frame of Scenario/Group/Table/Name/Units elements for this stage
   convertUnits=TRUE      # will convert if display units are present; FALSE not to attempt any conversion (use Units from selection)
 ) {
   if ( ! self$valid() ) {
@@ -432,6 +450,7 @@ ve.results.extract <- function(
     # TODO: Or do we want to elevate this to VEResultsList$export?
     Data_ls$Data <- lapply(Data_ls$Data,function(df) cbind(Scenario=scenarioName,df))
     # TODO: stop around here and look at the columns of Data_ls$Data
+    # Need to make sure Data_ls$Data includes Global="Global" column if group is "Global"
 
     # Process the table data.frames into results
     results[[ group ]] <- Data_ls$Data

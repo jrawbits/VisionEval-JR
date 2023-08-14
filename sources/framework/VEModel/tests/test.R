@@ -1,4 +1,4 @@
-# Test functions for VEModel
+s# Test functions for VEModel
 
 # Load required packages
 
@@ -43,7 +43,7 @@ getModelDirectory <- function() { # hack to support pkgload which won't see the 
   # no NAMESPACE by default. I added NAMESPACE to .gitignore, and setting up to do "live
   # development" with ve.test just requires that the package be built once and the NAMESPACE copied
   # back from /built/.../src/VEModel/NAMESPACE. As long as the development doesn't produce any new
-  # functions, we're fine.
+  # exported functions, we're fine.
   return(
     if ( ! "getModelDirectory" %in% getNamespaceExports("VEModel") ) {
       # Hack to support pkgload from source folder which does not have a Namespace
@@ -557,30 +557,52 @@ test_02_model <- function(modelName="VERSPM-Test", oldstyle=FALSE, log="info", b
   print(nrow(flds))
   print(flds[sample(nrow(flds),10),])
 
-  testStep("extract model results, show directory")
-  br <- bare$results()
-  print(br)
-  br$extract(prefix="BareTest") # TODO: extract just does data frames; export saves to external storage
-  # Or use br$extract(saveResults=TRUE)
-  # Or use br$export, which does not require arguments to save
-  # br$extract() just returns a list of data.frames...
+  return(invisible(bare)) # Return model for additional processing
+}
 
+test_02_basic_export(reset=FALSE,log="warn")
+{
+  testStep("Set up VERSPM-base model instance for export tests")
+  mod <- test_01_run("VERSPM-export",reset=reset,log="warn")
+  print(mod)
+
+  testStep("extract model results, show directory")
+  # MORE TESTS LATER: See more detailed tests below to exercise export options
+  br <- mod$results()
+  print(br)
+  connection=list( TablePrefix="ExportTest" )
+  R.data <- br$extract(connection=connection) # Returns a list of R data.frames
+  exporter <- attr(R.data,"Exporter") # VEExporter object (see br$export below)
+  
+  testStep("Default export")
+  br$export(connection=connection) # default export creates CSV files in a subfolder of the model's results/outputs folder
   cat("Directory:\n")
-  print(bare$dir(outputs=TRUE,all.files=TRUE))
+  print(mod$dir(outputs=TRUE,all.files=TRUE))
+
+  testStep("Export to an SQLite database")
+  # In this case, copy to "sql" which by default creates an SQLite database in results/outputs
+  extractor <- br$export("sql",connection=connection) # returns a VEExporter object
+  cat("Directory:\n")
+  print(mod$dir(outputs=TRUE,all.files=TRUE))
+
+  testStep("Re-format an existing export (CSV to SQLite)")
+  SQLextract <- newExporter("sql",data=extractor) # extract is the previous export
+  cat("Directory:\n")
+  print(mod$dir(outputs=TRUE,all.files=TRUE))
 
   testStep("clear the bare model extracts")
   cat("Interactive clearing of outputs (not results):\n")
-  bare$clear(force=!interactive())
+  mod$clear(force=!interactive())
 
   testStep("model after clearing outputs...")
-  print(bare$dir())
+  print(mod$dir())
 
   testStep("clear results as well...")
-  bare$clear(force=!interactive(),outputOnly=FALSE) # default is FALSE if no outputs exist - delete results
-  print(bare$dir())
+  mod$clear(force=!interactive(),outputOnly=FALSE) # default is FALSE if no outputs exist - delete results
+  print(mod$dir())
 
   testStep("copy a model (includes results and outputs)")
-  cp <- bare$copy("BARE-COPY")
+  cp <- mod$copy("BARE-COPY")
   print(cp)
   cat("Model directory of BARE-COPY")
   print(cp$dir())
@@ -710,9 +732,13 @@ test_02_multicore <- function(model=NULL, log="info", workers=3) {
 }
 
 # existingResults parameter if provided should be a VEResultsList object
+# TODO: factor this into more granular parts.
+# Need to test Input and Datastore path (Staged model)
+# Need to test result extraction and selection
+# Need to test export details (exercising options)
 test_03_results <- function (existingResults=FALSE,log="info") {
 
-  testStep("Manipulate Model Results in Detail")
+  testStep("Manipulate Model Results in Detail, including export")
 
   # Use case is mostly for doing queries over a set of scenarios...
   # Return a list if mod$results(all.stages=TRUE) or mod$results(stages=c(stage1,stage2)) with
@@ -761,7 +787,7 @@ test_03_results <- function (existingResults=FALSE,log="info") {
   print(sl$scenarios())  # Lists only reportable stages, implemented as sl$stages(Reportable=TRUE)
   cat("Scenarios (identified as 'stages')\n")
   print(sl$stages())     # List all of them, even if not reportable
-  cat("Scenarios (using 'stages' function)\n")
+  cat("Scenarios (using 'stages' function) - same as sl$scenarios\n")
   print(sl$stages(Reportable=TRUE)))
   cat("Groups\n")
   print(sl$groups())
@@ -829,13 +855,13 @@ test_03_results <- function (existingResults=FALSE,log="info") {
   print(sl$fields())
   print(rs$units())
 
-  # TODO: do we still want to do extractions on selections (i.e. bind
-  # them to results and use as an alternate interface...)?
+  unitsConnection <- list( ExportPrefix="DisplayUnits" )
   testStep("Extracting speed fields using DISPLAY units")
-  sl$extract(prefix="DisplayUnits")                 # Using DISPLAY units
+  sl$extract(connection=unitsConnection)   # Write to default output format using DISPLAY units
 
   testStep("Exporting speed fields using DATASTORE units")
-  sl$export(prefix="Datastore",convertUnits=FALSE)  # Using DATASTORE units
+  datastoreConnection <- list( ExportPrefix="Datastore" )
+  sl$export(connection=datastoreConnection,convertUnits=FALSE)  # Default output format using DATASTORE units
 
   if ( ! is.null(mod) ) {
     testStep("Model directory")
@@ -870,14 +896,7 @@ test_03_select <- function( log="info" ) {
   testStep("Manipulate model selection to pick and retrieve fields")
   mod <- test_01_run("VERSPM-pop","VERSPM","pop")
   rs <- mod$results("stage-pop-future")
-
-  # TODO: change to work directly on VEResultsList (don't need to
-  # manipulate low-level VEResults)
-
-  if ( "VEResultsList" %in% class(rs) ) {
-    rs <- rs$results()    # get an actual list
-    rs <- rs[length(rs)]  # get the last element of that list, as a list
-  }
+  # rs is a VEResultsList, which can perform export operations
 
   testStep("Directly access results using 'find'")
   cat("Result has",length(find <- rs$find()),"fields\n") # All the fields...
@@ -896,7 +915,9 @@ test_03_select <- function( log="info" ) {
 
   testStep("Selecting Worker table and extracting to a data.frame")
   rs$select(wkr)
-  wrk.table <- rs$extract(saveTo=FALSE)[[1]] # only one table returned in a list
+  # The extract function performs an export to data.frames in R (without
+  # saving them exernally).
+  wrk.table <- rs$extract()[[1]]$data() # table returned in a list
   print(wrk.table[sample(nrow(wrk.table),10),])
 
   return(rs)
