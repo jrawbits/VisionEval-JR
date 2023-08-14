@@ -20,6 +20,11 @@ partition but not present in the specific table will also be ignored (i.e. not p
 path or name of the table). Elements with "merge" action (or "none") will be treated as if
 they weren't there: they're just making the default action explicit.
 
+If we can figure out how to create a database with "pure SQL", we could add a "database"
+type to the partition. The database is named after the model, with a timestamp. The $list
+function of the exporter will help figure out who is where. So then we could shunt Global
+or whatever into a different database.
+
 To handle things like the Marea table, we can partition on "Global" in addition to "Year"
 (if we don't do that, the Marea tables will be smashed together, and we'll use the
 "missing column" mechanism to rewrite the table with new columns).
@@ -130,6 +135,8 @@ ve.exporter.data <- function(
                        # if FALSE, turn each Path element into a list of elements with it
   attachTable = TRUE   # if TRUE (default), add Table name as an attribute to the data.store
                        # That will support re-exporting to a new partition scheme
+  tables = list()      # list (or subset) equivalent to what you get by doing $list(details=TRUE) 
+                       # permits not having to load entire export all at aonce
 )
 
 All of that should be enough to support copying an exported set of data to a (possibly)
@@ -146,11 +153,13 @@ ve.exporter.initialize <- function(
                    # and only consulted for missing connection or partition parameters
                    # here. Only use if we don't have both connection and partition
                    # supplied explicitly here.
-  data = NULL,     # if a named list of data.frames with Table attributes, write those out
+  data = NULL,     # if a named list of data.frames with Table attributes, write those out.
                    # if no Table attribute, use corresponding name of list element as
                    # a fixed table and don't partition. Can use this e.g. for queries or
                    # for re-partitioning a previous exports. If data is a VEExporter,
                    # then we'll get the list of data.frames by calling its $data function
+                   # using its $list() function to load the other export one table at a
+                   # time.
   connection=NULL, # A connection string or list that will be mined by the particular
                    # VEExporter subclass to set up a place to write tables. Will include
                    # things like table name component separators for the partition, path
@@ -172,6 +181,10 @@ Default is an empty list, so nothing happens. If there is a list, we iterate it 
 each data.frame + Table gets a $write called in the new exporter - effectively
 re-partitioning the data.frames into the new exporter structure. Cool.
 
+To do a Python-style yield, if we send an existing exporter into the constructor, it will
+call the $list function and call the tables up one at a time to copy/partition the
+results.
+
 We also want to do a $save function on VEExporter. Then we can serialize the Exporter to a
 NAME passed to $save and used by openExporter(load=NAME). The saved exporter gets a
 .VEexport suffix and it's an R object dump (or perhaps YAML) of the exporter's tracking
@@ -183,10 +196,24 @@ OutputDir
   class/driver (could just be an exporter tag)
   connection (list of connection parameters like CSV root directory, DBI database, etc)
   partition
-  table locations
+  table locations (dump of $list(details=TRUE))
 
-Suggests we want a $clear function to blow away the existing export so we can re-do it.
-Should drop all tables listed to prepare for a new partition run.
+So generally, functions that are writing stuff into an exporter will finalize/save when
+they are done (thus VEResultsList$export and VEQuery$export). When we open an exporter
+and write to it again, we won't write any S/G/T that already has a table location, unless
+we do overwrite=TRUE in which case the connection root will be made "new" (with a new
+timestamp). So the save protocol will only be an issue for someone who uses the exporter
+directly (and forgets to $save). Could have an "interactive" flag that auto-saves after
+a single $write (set to TRUE by default, but craftily changed by the interior calls).
+
+For DBI databases, we should be able as part of the connection to create the database
+there with an option to drop everything from an existing one, or create a new one from
+a default name with name collision resolution (probably a timestamp). The ModelName should
+get built into the database (along with any "database" elements of the partition - can we
+create those on the fly?). The exporter should have all its entries timestamped once when
+the exporter is first created, not when the object creation happens.
+
+Then we can get away with minimum required credentials or noe 
 
 So that would let us do this beautiful thing:
 
