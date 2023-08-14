@@ -383,9 +383,10 @@ ve.results.extract <- function(
     tables <- extractTables$Table[ extractTables$Group == group ]
     if ( length(tables)==0 ) next # should not happen given how we built extract
     for ( table in tables ) {
+      # set up unit conversion...
       meta <- extract[ extract$Group==group & extract$Table==table, ]
       fields <- meta[ , c("Name","DisplayUnits") ]
-      dispUnits <- fields$DisplayUnits # Will just be fields$Units if not converting
+      dispUnits <- fields$DisplayUnits # Will already be fields$Units if not converting
       names(dispUnits) <- fields$Name
       Tables_ls[[table]] <- dispUnits
     }
@@ -411,7 +412,7 @@ ve.results.extract <- function(
       stop( writeLog( msg, Level="error" ) )
     }
 
-    # This code exists to handle a bad part of the VERPAT design, where base and future
+    # The folloing code exists to handle a bad part of the VERPAT design, where base and future
     # vehicles are loaded into the same table. Fields associated with base and future may
     # have different lengths (each field is only associated with one). This code will
     # be used to split out the base and future into different tables based on matching
@@ -447,16 +448,20 @@ ve.results.extract <- function(
       }
     }
     # Now visit each of the resulting data.frames and prepend the Scenario column
-    # TODO: Or do we want to elevate this to VEResultsList$export?
+    # Perhaps also create Global and Year columns to simplify partitioning later
+    # Could take one more step and copy Group column to Global column if it == "GLobal"
+    # Copy Group column to "Year" if Group!="Global"
     Data_ls$Data <- lapply(Data_ls$Data,function(df) cbind(Scenario=scenarioName,df))
+    # TODO: it might be convenient to assemble the data.frame metadata here as an attribute
+    #   on each data.frame
+    
     # TODO: stop around here and look at the columns of Data_ls$Data
-    # Need to make sure Data_ls$Data includes Global="Global" column if group is "Global"
 
     # Process the table data.frames into results
     results[[ group ]] <- Data_ls$Data
   }
-  invisible(results) # results will be a named list of groups from the stage results, with each group list
-                     # contains the tables extracted for that group.
+  invisible(results) # results will be a named list of groups from the stage results, with each group being a list
+                     # a list of tables (data.frames) extracted for that group.
 }
 
 # Check results validity (all files present)
