@@ -1,6 +1,23 @@
 The Partitioning plan in brief:
 
-Create a VEPartition object initialized from the partition scheme
+TODO: 8/14/2023
+
+Get the Partition and basic exporter working
+Create a test function for exporting specifically (not just within results testing, but could be)
+Run all the results tests (since the results got reorganized).
+Test out export to:
+  - Data.frame
+  - CSV
+  - Sqlite (via DBI)
+Make sure connection configuration via visioneval.cnf works (at model or global or default level).
+
+===== NOTES ON IMPLEMENTATION
+
+Could we just have one Exporter class and push the details of different types of storage down into
+the connection? The main question would be saving the list of tables generated as the tables are
+written out - that requires cooperation with the connection. We can explore and refactor later.
+The factory class pretty much hides the details - we'll get the VEExporter interface in any case
+and if we later re-delegate to the conneciton within a single class it should be transparent.
 
 Partition scheme is a named character vector with fields to partition on:
   c(Scenario="folder",Group="merge",Table="name") # Don't need to include Table as it will always be "name"
@@ -11,43 +28,41 @@ Alternatively, the partition scheme can be a list:
     Query=c() # Table gets written "as is" to the indicated Table name on the connection root
   )
 
-The partition scheme can include ANY column from ANY table (intended principally for
-things like Marea or Azone, but could also pull things out based on Bzone custom field
-tags for EJ zones or whatever).
+The partition scheme can include ANY column from ANY table (intended principally for things like
+Marea or Azone, but could also pull things out based on Bzone custom field tags for EJ zones or
+whatever).
 
-Elements not mentioned in the partition will be ignored. Elements mentioned in the
-partition but not present in the specific table will also be ignored (i.e. not put in the
-path or name of the table). Elements with "merge" action (or "none") will be treated as if
-they weren't there: they're just making the default action explicit.
+Elements not mentioned in the partition will be ignored. Elements mentioned in the partition but not
+present in the specific table will also be ignored (i.e. not put in the path or name of the table).
+Elements with "merge" action (or "none") will be treated as if they weren't there: they're just
+making the default action explicit.
 
-If we can figure out how to create a database with "pure SQL", we could add a "database"
-type to the partition. The database is named after the model, with a timestamp. The $list
-function of the exporter will help figure out who is where. So then we could shunt Global
-or whatever into a different database.
+If we can figure out how to create a database with "pure SQL", we could add a "database" type to the
+partition. The database is named after the model, with a timestamp. The $list function of the
+exporter will help figure out who is where. So then we could shunt Global or whatever into a
+different database.
 
-To handle things like the Marea table, we can partition on "Global" in addition to "Year"
-(if we don't do that, the Marea tables will be smashed together, and we'll use the
-"missing column" mechanism to rewrite the table with new columns).
+To handle things like the Marea table, we can partition on "Global" in addition to "Year" (if we
+don't do that, the Marea tables will be smashed together, and we'll use the "missing column"
+mechanism to rewrite the table with new columns).
 
-When we $write the table, we can add additional parameters like Global="Global" which
-add a column with that value to the table if there is not already a column with that name.
-All the rules of cbind'ing a column apply to that additional parameter (i.e. it can be
-a vector the same length as the data.frame we're writing). Then that column can be used
-in the partition.
+When we $write the table, we can add additional parameters like Global="Global" which add a column
+with that value to the table if there is not already a column with that name. All the rules of
+cbind'ing a column apply to that additional parameter (i.e. it can be a vector the same length as
+the data.frame we're writing). Then that column can be used in the partition.
 
-We should also allow a flag for "noPartition=TRUE" on $write, in which case we use Table
-name verbatim and put it in the root of the connection (need to check for collision, and
-do an "overwrite=TRUE" to drop and recreate the table; otherwise do nothing with an error
-message).
+We should also allow a flag for "noPartition=TRUE" on $write, in which case we use Table name
+verbatim and put it in the root of the connection (need to check for collision, and do an
+"overwrite=TRUE" to drop and recreate the table; otherwise do nothing with an error message).
 
 The VEPartition object has an $initialize function that sets up the partition scheme above.
 
 VEPartition has a $partition function that we apply to a data.frame to figure out where and how it
-will get partitioned for writing. We apply the partitioning scheme to the actual data and
-return a list of partition tables into which to write subsets of data.frame rows. That list
-will have at least one element (with Rows set to 1:nrow(data)), but may have more than one
-if the partition includes fields like Azone or Marea that are not partitioned out during
-the VEResultsList $export iteration.
+will get partitioned for writing. We apply the partitioning scheme to the actual data and return a
+list of partition tables into which to write subsets of data.frame rows. That list will have at
+least one element (with Rows set to 1:nrow(data)), but may have more than one if the partition
+includes fields like Azone or Marea that are not partitioned out during the VEResultsList $export
+iteration.
 
 To get the table location information for a data.frame via the Exporter $write function,)
 
@@ -60,31 +75,28 @@ To get the table location information for a data.frame via the Exporter $write f
                      used internally by the VEPartition to determine if we Append or Create)
   )
 
-The exporter will track the Locators, and use that to determine whether to create or
-append to the table. We want the exporter also track the fields available at that
-Location, so we can spot any that are missing on one side or the other. 
+The exporter will track the Locators, and use that to determine whether to create or append to the
+table. We want the exporter also track the fields available at that Location, so we can spot any
+that are missing on one side or the other. 
 
-The Exporter tracks existing Locators and builds the Location element into a table
-descriptor that it uses to see if the table exists and what columns it has (we can cache
-that information). Then we can rectify columns if the names in the database are not
-compatible with the names in the data.frame. We will read and then rewrite the table if it
-is missing columns, and we will add columns of NA to the new data.frame to make up any
-that are missing on that side.
+The Exporter tracks existing Locators and builds the Location element into a table descriptor that
+it uses to see if the table exists and what columns it has (we can cache that information). Then we
+can rectify columns if the names in the database are not compatible with the names in the
+data.frame. We will read and then rewrite the table if it is missing columns, and we will add
+columns of NA to the new data.frame to make up any that are missing on that side.
 
     Action  = one of c("Append","Create")
     PathSeparator = Character # defined by the exporter class
     NameSeparator = Character # defined by the exporter class
 
-How the external table path and name gets build depends on the Exporter, but the
-resolution order of Path and Name elements depends on the order named in the original
-partitioning vector. The VEExporter connection will furnish a (possibly configurable)
-strategy for assembling Table + Name (+ Path). Path elements will usually come first,
-followed by Name elements. The Table name can be placed either at the front or at the end,
-or a template can be used to build them.
+How the external table path and name gets build depends on the Exporter, but the resolution order of
+Path and Name elements depends on the order named in the original partitioning vector. The
+VEExporter connection will furnish a (possibly configurable) strategy for assembling Table + Name (+
+Path). Path elements will usually come first, followed by Name elements. The Table name can be
+placed either at the front or at the end, or a template can be used to build them.
 
-One question is whether to put a magic prefix on Scenario or Year or Global in the
-table name (if included there) so we can parse what's a scenario or year or Azone or
-whatever.
+One question is whether to put a magic prefix on Scenario or Year or Global in the table name (if
+included there) so we can parse what's a scenario or year or Azone or whatever.
 
 So based on the above, here's the interface to VEExporter $write:
 
