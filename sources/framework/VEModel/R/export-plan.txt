@@ -1,25 +1,26 @@
 The Partitioning plan in brief:
 
+TODO: 8/16/2023
+
+Finish implementing the Exporter and at least one of the connections.
+Then try building it and running the tests...
+
 TODO: 8/15/2023
 
-Done with first cut at implement VEPartition. Set up basic framework for VEExporter and the
-connections
+Done with first cut at implement VEPartition.
+
+Set up basic framework for VEExporter and the connections
 
 Next up:
+
+ * Finished setting up the basic tests.
+ * Finished basic metadata implementation (need to check what gets created when we open the
+   results list).
+ * Working on exporter
 
  * implement the data.frame connection and see if we can partition by different features. It might
    be easier just to start with the CSV implementation (we'll end up iterating through a bunch of
    data.frames, which is not impossible, but will need a fair amount of machinery).
-
- * Fix up some efficient way to handle the table metadata (for each table written, track column
-   names, Units actually written and Description) - we could create the metadata at a very low level in
-   VEResults$extract, for example, and put it as an attribute on each data.frame that rides with it
-   into the VEPartition (so we use the Metadata parameter if provided, and if not, look for a
-   Metadata attribute, and if not provided, just create a Metadata table that contains Scenario,
-   Group, Table and Name (plus eventually the connection-specific table locator)). Metadata must
-   contain at a minimum SGTN for Datastore tables; if we're writing an arbitrary global table, those
-   won't appear. So generating those in VEResults$extract makes sense. And we'll probably split out
-   Global and Year columns in VEResults$extract as well.
 
  * Then we should be able to run pretty quickly... Play with different partition schemes.
 

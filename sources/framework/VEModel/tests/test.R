@@ -582,6 +582,8 @@ test_02_basic_export(reset=FALSE,log="warn")
   testStep("Export to an SQLite database")
   # In this case, copy to "sql" which by default creates an SQLite database in results/outputs
   extractor <- br$export("sql",connection=connection) # returns a VEExporter object
+  cat("Extractor list:\n")
+  print(extractor$list())
   cat("Directory:\n")
   print(mod$dir(outputs=TRUE,all.files=TRUE))
 
@@ -733,9 +735,6 @@ test_02_multicore <- function(model=NULL, log="info", workers=3) {
 
 # existingResults parameter if provided should be a VEResultsList object
 # TODO: factor this into more granular parts.
-# Need to test Input and Datastore path (Staged model)
-# Need to test result extraction and selection
-# Need to test export details (exercising options)
 test_03_results <- function (existingResults=FALSE,log="info") {
 
   testStep("Manipulate Model Results in Detail, including export")
@@ -746,6 +745,7 @@ test_03_results <- function (existingResults=FALSE,log="info") {
   # An individual stage can also be called out explicitly (and in that case, it does not
   #   need to be Reportable).
 
+  # Get some results
   rs <- if ( missing(existingResults) || ! existingResults ) {
     logLevel("warn")
     mod <- test_01_run("VERSPM-pop","VERSPM",var="pop",log="warn") # use staged model to exercise DatastorePath
@@ -761,14 +761,15 @@ test_03_results <- function (existingResults=FALSE,log="info") {
     cat("Results after clearing... (Generates error)\n")
     rs <- cp$results()
     print(rs)
-    cat("Selection after clearing...\n")
-    sl <- rs$select()
-    print(sl)             # TODO: What is the expected behavior?
+#   # TODO: retiring selection interface for simpler filtering on Group or Table
+#     cat("Selection after clearing...\n")
+#     sl <- rs$select()
+#     print(sl)             # TODO: What is the expected behavior?
     rm(cp) # Should be no results
 
     testStep("Pull out results and selection from VERSPM-pop test model...")
     cat("Results...\n")
-    mod$results()  # Gets results for final Reportable stage (only)
+    mod$results()  # Gets results for all stages as VEResultsList (default print lists scenarios)
   } else {
     # Don't use the flatten test if you want to test DatastorePath changes
     mod <- NULL
@@ -776,13 +777,17 @@ test_03_results <- function (existingResults=FALSE,log="info") {
   }
   logLevel(log)
 
+  # TODO: Simplify selection process
+  # Selection can select Scenario=..., Stage=...,
+  # Group=ExplicitYears, Group=Years, Group=Global, or Table=c(name1,name2,...)
+
   cat("Results:\n") # rs is a VEResultsList
   print(rs)
   cat("Selection...\n")
   sl <- rs$select() # Get full field list
   print(head(capture.output(print(sl)),n=12))
 
-  # Do some basic field extraction - list fields
+  # Do some basic extraction - list fields
   cat("Scenarios\n")
   print(sl$scenarios())  # Lists only reportable stages, implemented as sl$stages(Reportable=TRUE)
   cat("Scenarios (identified as 'stages')\n")
@@ -817,31 +822,33 @@ test_03_results <- function (existingResults=FALSE,log="info") {
   # Test display units, select speeds, create unit conversion
   testStep("Creating and Writing Display Units...")
   sl$all() # Deselect everything
-  un <- rs$list(details=TRUE)[,c("Group","Table","Name","Units")]
+  un <- rs$list(details=TRUE)[,c("Scenario","Group","Table","Name","Units")]
   spd <- un[ grepl("MI/",un$Units)&grepl("sp",un$Name,ignore.case=TRUE), ]
   spd$DisplayUnits <- "MI/HR"
   cat("Writing display_units.csv\n")
-  display_units_file <- if ( is.null(mod) ) {
-    # just write it into the runtime directory (getwd())
-    message("No model: display_units in runtime directory")
-    file.path(
-      runtimeEnvironment()$ve.runtime, # VEModel function
-      visioneval::getRunParameter("DisplayUnitsFile",Param_ls=mod$RunParam_ls)
-    )
-  } else {
-    message("Model provided: display_units in ParamDir")
-    file.path(
-      mod$modelPath,
-      visioneval::getRunParameter("ParamDir",Param_ls=mod$RunParam_ls),
-      visioneval::getRunParameter("DisplayUnitsFile",Param_ls=mod$RunParam_ls)
-    )
-  }
+#   display_units_file <- if ( is.null(mod) ) {
+#     # just write it into the runtime directory (getwd())
+#     message("No model: saving display_units in runtime directory")
+#     file.path(
+#       runtimeEnvironment()$ve.runtime, # VEModel function
+#       visioneval::getRunParameter("DisplayUnitsFile",Param_ls=mod$RunParam_ls)
+#     )
+#   } else {
+  message("Model provided: display_units in ParamDir")
+  file.path(
+    mod$modelPath,
+    visioneval::getRunParameter("ParamDir",Param_ls=mod$RunParam_ls),
+    visioneval::getRunParameter("DisplayUnitsFile",Param_ls=mod$RunParam_ls)
+  )
+#   }
   cat(display_units_file,"\n")
   write.csv(spd,file=display_units_file)
 
+  # TODO: 
+
   testStep("Selecting speed fields...")
   sl$all() # re-select everything
-  sl$select( with(spd,paste(Group,Table,Name,sep="/")) )
+  sl$select( with(spd,paste(Scenario/Group,Table,Name,sep="/")) )
   print(sl$fields())
 
   testStep("Showing currently defined UNITS/DISPLAYUNITS (via sl$results)")
@@ -855,13 +862,17 @@ test_03_results <- function (existingResults=FALSE,log="info") {
   print(sl$fields())
   print(rs$units())
 
-  unitsConnection <- list( ExportPrefix="DisplayUnits" )
+  exportPartition <- character(Global="name") # Put all scenarios in the same tables, make Global tables separate
+  unitsConnection <- list( TablePrefix="DisplayUnits" )
   testStep("Extracting speed fields using DISPLAY units")
-  sl$extract(connection=unitsConnection)   # Write to default output format using DISPLAY units
+  rs$export("csv",connection=unitsConnection,partition=exportPartition)
+  # Write to default output format using DISPLAY units
+  # sl$export also works - dispatches to results list
 
   testStep("Exporting speed fields using DATASTORE units")
-  datastoreConnection <- list( ExportPrefix="Datastore" )
-  sl$export(connection=datastoreConnection,convertUnits=FALSE)  # Default output format using DATASTORE units
+  datastoreConnection <- list( TablePrefix="Datastore" )
+  rs$export("csv",connection=datastoreConnection,partition=exportPartition,convertUnits=FALSE)
+  # Default output format using DATASTORE units
 
   if ( ! is.null(mod) ) {
     testStep("Model directory")
@@ -888,7 +899,7 @@ test_03_results <- function (existingResults=FALSE,log="info") {
   return(rs) 
 }
 
-# Test selection manipulation (for single-scenario model)
+# Test selection manipulation
 test_03_select <- function( log="info" ) {
 
   logLevel(log)
@@ -897,6 +908,7 @@ test_03_select <- function( log="info" ) {
   mod <- test_01_run("VERSPM-pop","VERSPM","pop")
   rs <- mod$results("stage-pop-future")
   # rs is a VEResultsList, which can perform export operations
+  # in this case, it just has one scenario/stage
 
   testStep("Directly access results using 'find'")
   cat("Result has",length(find <- rs$find()),"fields\n") # All the fields...
@@ -907,18 +919,54 @@ test_03_select <- function( log="info" ) {
   cat("Fields to select from:",length(sl$fields()),"\n")
 
   testStep("Finding Worker table for 2038")
-  print(sl$find(Group="2038",Table="Worker"))
-
-  testStep("Finding Worker table for 2038 straight from the results")
-  wkr <- sl$find(Group="2038",Table="Worker") 
+  wkr <- sl$find(Group="2038",Table="Worker")
   print(wkr)
 
-  testStep("Selecting Worker table and extracting to a data.frame")
-  rs$select(wkr)
-  # The extract function performs an export to data.frames in R (without
-  # saving them exernally).
-  wrk.table <- rs$extract()[[1]]$data() # table returned in a list
-  print(wrk.table[sample(nrow(wrk.table),10),])
+  testStep("Selecting Worker table")
+  sl$select(wkr)
+  rs$select(sl)
+  
+  testStep("Extracting Worker table only to data.frames")
+  # The extract function performs an export to data.frames in R (without saving them exernally).
+  partition <- character(0) # Generate one table for all scenarios and years
+  wrk.table <- rs$extract(partition=partition) # defaults to unpartitioned data.frames
+  print(class(wrk.table)) # should be list
+  print(names(wrk.table)) # should contain "Worker"
+  print(class(wrk.table[[1]])) # should be dataframe with worker elements
+  print(wrk.table[[1]][sample(nrow(wrk.table),10),])
+  rm(extr, wkr.table)
+
+  testStep("Export all data.frames to SQLite")
+  sl$all()
+  rs$select( sl ) # redundant if sl is attached to rs...
+  # NOTE: "sql" and "sqlite" are the same but may have different setups in visioneval.cnf
+  extr <- rs$export("sqlite",partition=c(Global="name")) # Break out Global tables from Year tables
+  message("List of output tables")
+  print(extr$list()) # List all the table identifiers
+
+  testStep("Extract some tables as data.frames from exporter")
+  table.list <- extr$list()
+  message("List of available tables")
+  print(class(table.list)) # should be a vector of table identifiers
+  locators <- table.list[sample(length(table.list),3)]
+  df <- extr$data(locators) # Reload the locator tables
+  
+  message("Extract list with details")
+  raw.list <- extr$list(namesOnly=FALSE)
+  print(class(raw.list))
+  message("A subset of locators:")
+  locators <- raw.list[sample(length(raw.list),3)]
+  print(locators)
+  testStep("Extract data.frames from tables in 'locators'")
+  df <- extr$data(locators) # list of data.frames...
+  print(class(df))       # Should be a list
+  message("locator names:")
+  print(names(locators))
+  message("names of extracted data.frames")
+  Print(names(df))
+  message("class and first ten rows of first data.frame: ",names(df)[1])
+  print(class(df[[1]]))  # Should be a data.frame
+  print(df[[1]][1:10,])
 
   return(rs)
 }

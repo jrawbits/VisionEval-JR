@@ -355,7 +355,7 @@ ve.results.init <- function(ResultsPath,ResultsName=NULL,ModelStage=NULL) {
 # Get tables of data from the Datastore for a specific stage/scenario
 # Return a list of groups containing data.frames for each table/name set within the group
 ve.results.extract <- function(
-  selection,             # data.frame of Scenario/Group/Table/Name/Units elements for this stage
+  selection,             # data.frame of Scenario/Group/Table/Name/Units/DisplayUnits elements for this stage
   convertUnits=TRUE      # will convert if display units are present; FALSE not to attempt any conversion (use Units from selection)
 ) {
   if ( ! self$valid() ) {
@@ -368,6 +368,10 @@ ve.results.extract <- function(
     selection <- addDisplayUnits(selection,Param_ls=self$RunParam_ls)
   } else {
     selection$DisplayUnits <- selection$Units
+  }
+  # TODO: should include Description if available in selection (and why wouldn't it be?)
+  if ( ! "Scenario" %in% names (selection ) ) { # Should be redundant...
+    selection <- cbind(Scenario=scenarioName,selection)
   }
   extract <- selection[ , c("Scenario","Name","Table","Group","Units", "DisplayUnits") ]
 
@@ -382,10 +386,13 @@ ve.results.extract <- function(
     Tables_ls <- list()
     tables <- extractTables$Table[ extractTables$Group == group ]
     if ( length(tables)==0 ) next # should not happen given how we built extract
+    Metadata <- list()
     for ( table in tables ) {
+      # get table Metadata
+      Metadata[[table]] <- extract[ extract$Group==group & extract$Table==table, ]
+      fields <- Metadata[[table]][ , c("Name","DisplayUnits") ]
+
       # set up unit conversion...
-      meta <- extract[ extract$Group==group & extract$Table==table, ]
-      fields <- meta[ , c("Name","DisplayUnits") ]
       dispUnits <- fields$DisplayUnits # Will already be fields$Units if not converting
       names(dispUnits) <- fields$Name
       Tables_ls[[table]] <- dispUnits
@@ -428,7 +435,7 @@ ve.results.extract <- function(
         for ( multi in names(MultiTables) ) {
           # multi is a list of datasets not made into a data.frame by readDatastoreTables
           multi.data <- MultiTables[[multi]]
-          lens <- sapply(multi.data,length) # vector of lengths of datastores
+          lens <- sapply(multi.data,length) # vector of lengths of columns
           multi.len <- unique(lens)
           for ( dfnum in 1:length(multi.len) ) { # work through unique dataset lengths
             dfname <- paste(multi,multi.len[dfnum],sep="_") # Encode the length onto the table name
@@ -439,29 +446,38 @@ ve.results.extract <- function(
               stop( writeLog( msg, Level="error" ) )
             }
             Data_ls$Data[[dfname]] <- try.df
+            multiMetadata <- Metadata[[multi]]
+            newMetadata <- multiMetadata[multiMetadata$Name %in% names(try.df),] # drop rows that disappeared from try.df
+            Metadata[[dfname]] <- newMetadata
           }
         }
         # Remove original tables (they will now have names like "Vehicles.13747" and "Vehicles.15444")
         # That way we can later merge equivalent tables across multiple scenarios depending on the
-        # conosolidation strategy in VEResultsList$export.Okay
+        # consolidation strategy in VEResultsList$export.
+        # TODO: really need to fix the source problem in VERPAT (if anyone ever uses it again...)
         Data_ls$Data <- Data_ls$Data[-which(names(Data_ls$Data) %in% names(MultiTables))]
+        Metadata <- Metadata[-which(names(Metadata) %in% names(MultiTables)]
       }
     }
-    # Now visit each of the resulting data.frames and prepend the Scenario column
-    # Perhaps also create Global and Year columns to simplify partitioning later
-    # Could take one more step and copy Group column to Global column if it == "GLobal"
-    # Copy Group column to "Year" if Group!="Global"
+    # Now visit each of the resulting data.frames and prepend the Scenario, Global and Year columns
+    if ( group=="Global" ) {
+      Data_ls$Data <- lapply(Data_ls$Data,function(df) {
+        cbind(Global=group,Year=NA,df)
+      })
+    } else { # group==someYear
+      Data_ls$Data <- lapply(Data_ls$Data,function(df) {
+        cbind(Global=NA,Year=group,df)
+      })
+    }
     Data_ls$Data <- lapply(Data_ls$Data,function(df) cbind(Scenario=scenarioName,df))
-    # TODO: it might be convenient to assemble the data.frame metadata here as an attribute
-    #   on each data.frame
-    
-    # TODO: stop around here and look at the columns of Data_ls$Data
 
-    # Process the table data.frames into results
-    results[[ group ]] <- Data_ls$Data
+    # TODO: stop around here and look at the columns of Data_ls$Data and the Metadata
+
+    # Process the table data.frames into results, adding Metadata as an attribute
+    results[[ group ]] <- structure(Data_ls$Data,Metadata=Metadata)
   }
-  invisible(results) # results will be a named list of groups from the stage results, with each group being a list
-                     # a list of tables (data.frames) extracted for that group.
+  invisible(results) # results will be a named list of groups from the stage results, with each group being
+                     # a named list of tables (data.frames) extracted for that group
 }
 
 # Check results validity (all files present)
