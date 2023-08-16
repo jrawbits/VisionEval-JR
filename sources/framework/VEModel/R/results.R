@@ -38,7 +38,7 @@ self=private=NULL # To avoid global variable warnings
 ##############################
 
 # Initialize a VEResultsList from a model or list of model stages
-ve.resultslist.init <- function(stages=NULL,model=NULL,) {
+ve.resultslist.init <- function(stages=NULL,model=NULL) {
 
   # Set up the model, if provided explicitly
   if ( ! missing(model) && ! is.null(model) && inherits(model,"VEModel") ) self$Model <- model
@@ -48,7 +48,7 @@ ve.resultslist.init <- function(stages=NULL,model=NULL,) {
     if ( ! is.null(self$Model) ) stages <- self$Model$stages() else stages <- NULL
   } else {
     # have stages; check model consistency and set self$Model
-    modelNames <- unique(sapply(stages,function(s), s$Model$modelName))
+    modelNames <- unique(sapply(stages,function(s) s$Model$modelName))
     if ( length(modelNames)==1 ) {
       if ( is.null(self$Model) ) {
         self$Model <- stages[[1]]$Model
@@ -92,7 +92,7 @@ ve.resultslist.init <- function(stages=NULL,model=NULL,) {
         "Could not create result list for ",
         "model=",model,
         "; stages=",stages,
-        "; results=",results
+        "; results=",names(self$Results)[!valid]
       )
     }
     writeLog(
@@ -116,7 +116,7 @@ ve.resultslist.extract <-  function(exporter="data.frame",connection=NULL,partit
   export <- self$export(exporter=exporter,
     connection=connection,partition=partition,
     wantMetadata=wantMetadata,convertUnits=convertUnits)
-  return(invisible(structure($data(),Exporter=export)
+  return(invisible(structure(exporter$data(),Exporter=export)))
 } # shortcut to generate a list of data.frames via the export function
 
 # Export results from each set in the results list to an exporter
@@ -133,7 +133,7 @@ ve.resultslist.export <- function(
   selection=NULL,     # what we get from selecting a subset using VEResultsList$select() and VESelection operations
   exporter="csv",connection=NULL,partition=NULL, # see export.R for docs on exporter, connection, partition
   wantMetadata=TRUE,  # Generate a metadata table at the root of the output
-  convertUnits=TRUE,  # Use "display_units.csv" to convert units for selected fields (otherwise Datastore units)
+  convertUnits=TRUE   # Use "display_units.csv" to convert units for selected fields (otherwise Datastore units)
 ) {
 
   # Set up the exporter (defaults to CSV - use $extract to default to list of data.frames)
@@ -165,7 +165,7 @@ ve.resultslist.export <- function(
   for ( stage in selected.stages ) {
     stage.selection <- selection[selection$Scenario==stage,]
     # Just the elements selected for this stage
-    data <- result$extract( # That's the VERresult$extract (below)
+    data <- self$Results[[stage.selection]]$extract( # That's the VERresult$extract (below)
       selection=stage.selection[,c("Scenario","Group","Table","Name","Units")],
       convertUnits=convertUnits) # Generates a list of data.frames
     # data is a named list of Groups, each being a named list of Tables, each of which is a data.frame
@@ -315,7 +315,7 @@ VEResultsList <- R6::R6Class(
 
     # methods
     initialize=ve.resultslist.init,
-    results=ve.resultslist.results   # manipulate the inner list
+    results=ve.resultslist.results,  # manipulate the inner list
     print=ve.resultslist.print,      # summary of model results (index)
     export=ve.resultslist.export,    # move the results to an external data storage format
     extract=ve.resultslist.extract,  # generate nested list of data.frames from model results (for further processing in R)
@@ -359,10 +359,10 @@ ve.results.extract <- function(
   convertUnits=TRUE      # will convert if display units are present; FALSE not to attempt any conversion (use Units from selection)
 ) {
   if ( ! self$valid() ) {
-    bad.results <- if ( ! is.null(self$modelStage) ) self$modelStage$Name else self$resultsPath )
+    bad.results <- if ( ! is.null(self$modelStage) ) self$modelStage$Name else self$resultsPath
     stop("Model Stage contains no results: ",bad.results)
   }
-  scenarioName <- if ( is.null(self$modelStage) basename(self$resultsPath) else self$modelStage$Name )
+  scenarioName <- if ( is.null(self$modelStage) ) basename(self$resultsPath) else self$modelStage$Name
 
   if ( convertUnits) {
     selection <- addDisplayUnits(selection,Param_ls=self$RunParam_ls)
@@ -456,7 +456,7 @@ ve.results.extract <- function(
         # consolidation strategy in VEResultsList$export.
         # TODO: really need to fix the source problem in VERPAT (if anyone ever uses it again...)
         Data_ls$Data <- Data_ls$Data[-which(names(Data_ls$Data) %in% names(MultiTables))]
-        Metadata <- Metadata[-which(names(Metadata) %in% names(MultiTables)]
+        Metadata <- Metadata[-which(names(Metadata) %in% names(MultiTables))]
       }
     }
     # Now visit each of the resulting data.frames and prepend the Scenario, Global and Year columns

@@ -11,6 +11,25 @@ NULL
 #' @name VEEXporter
 NULL
 
+# Documentation for VEPartition
+#' VEPartition class for partitioning tabular data from model or query results
+#'
+#' Documentation yet to come for various functions (plus some
+#' implementation).
+#'
+#' @name VEPartition
+NULL
+
+# Documentation for VEConnection
+#' VEConnectionxs class for connecting to an external table database
+#'
+#' Documentation yet to come for various functions (plus some
+#' implementation).
+#'
+#' @aliases VEConnection.Dataframe VEConnection.CSV VEConnection.DBI
+#' @name  VEConnection
+NULL
+
 self=private=NULL # To avoid global variable warnings
 
 ############################
@@ -95,9 +114,9 @@ ve.partition.partition <- function(data,Table) {
     Partition <- list(
       # NOTE: dropping any partition field value that is NA (as if, just for this partition,
       # it's not there). Good partition descriptors won't use fields that might have any NA's.
-      Paths = { p <- unlist(locations[loc,pathNames]); names(p)<-pathNames; p[!is.na(p)] }
-      Names = { n <- unlist(locations[loc,nameNames]); names(n)<-nameNames; n[!is.na(n)] }
-      Table = Table,
+      Paths = { p <- unlist(locations[loc,pathNames]); names(p)<-pathNames; p[!is.na(p)] },
+      Names = { n <- unlist(locations[loc,nameNames]); names(n)<-nameNames; n[!is.na(n)] },
+      Table = Table
     )
     
     locFields <- locations[loc,,drop=FALSE]
@@ -142,12 +161,11 @@ ve.partition.save <- function() {
   return( lapply(self$Partitions,function(s) s ) ) # named list of partition elements
 }
 
-#' @export
 VEPartition <- R6::R6Class(
   "VEPartition",
   public = list(
     # public data
-    Partition = character(0)           # Describes fields to be partitioned into different output tables
+    Partition = character(0),           # Describes fields to be partitioned into different output tables
 
     # methods
     initialize=ve.partition.init,     # initialize internal partition
@@ -179,9 +197,8 @@ VEPartition <- R6::R6Class(
 #                ##  in visioneval.cnf
 #                ## Model parameter can add default places to search for connection
 #                ##  parameters, which will be looked up by the connection tags
-#                ## Can load from a YAML file containing connection descriptor, partitions and table locations
+#                ## Can load from a file containing connection descriptor, partitions and table locations
 #                ##   which is useful for manipulating generated results with dplyr
-#                ## For now, loaded exporters are "readOnly"
 #    load        ## Read an .VEexport (.Rdata) file with the Exporter elements
 #                ##   (called from $initialize for re-opening connection to additional items)
 #    save        ## Write a .VEexport (.Rdata) file with the Exporter elements
@@ -242,7 +259,7 @@ ve.exporter.write <- function(data, Table, Metadata=NULL, Scenario=NULL, Group=N
   #   the table exists? Probably if the table exists, we should just overwrite it or
   #   fail (respecting the 'overwrite' parameter.
 
-  locations if ( ! ( is.null(Scenario) || is.null(Group) ) ) { # no partitioning
+  locations <- if ( ! ( is.null(Scenario) || is.null(Group) ) ) { # no partitioning
     self$Partition$partition(data,Table)
   } else self$Partition$locate(data,Table) # creates a TableLocation 
 
@@ -274,7 +291,7 @@ ve.exporter.list <- function(names=NULL, namesOnly=TRUE) {
   # namesOnly is intended for interactive use to list out the tables in the export (as written)
   # if this function is used internally, set namesOnly to False, or if its really deeply
   #   internal, just access self$TableList (the "metadata")
-  allNames <- ( is.null(names) || !is.character(names) || length(names)==0 || ! all(nzchar(names) )
+  allNames <- ( is.null(names) || !is.character(names) || length(names)==0 || ! all(nzchar(names) ) )
   if ( allNames ) {
     names <- names(self$TableList)
     if ( isTRUE(namesOnly) ) return(names)
@@ -300,7 +317,7 @@ ve.exporter.data <- function(tables=NULL,format="data.frame") { # tables: a list
   tables <- self$list(tables,namesOnly=TRUE)
   lapply( tables, function(t) {
     self$Connection$readTable(t,format=format)
-  } # generates a list of formatted data from reading each requested table.
+  } ) # generates a list of formatted data from reading each requested table.
 }
 
 #' @import dplyr
@@ -309,7 +326,7 @@ ve.exporter.metadata <- function() {
 #  the Units actually written plus the N description. DBTableName is the locator encoded
 #  form (makeTableString with default parameters). Metadata is just intended to understand
 #  what is in TableName.
-  metadatalist <- lapply( names(self$TableList) function(t) {
+  metadatalist <- lapply( names(self$TableList), function(t) {
     metadata <- self$TableList[[t]]
     medadata$DBTableName <- self$Connection$findName(t) # standard name => database corresponding name
   } )
@@ -319,19 +336,23 @@ ve.exporter.metadata <- function() {
   # all written from the same VEResultsList.
 }
 
-ve.exporter.writeMetadata(data, Table="Metadata") {
+ve.exporter.writeMetadata <- function(data, Table="Metadata") {
   self$write( self$metadata(), Table=Table) # No partitioning
 }
 
-#' @export
+# Save Connection, Partition, TableList, and Metadaa.
+ve.exporter.load <- function(filename) { # .VEexport file (.Rdata)
+}
+
+ve.exporter.save <- function(filename) { # .VEexport file (.Rdata)
+}
+
 VEExporter <- R6::R6Class(
   # Default class does nothing
   # Calling its $data function will list available exporters
   "VEExporter",
   public = list(
     # public data
-    Locked     = FALSE,   # Locked is true if the exporter is loaded from a file and the connection has data in it
-                          # We can override that behavior by setting "reset =TRUE" in the 
     Partition  = NULL,    # default is c(Scenario="merge",Group="merge",Table="name") # probably never want to change Table partition
     Connection = NULL,    # may be named list or character vector or string depending on derived class needs
     TableList  = list(),  # Names in this list are table IDs of created tables, elements of the list are lists of the
@@ -353,7 +374,7 @@ VEExporter <- R6::R6Class(
 
     # Use Prefix/Suffix to identify different exports
     TablePrefix = NULL,                         # if set, send to Table during $writeTable or $readTable
-    TableSuffix = NULL                          # if set, send to connection$writeTable or readTable
+    TableSuffix = NULL,                         # if set, send to connection$writeTable or readTable
 
     # implementation methods
     # for the following, "table" is a table navigator (folder, folder, name) as stored in TableList
@@ -385,14 +406,29 @@ VEExporter <- R6::R6Class(
 #
 #############################
 
-# The VEConnection is initialized from a "tag" and named list of onnection parameters that are
+# The VEConnection is initialized from a "tag" and named list of connection parameters that are
 # interpreted as needed by each driver. Default settings for all of them will yield a valid
 # exporter for:
 #    data.frames (option to use data.tables, tibbles or something else) default is hierarchical names lists of data.frames
 #    csv (option perahsp to use parquet or alternte csv driver) default is csv in subdirectory of OutputDir named after model
 #    dbi (options to pick a specific driver) default is SQLite into a file in OutputDir named after model
 
-#' @export
+ve.connection.init <- function(tag,...) {
+}
+
+ve.connection.summary <- function() {
+}
+
+ve.connection.print <- function() {
+}
+
+ve.connection.raw       <- function() {} # override in specific subclasses
+ve.connection.nameTable <- function() {}
+ve.connection.createTable <- function() {}
+ve.connection.writeTable <- function() {}
+ve.connection.readTable <- function() {}
+
+
 VEConnection <- R6::R6Class(
   # Default class does nothing
   # Calling its $data function will list available exporters
@@ -419,13 +455,7 @@ VEConnection <- R6::R6Class(
   )
 )
 
-# TODO: The remainder of these are VEConnections
-
-#######################################
-#
-###### Implement VEConnection.Dataframe
-#
-#######################################
+# VEConnection implementations
 
 #####################
 # Helpers
@@ -510,17 +540,27 @@ parseTableString <- function(tableString,pathSep="/",nameSep="_",tableSep=":",ti
       Table <- namesTable
     }
     return ( structure( list(
-      Paths = Paths
-      Names = Names
-      Table = Table
+      Paths = Paths,
+      Names = Names,
+      Table = Table,
       TimeStamp = TimeStamp
     ), class="VETableLocator" ) )
   } )
   return( if ( length(locators)==1 ) locators[[1]] else locators )
 }
 
+#######################################
+#
+###### Implement VEConnection.Dataframe
+#
+#######################################
 
-#' @export
+ve.connection.df.init      <- function() {}
+ve.connection.df.raw       <- function() {} # override in specific subclasses
+ve.connection.df.createTable <- function() {}
+ve.connection.df.writeTable <- function() {}
+ve.connection.df.readTable <- function() {}
+
 VEConnection.Dataframe <- R6::R6Class(
   # Accumulates data.frames in memory
   # Connection may create a different storage class (e.g. data table / tibble / data.frame or even arrow)
@@ -529,16 +569,15 @@ VEConnection.Dataframe <- R6::R6Class(
   inherit = VEConnection,
   public = list(
     # methods
+    initialize  = ve.connection.df.init,
     # implementing methods
     nameTable   = function(loc) { makeTableString( Paths=c(), Names=loc$Names, Table=loc$Table ) },
     createTable = ve.connection.df.createTable,
     writeTable  = ve.connection.df.writeTable,
-    readTable   = ve.connection.df.readTable,
+    readTable   = ve.connection.df.readTable
   ),
   private = list(
-    exportedData = list()   # will be hierarchical named list of data.frames (hierarchy per partitioning)
-  ),
-  private = list(
+    exportedData = list(),              # will be hierarchical named list of data.frames (hierarchy per partitioning)
     Tags = c("data.frame","raw","data") # valid tags used in initialize; first one is default tag
   )
 )
@@ -549,12 +588,19 @@ VEConnection.Dataframe <- R6::R6Class(
 #
 #################################
 
-#' @export
+ve.connection.csv.init      <- function() {}
+ve.connection.csv.raw       <- function() {} # override in specific subclasses
+ve.connection.csv.createTable <- function() {}
+ve.connection.csv.writeTable <- function() {}
+ve.connection.csv.readTable <- function() {}
+
 VEConnection.CSV <- R6::R6Class(
   # CSV implementation writes out CSV files using the Partition strategy
   # Depending on how much overlap, could also use this to implement parquet format
   "VEConnection.CSV",
   public = list(
+    # methods
+    initialize  = ve.connection.csv.init,
     # implementing methods
     nameTable = function(loc) {
       makeTableString(loc$Paths, loc$Names, Loc$Table, self$connectTime,
@@ -578,19 +624,26 @@ VEConnection.CSV <- R6::R6Class(
 #
 #################################
 
-#' @export
+ve.connection.dbi.init      <- function() {}
+ve.connection.dbi.raw       <- function() {} # override in specific subclasses
+ve.connection.dbi.createTable <- function() {}
+ve.connection.dbi.writeTable <- function() {}
+ve.connection.dbi.readTable <- function() {}
+
 VEConnection.DBI <- R6::R6Class(
   # DBI implementation writes out to DBI connection
   # "path" partitions are mapped to "name"
   "VEConnection.DBI",
   public = list( 
+    # methods
+    initialize  = ve.connection.dbi.init,
     # implementing methods
     nameTable = function(loc) {
       makeTableString(loc$Paths, loc$Names, Loc$Table, pathSep="_", tableSep="_")
     },
     createTable = ve.connection.dbi.createTable,
     writeTable  = ve.connection.dbi.writeTable,
-    readTable   = ve.connection.dbi.readTable,
+    readTable   = ve.connection.dbi.readTable
   ),
   private = list(
     Tags = c("sql","sqlite","excel","dbi") # sql and sqlite are probably the same; "dbi" unpacks a more complex connection string
@@ -602,18 +655,18 @@ VEConnection.DBI <- R6::R6Class(
 ##################
 
 # This is really the connection list...
-exporterList <- list(
-  csv=VEExporter.CSV,
-  dbi=VEExporter.DBI,
-  data.frame=VEExporter.Dataframe,
-  sqlite=VEExporter.DBI # shortcut - implies default connection
-  # parquet=VEExporter.Parquet  # Apache arrow implementation for parquet
-  # excel=VEExporter.Excel      # Native Excel implementation rather than DBI
+connectionList <- list(
+  csv=VEConnection.CSV,
+  dbi=VEConnection.DBI,
+  data.frame=VEConnection.Dataframe,
+  sqlite=VEConnection.DBI # shortcut - implies default connection
+  # parquet=VEConnection.Parquet  # Apache arrow implementation for parquet
+  # excel=VEConnection.Excel      # Native Excel implementation rather than DBI
 )
-# Instantiate one of these using exporterList[["csv"]]$new
+# Instantiate an Explorer
 # Still to create: parquet format, others...
 
-#' Instantiate a VisionEval Exporter (VEExporter species) using a lookup name
+#' Instantiate a VisionEval Exporter using a lookup name to find the Connection
 #'
 #' @description
 #' `openExporter` creates a VEExporter object to receive data exported from model results or
@@ -667,6 +720,7 @@ exporterList <- list(
 #' @param driver A character string or RDBI back end driver (e.g. `RSQListe::SQlite`
 #' @param connection A string or named list specific to the exporter type that will open a
 #'   connection to the ' output location. See the documentation for each individual exporter.
+#' @param file A file name from which to load a previously saved exporter (possibly with results)
 #' @param partition A named character string specifying partition strategy for items being written.
 #'   default partition is c(Scenario=folder,Group=folder,Table=name). See Details.
 #' @param Model A VEModel object; if present, unfurnished settings for the desired exporter will be
@@ -678,27 +732,48 @@ exporterList <- list(
 #'   with a possibly different partitioning scheme.
 #' @return A VEResults object giving access to the VisionEval results in `path`
 #' @export
-openExporter <- function(tag="Unknown",driver=tag,connection=NULL,partition=NULL,Model=NULL,load=NULL) {
-  # Look up "exporter" as a character string
-  # If exporter is already a VEExporter, just return it
-  if ( inherits(exporter,"VEExporter") ) {
-    exporter$connection(connection,Model) # reconfigure if we want to make other changes
-    exporter$partition(partition,Model)
-    return(exporter)
-  }
-  if ( ! exporter %in% names(exporterList) ) {
-    # Report list of available exporters
-    exporters <- c(
-      "Available Exporters:",
-      names(exporterList)
-    )
-    if ( exporter != "Unknown" ) exporters <- c(paste("Unknown exporter:",exporter),exporters)
-    for ( e in exporters ) message(paste0(e,"\n"))
-    stop("No exporter",call.=FALSE)
-  }
+openExporter <- function(tag="Unknown",driver=tag,file=NULL,connection=NULL,partition=NULL,Model=NULL,load=NULL) {
 
-  # If connection or partition is not supplied, the exporter class initialization will look up the
-  #   defaults using config (tag in the "Exporter" block from Model and system and default visioneval.cnf in
-  #   that order).See the docs for the specific exporter types.
-  return( exporterList[[exporter]]$new(connection=connection,partition=partition,config=list(Model=Model,Tag=exporter)) )
+  # If connection is provided, pass it to VEConnection$new
+  if ( is.character(connection) ) {
+    connection <- VEConnection$new(load=connection)
+  } else if ( ! inherits(connection,"VEConnection") ) {
+    # Look up "tag" as a character string
+    # If exporter is already a VEExporter, just return it
+    if ( inherits(tag,"VEExporter") ) {
+      exporter <- tag
+    } else if ( is.character(tag) ) {
+      # TODO: need to specify this all better:
+      #   1. tag can get a default set of connection parameters (file names, directories)
+      #   2. tag can be overridden in model or globally to provide connection details
+      #   3. exporter can be opened from a saved file
+      # Perhaps need to distinguish between exporter type and "configuration tag"
+      #   Look for tag in model definitions for connecton - it should be complete
+      #   If not found there, look in default connections
+      #   "tag" yields both Connection and Partition definitions
+      # Unknown tag yields a list of known default types.
+
+      # Check to see if it really is a tag (in VEModel "Exporter" settings )
+      if ( ! tag %in% names(connectionList) ) {
+        # if not found in Exporter or Defaults, report the list
+        # Report list of available exporters
+        connections <- c(
+          "Available Exporters:",
+          names(connectionList)
+        )
+        if ( tag != "Unknown" ) exporters <- c(paste("Unknown exporter:",tag),exporters)
+        for ( e in exporters ) message(paste0(e,"\n"))
+        stop("No exporter",call.=FALSE)
+      } else {
+        connection <- connectionList[[tag]]
+      }
+
+    } else { stop("Invalid exporter tag",call.=FALSE) }
+  }
+    
+  # If partition is provided,
+  if ( is.character(partition) ) partition <- VEPartition$new(partition)
+  
+
+  return( connectionList[[tag]]$new(tag=tag,connection=connection,partition=partition,Model=Model) )
 }
