@@ -1919,6 +1919,7 @@ mergeDatastoreListings <- function(baseListing, addListing) {
         newListing[[fieldname]] <- c(baseListing[[fieldname]],addListing[[fieldname]][newItems])
       } else {
         newListing[[fieldname]] <- c(baseListing[[fieldname]],rep(NA,length(newItems)))
+      }
     } else {
       # Add new items individually for attributes "column"
       # In principle, however, the standard strategy should work
