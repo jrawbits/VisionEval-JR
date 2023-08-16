@@ -47,6 +47,7 @@ Components:
       Group: 0
       Script: test.R
     CRAN:
+      - dplyr # simplifies export functions
       - futile.logger
       - jsonlite
       - yaml

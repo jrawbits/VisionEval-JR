@@ -2,8 +2,28 @@ The Partitioning plan in brief:
 
 TODO: 8/16/2023
 
-Finish implementing the Exporter and at least one of the connections.
-Then try building it and running the tests...
+In developing the TableString, we need to track names of the Paths and Names elements in the
+TableLocator, not just the values (i.e. Global=Global, Marea=RVMPO). Otherwise we'll get
+collisions between Azone=RVMPO and Marea=RVMPO if we decide to do that level of partition.
+So in makeing the string, we'll "Name=Value" for Paths and Names (and in the partitioning,
+need to include the names), and when we unpack the string, need to look for "=". Means we
+always need the TableLocator to interpret what table we're looking at.
+Alternatively, could just quietly presume we won't partition the same
+Table on different fields that might have the same values. But maybe it's not an issue
+
+Consider SQL/SQLite with dbplyr for large database manipulation in R as an alternative to $data
+or perhaps a format option for it on the DBI interface... Could just do this as an optional return
+format for tables in $data:
+
+  tableList <- lapply( dbTableNames, function(nm) dplyr::tbl(self$dbConnection,nm) )
+versus the default:
+  tableList <- lapply( dbTableNames, function(nm) DBI::readTable(self$dbConnection,nm) )
+
+and of course, with an appropiate allocator, could also load up dataTables, tibbles, etc.
+
+The dbplyr option wants us to save/load an existing exporter: all we need are the
+connection details to re-open the connection, plus the list of TableLocators. The metadata
+is itself just a locatable table...
 
 TODO: 8/15/2023
 

@@ -21,7 +21,8 @@ Imports:
     parallelly,
     future,
     future.callr,
-    jrc
+    jrc,
+    dplyr
 Suggests:
     knitr,
     pkgload,
