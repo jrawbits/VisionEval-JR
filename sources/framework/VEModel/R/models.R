@@ -2613,6 +2613,27 @@ ve.model.query <- function(QueryName=NULL,FileName=NULL,load=TRUE) {
   )
 }
 
+ve.model.exportpath <- function() {
+  output.dir <- file.path(self$modelPath,self$setting("ResultsDir"),self$setting$("OutputDir"))
+}
+
+ve.model.exporter <- function(file=NULL,tag=NULL,connection=NULL,partition=NULL) {
+  # If all arguments missing, print a list of available exports
+  output.dir <- self$exportPath()
+  if ( ! is.character(file) && is.null(tag) )) {
+    # Show list of available exports
+    return( dir(output.dir,pattern="\.VEexport$") )
+  }
+  # If file provided, process that
+  if ( is.character(file) ) {
+    return( VEExporter$new(Model=self,load=file.path(output.dir,file)[1]) ) # Will report error if can't load
+  }
+  if ( !is.null(tag) || is.character(connection) ) {
+    return( VEExporter$new(Model=self,tag=tag,connection=connection,partition=partition) )
+  }
+  stop("Must provide file, tag, or connection to identify Exporter")
+}
+  
 ################################################################################
 #                          Exported Helper Functions                           #
 ################################################################################
@@ -2969,6 +2990,8 @@ VEModel <- R6::R6Class(
     copy=ve.model.copy,                     # copy a self$modelPath to another path (ignore results/outputs)
     archive=ve.model.archive,               # apply framework archive function if results exist
     results=ve.model.results,               # Create a VEResults object (if model is run); option to open a past result
+    exportPath=ve.model.exportpath,         # Where to save VEExporters associated with this Model
+    exporter=ve.model.exporter,             # Create an exporter for this model's results
     findstages=ve.model.findstages,         # Report the path to the model results for a stage
     query=ve.model.query                    # Create a VEQuery object (or show a list of queries).
   ),

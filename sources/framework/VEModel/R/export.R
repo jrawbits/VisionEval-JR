@@ -76,54 +76,75 @@ ve.partition.init <- function(partition=character(0)) {
   # "partition" is a character vector of partitioning vectors for possible fields
   # The default partitioning scheme is this:
   if ( missing(partition) || length(partition)==0 || ! is.character(partition) ) {
-    self$partition <- character(0) # Default is not to partition
+    self$Partition <- character(0) # Default is not to partition
   } else {
     # remove "none" or "merge" elements and keep the rest
-    self$partition <- partition[ grep("(merge)|(none)",partition,invert=TRUE) ]
+    self$Partition <- partition[ grep("(merge)|(none)",partition,invert=TRUE) ]
     # collapse alternate names to standard names
-    self$partition <- gsub("path","folder",self$partition)
+    self$Partition <- gsub("path","folder",self$Partition)
     # get rid of (and warn about) any partition actions that are not defined
-    badPartitions <- ! self$partition %in% c("name","folder") # eventually allow "database"
+    badPartitions <- ! self$Partition %in% c("name","folder") # eventually allow "database"
     if ( any(badPartitions) ) {
-      writeLog(paste("Ignoring bad partitions:",paste(self$partitions[badPartitions],collapse=",")),Level="warn")
-      self$partition <- self$partition[ ! badPartitions]
+      writeLog(paste("Ignoring bad partitions:",paste(self$Partitions[badPartitions],collapse=",")),Level="warn")
+      self$Partition <- self$Partition[ ! badPartitions]
     }
   }
 }
 
-ve.partition.partition <- function(data,Table) {
-  # data is a data.frame possible with partitionable columns
+ve.partition.partition <- function(theData,Table) {
+  # theData is a data.frame possible with partitionable columns
   # Table is the root name of the table for its locator
   # returns a list of table locators (lists) for each of the partitions
+  if ( missing(theData) || missing(Table) || is.null(theData) || is.null(Table) ) {
+    traceback(1)
+    stop("Invalid parameters for VEPartition$partition",call.=FALSE)
+  }
 
-  # reduce self$partition to fields present in data (can't partition what is not there)
-  use.partition <- self$partition[ which( names(self$partition) %in% names(data) ) ]
+  # reduce self$Partition to fields present in theData (can't partition what is not there)
+  use.partition <- self$Partition[ which( names(self$Partition) %in% names(theData) ) ]
+  # also reduce partition to ignore any field which only contains NA values
+  validFields <- sapply(theData[,names(use.partition)],function(d) all(!is.na(d)))
+  if ( any(!validFields) ) {
+    warning("Export Data to be partitioned has NA values.")
+    warning(paste(names(use.partition)[!validFields],collapse=",")," will not be partitioned.")
+  }
+  use.partition <- use.partition[ validFields ]
 
   # identify unique values in each of the partition columns
-  partition.values <- lapply( names(use.partition), function(p) unique(data[[p]]) )
+  partition.values <- lapply( names(use.partition), function(p) unique(theData[[p]]) )
   names(partition.values) <- names(use.partition)
-  locations <- expand.grid(partition.values) # yields a data.frame where columns are the partition fields and rows are the values
-
+  locations <- expand.grid(partition.values,stringsAsFactors=FALSE)
+  # yields a data.frame where columns are the partition fields and rows are the values
+  
   # Build the partitions based on the locations...
   TableLocs <- list()
   locNames <- names(locations)
-  pathNames <- names(use.partition)[use.partition=="path"]
+  pathNames <- names(use.partition)[use.partition=="folder"]
   nameNames <- names(use.partition)[use.partition=="name"]
 
   for ( loc in 1:nrow(locations) ) {
+    thisLocation <- locations[loc,]
+    Paths <- thisLocation[pathNames]
+    if ( length(Paths) > 0 ) {
+      names(Paths)<-pathNames;
+      Paths[is.na(Paths)]<-"NA" # Turn NA into a valid value
+    }
+    Names <- thisLocation[nameNames]
+    if ( length(Names) > 0 ) {
+      names(Names)<-nameNames;
+      Names[is.na(Names)] <- "NA" # Turn NA into a valid value
+    }
     Partition <- list(
-      # NOTE: dropping any partition field value that is NA (as if, just for this partition,
-      # it's not there). Good partition descriptors won't use fields that might have any NA's.
-      Paths = { p <- unlist(locations[loc,pathNames]); names(p)<-pathNames; p[!is.na(p)] },
-      Names = { n <- unlist(locations[loc,nameNames]); names(n)<-nameNames; n[!is.na(n)] },
+      Paths = Paths,
+      Names = Names,
       Table = Table
     )
     
     locFields <- locations[loc,,drop=FALSE]
-    locSelection <- rep(TRUE,nrow(data))
+    locSelection <- rep(TRUE,nrow(theData))
     for ( n in locNames ) {
       nValue <- locFields[[n]]
-      locSelection <- locSelection & (data[[n]] != nValue) # knock off rows not matching this value
+      locSelection <- locSelection & (theData[[n]] == nValue) # knock off rows not matching this value
     }
     Range <- which(locSelection) # vector of data rows to include in this partition location
 
@@ -132,26 +153,46 @@ ve.partition.partition <- function(data,Table) {
       Partition = Partition
     )
     # makeTableString defined below (used mostly by VEConnection)
-    TableString <- makeTableString( Partition$Path, Partition$Name, Table ) # default format, no timestamp
+    TableString <- makeTableString( tableLoc$Partition$Path, tableLoc$Partition$Name, Table )
+    # message("Table String: ",TableString)
     TableLocs[[TableString]] <- structure( tableLoc , class="VETableLocator")
   }
   return(TableLocs)
 }
 
-ve.partition.location <- function(data,Table) {
-  return( list(
-    structure(
-      list(
-        Range = 1:nrow(data),
-        Partition = list(
-          Paths = character(0),
-          Names = character(0),
-          Table = Table
-        )
-      ), class="VETableLocator"
+ve.partition.location <- function(theData,Table) {
+  cat("Table =",Table,"\n")
+  tableLoc <- list(
+    Range = 1:nrow(theData),
+    Partition = list(
+      Paths = character(0),
+      Names = character(0),
+      Table = Table
     )
-  ) )
+  )
+  TableString <- makeTableString( tableLoc$Partition$Path, tableLoc$Partition$Name, Table )
+  locList <- list()
+  locList[[TableString]] <- structure( tableLoc, class="VETableLocator" )
+  return( locList)
 }
+
+ve.partition.print <- function(...) {
+  if ( length(self$Partition) == 0 || ! nzchar(self$Partition[1]) ) {
+    cat("No partitioning")
+  } else {
+    for ( p in 1:length(self$Partition) ) {
+      cat(names(self$Partition)[p],":",self$Partition[p],"\n")
+    }
+  }
+}
+
+print.VETableLocator <- function(x,...) {
+  cat("Table: ",x$Partition$Table,"\n",sep="")
+  cat("Range: ",paste(x$Range,collapse=" "),"\n",sep="")
+  cat("Paths: ",paste(x$Partition$Paths,collapse=","),"\n",sep="")
+  cat("Names: ",paste(x$Partition$Names,collapse=","),"\n",sep="")
+}
+    
 # Save and load are used by VEExporter$save to make an easy-to-parse YAML named list
 #   (YAML has trouble distinguishing a named vector from a named list)
 ve.partition.load <- function(partitions) {
@@ -169,6 +210,7 @@ VEPartition <- R6::R6Class(
 
     # methods
     initialize=ve.partition.init,     # initialize internal partition
+    print=ve.partition.print,         # print the partition
     partition=ve.partition.partition, # partition a data.frame into output tables
     location=ve.partition.location,   # generate a TableLocator from data + Table name
     save=function() self$Partition,   # generate a list of self$Partition for saving
@@ -199,6 +241,7 @@ VEPartition <- R6::R6Class(
 #                ##  parameters, which will be looked up by the connection tags
 #                ## Can load from a file containing connection descriptor, partitions and table locations
 #                ##   which is useful for manipulating generated results with dplyr
+#    config      ## Report the partition string and connecton configuration list used to build connection
 #    load        ## Read an .VEexport (.Rdata) file with the Exporter elements
 #                ##   (called from $initialize for re-opening connection to additional items)
 #    save        ## Write a .VEexport (.Rdata) file with the Exporter elements
@@ -219,13 +262,66 @@ VEPartition <- R6::R6Class(
 #    data        ## convert table locators (parameters, default=all) to flat list of data.frames
 #                ## can also produce other types (e.g. tbl for dbplyr from DBI, data.tables, tibbles)
 
-ve.exporter.init <- function(tag=NULL,connection=NULL,partition=NULL) {
+ve.exporter.init <- function(Model,load=NULL,tag=NULL,connection=NULL,partition=NULL) {
   # We may be able to live without subclassed Exporters
   # connection is a VEConnection object; if NULL, create a default one
   # partition is a VEPartition object; if NULL, use the default one for tag
   #   To force no partition, pass c() or character(0) - Table name will just get written/appended as is
-  self$Connection <- VEConnection$new(tag,connection) # connection is a set of parameter structures
-  self$Partition <- VEPartition$new(tag,partition)
+  self$Model <- Model
+  if ( is.character(load) ) {
+    # Presumes load is an existing file
+    # Usually we'll get here via VEModel$exporter
+    if ( ! file.exists(load) ) stop("Could not find saved exporter to load: ",load,call.=FALSE)
+    self$load(Model,load)
+    return()
+  }
+  if ( ! missing(tag) ) {
+    # if tag is already a VEExporter:
+    if ( inherits(tag,"VEExporter") ) {
+      self$Configuration <- tag$config()
+    } else if ( is.character(tag) ) {
+      defaultPartition <- !is.character(partition)
+      # Default exporters
+      defaultConfigs <- defaultExporters()
+      self$Configuration <- if ( tag in names(defaultConfig) ) defaultConfig[[tag]] else list(
+        Partition = character(0),
+        Connection = list()
+        )
+      # Model definitions
+      globalConfigs <- getSetup(paramNames="Exporters",fromFile=TRUE)
+      if ( tag in names(globalConfigs) ) {
+        globalConfig <- globalConfigs[[tag]]
+        if ( !is.null(globalConfig$Connection) && length(globalConfig$Connection)>0 ) {
+          self$Configuration$Connection[ names(globalConfig$Connection) ] <- globalConfig$Connection
+        }
+        if ( defaultPartition && is.character(globalConfig$Partiton) ) self$Configuration$Partition <- globalConfig$Partition
+      }
+      modelConfigs <- getSetup(paramNames="Exporters",fromFile=TRUE) # will have inherited from global
+      if ( tag in names(modelConfigs) ) {
+        modelConfig <- modelConfigs[[tag]]
+        if ( !is.null(modelConfig$Connection) && length(modelConfig$Connection)>0 ) {
+          self$Configuration$Connection[ names(modelConfig$Connection) ] <- modelConfig$Connection
+        }
+        if ( defaultPartition && is.character(modelConfig$Partiton) ) self$Configuration$Partition <- modelConfig$Partition
+      }
+      if ( is.list(connection) ) {
+        self$Configuration$Connection[ names(connection) ] <- connection
+      }
+    }
+    # set up the Partition
+    if ( ! defaultPartition ) { # partition was provided as a parameter
+      self$Configuration$Partition = partition
+    }
+  } else {
+    # No tag; let's hope connection and partition have what we need
+    self$Configuration <- list(
+      Connection = connection,
+      Partition = partition
+    )
+  }
+  # either of the following may stop if the Configuration is inadequate
+  self$Connection <- makeVEConnection(Model,self$Configuration$Connection) # Returns a VEConnection subclass
+  self$Partition <- VEPartition$new(self$Configuration$Partition)
 }
 
 # subclasses will do more with Connection and Partition prior to saving them
@@ -291,6 +387,9 @@ ve.exporter.list <- function(names=NULL, namesOnly=TRUE) {
   # namesOnly is intended for interactive use to list out the tables in the export (as written)
   # if this function is used internally, set namesOnly to False, or if its really deeply
   #   internal, just access self$TableList (the "metadata")
+  if ( is.null(self$TableList) ) { # Nothing has been exported yet
+    return("Nothing exported yet")
+  }
   allNames <- ( is.null(names) || !is.character(names) || length(names)==0 || ! all(nzchar(names) ) )
   if ( allNames ) {
     names <- names(self$TableList)
@@ -307,8 +406,13 @@ ve.exporter.list <- function(names=NULL, namesOnly=TRUE) {
 }
 
 ve.exporter.print <- function(names=NULL,...) {
-  cat("Exporter Connection:",self$Connection)
-  print(self$list(names=names,Only=TRUE),...)
+  cat("Exporter for Model: ",self$Model$modelName,"\n")
+  cat("  Connection:\n")
+  print(self$Connection)
+  cat("  Partition:\n")
+  print(self$Partition)
+  cat("  Exported Tables:\n")
+  print(self$list(names=names,...) # could do namesOnly=FALSE in ...
 }
 
 ve.exporter.data <- function(tables=NULL,format="data.frame") { # tables: a list of table strings
@@ -342,9 +446,30 @@ ve.exporter.writeMetadata <- function(data, Table="Metadata") {
 
 # Save Connection, Partition, TableList, and Metadaa.
 ve.exporter.load <- function(filename) { # .VEexport file (.Rdata)
+  # Filename should already be normalized to the model's output location
+  # This function will usually be called via VEModel$exporter(file=...), which will build a good path
+  otherExporter <- new.env()
+  if ( ! file.exists(filename) ) {
+    checkFilename <- file.path(self$Model$exportPath,filename)
+    if ( ! file.exists(checkFilename) ) stop("Could not find file: ",filename,call.=FALSE)
+    filename <- checkFilename
+  }
+  load(filename,envir=otherExporter)
+  self$Configuration <- otherExporter$Configuration
+  self$TableList     <- otherExporter$TableList
+
+  if ( ! is.null(self$Connection) ) self$Connection$close() # varies by class
+
+  self$Connection <- makeVEConnection(self$Configuration$Connection)
+  self$Partition  <- VEPartition$new(self$Configuration$Partition)
 }
 
 ve.exporter.save <- function(filename) { # .VEexport file (.Rdata)
+  filename      <- file.path(self$Model$exportPath,basename(filename))
+  Configuration <- self$Configuration
+  TableList     <- self$TableList
+  save(Configuration,TableList,file=filename)
+  message("Saved Exporter to ",filename)
 }
 
 VEExporter <- R6::R6Class(
@@ -353,13 +478,15 @@ VEExporter <- R6::R6Class(
   "VEExporter",
   public = list(
     # public data
-    Partition  = NULL,    # default is c(Scenario="merge",Group="merge",Table="name") # probably never want to change Table partition
-    Connection = NULL,    # may be named list or character vector or string depending on derived class needs
-    TableList  = list(),  # Names in this list are table IDs of created tables, elements of the list are lists of the
-                          # fields that exist in the tables (name and type). Need to maintain fields so we can
-                          # make existing table and new written data be conformant during $write (typically will be)
-    Metadata   = NULL,    # data.frame of S/G/T/N/Metadata passed into $write (TableList prior to partitioning)
-                          # Any N row in the Metadata for an S/G/T is a candidate for partitioning
+    Model      = NULL,      # The Model associated with this exporter (for load/save path, connection building)
+    Partition  = NULL,      # default is c(Scenario="merge",Group="merge",Table="name") # probably never want to change Table partition
+    Connection = NULL,      # may be named list or character vector or string depending on derived class needs
+    Configuration = list(), # Parameters to save for this connection (to rebuild it)
+    TableList  = list(),    # Names in this list are table IDs of created tables, elements of the list are lists of the
+                            # fields that exist in the tables (names). Need to maintain fields so we can
+                            # make existing table and new written data be conformant during $write (typically will be)
+    Metadata   = NULL,      # data.frame of S/G/T/N/Metadata passed into $write (TableList prior to partitioning)
+                            # Any N row in the Metadata for an S/G/T is a candidate for partitioning
 
     # methods
     initialize=ve.exporter.init,       # call from subclasses to establish internal connection and partition
@@ -370,7 +497,7 @@ VEExporter <- R6::R6Class(
     list=ve.exporter.list,             # list tables that have been created within this exporter
     print=ve.exporter.print,           # print list of table identifiers
     data=ve.exporter.data,             # return list of data.frames corresponding to list of table names (all or some of self$list)
-                                       # generates a partitioned (nested) list of data.frames (each level is a "folder")
+                                       # generates a partitioned (nested) list of data.frames (each level is a "folder" element)
 
     # Use Prefix/Suffix to identify different exports
     TablePrefix = NULL,                         # if set, send to Table during $writeTable or $readTable
@@ -423,6 +550,7 @@ ve.connection.print <- function() {
 }
 
 ve.connection.raw       <- function() {} # override in specific subclasses
+ve.connection.close     <- function() {} # override as needed (e.g. for DBI connection)
 ve.connection.nameTable <- function() {}
 ve.connection.createTable <- function() {}
 ve.connection.writeTable <- function() {}
@@ -500,14 +628,16 @@ makeTableString <- function(Paths, Names, Table, TimeStamp=NULL, locString=NULL,
   } else{ # Prefix/Suffix should include separator if needed (suggest "+" or "!" or "@", depending on connection)
     Table <- paste0( tablePrefix,Table,tableSuffix )
   }
-  paths <- paste(Paths,collapse=pathSep)
-  names <- paste(Table,Names,collapse=nameSep)
-  tableString <- paste(paths,names,sep=tableSep)
-  if ( ! is.null(TimeStamp && ! any(is.na(TimeStamp)) ) ) {
+  paths <- if ( length(Paths) > 0 ) paste(Paths,collapse=pathSep) else character(0)
+  table <- if ( length(Names) > 0 ) paste(Table,paste(Names,collapse=nameSep),sep=nameSep) else Table
+  
+  tableString <- paste(paths,table,sep=tableSep)
+  if ( ! is.null(TimeStamp) && ! any(is.na(TimeStamp)) ) {
     TimeStamp <- TimeStamp[1] # vector not allowed
     if ( isTRUE(TimeStamp) ) TimeStamp <- Sys.time() # system default string time format
     else if ( inherits(TimeStamp,"POSIXct") ) TimeStamp <- format(TimeStamp,"%Y%m%d%H%M")
     else TimeStamp <- as.character(TimeStamp) # may get "sanitized" by VEConnection for use as table name
+    tableString <- paste(tableString,TimeStamp,sep=timeSep)
   } else time <- character(0)
   return(tableString)
 }
@@ -632,7 +762,7 @@ ve.connection.dbi.readTable <- function() {}
 
 VEConnection.DBI <- R6::R6Class(
   # DBI implementation writes out to DBI connection
-  # "path" partitions are mapped to "name"
+  # "folder" partitions are mapped to "name"
   "VEConnection.DBI",
   public = list( 
     # methods
@@ -666,10 +796,16 @@ connectionList <- list(
 # Instantiate an Explorer
 # Still to create: parquet format, others...
 
+###########################################################
+#
+# Functions to create Exporters (open existing, create new)
+#
+###########################################################
+
 #' Instantiate a VisionEval Exporter using a lookup name to find the Connection
 #'
 #' @description
-#' `openExporter` creates a VEExporter object to receive data exported from model results or
+#' `makeExporter` creates a VEExporter object to receive data exported from model results or
 #' query results.
 #'
 #' @details
@@ -720,7 +856,6 @@ connectionList <- list(
 #' @param driver A character string or RDBI back end driver (e.g. `RSQListe::SQlite`
 #' @param connection A string or named list specific to the exporter type that will open a
 #'   connection to the ' output location. See the documentation for each individual exporter.
-#' @param file A file name from which to load a previously saved exporter (possibly with results)
 #' @param partition A named character string specifying partition strategy for items being written.
 #'   default partition is c(Scenario=folder,Group=folder,Table=name). See Details.
 #' @param Model A VEModel object; if present, unfurnished settings for the desired exporter will be
@@ -732,48 +867,74 @@ connectionList <- list(
 #'   with a possibly different partitioning scheme.
 #' @return A VEResults object giving access to the VisionEval results in `path`
 #' @export
-openExporter <- function(tag="Unknown",driver=tag,file=NULL,connection=NULL,partition=NULL,Model=NULL,load=NULL) {
+makeVEConnection <- function(config) {
+  # config is a list of named parameters that we will use to set up a VEConnection subclass
+  results <- config
+}
 
-  # If connection is provided, pass it to VEConnection$new
-  if ( is.character(connection) ) {
-    connection <- VEConnection$new(load=connection)
-  } else if ( ! inherits(connection,"VEConnection") ) {
-    # Look up "tag" as a character string
-    # If exporter is already a VEExporter, just return it
-    if ( inherits(tag,"VEExporter") ) {
-      exporter <- tag
-    } else if ( is.character(tag) ) {
-      # TODO: need to specify this all better:
-      #   1. tag can get a default set of connection parameters (file names, directories)
-      #   2. tag can be overridden in model or globally to provide connection details
-      #   3. exporter can be opened from a saved file
-      # Perhaps need to distinguish between exporter type and "configuration tag"
-      #   Look for tag in model definitions for connecton - it should be complete
-      #   If not found there, look in default connections
-      #   "tag" yields both Connection and Partition definitions
-      # Unknown tag yields a list of known default types.
+if ( interactive() ) {
 
-      # Check to see if it really is a tag (in VEModel "Exporter" settings )
-      if ( ! tag %in% names(connectionList) ) {
-        # if not found in Exporter or Defaults, report the list
-        # Report list of available exporters
-        connections <- c(
-          "Available Exporters:",
-          names(connectionList)
-        )
-        if ( tag != "Unknown" ) exporters <- c(paste("Unknown exporter:",tag),exporters)
-        for ( e in exporters ) message(paste0(e,"\n"))
-        stop("No exporter",call.=FALSE)
-      } else {
-        connection <- connectionList[[tag]]
-      }
+  writeLog <- function(msg,...) stop(msg,call.=FALSE)
 
-    } else { stop("Invalid exporter tag",call.=FALSE) }
-  }
+  makeData <- function() {
+    # prepare a data set
+    df <- CO2 # standard R dataset
+    for ( i in 1:length(df) ) {
+      if ( is.factor(df[[i]]) ) df[[i]] <- as.character(df[[i]])
+    }
+    df$Scenario <- sample(paste("Scenario",1:2,sep="_"),nrow(df),replace=TRUE)
+
+    dfg <- df
+    dfg$Global <- "Global"
+    dfg$Group <- dfg$Global
+
+    dfy <- dfg
+    dfy$Year <- "2023"
+    dfy$Group <- dfy$Year
+    dfy[["Global"]] <- NULL
+
+    dfy2 <- dfy
+    dfy2$Year <- "2044"
+    dfy2$Group <- dfy2$Year
+    dfy2[["Global"]] <- NULL
     
-  # If partition is provided,
-  if ( is.character(partition) ) partition <- VEPartition$new(partition)
-  
+    return(list(
+      Global=df,
+      Yr2023=dfy,
+      Yr2044=dfy2
+    ) )
+  }
 
-  return( connectionList[[tag]]$new(tag=tag,connection=connection,partition=partition,Model=Model) )
+  testPartition <- function() {
+    # Try several partitions and connections
+    message("Testing VEPartition")
+    dataSets <- makeData() # pseudo-data with various fields for reviewing output
+    part <- VEPartition$new(c(Global="folder",Year="folder",Type="path",Treatment="name"))
+    print(part)
+    message("Testing $location function")
+    loc <- part$location(dataSets$Global,"MyTable") # view location structure
+    print(loc)
+    message("Testing $partition function")
+    message("Fields in Global:")
+    print(names(dataSets$Global))
+    message("\nTesting Partitions")
+    message("Global\n")
+    partGlobal <- part$partition(dataSets$Global,"Global")
+    print(partGlobal)
+    message("Year 2023\n")
+    part2023 <- part$partition(dataSets$Yr2023,"CO2-data")
+    print(part2023)
+    message("Year 2044\n")
+    part2044 <- part$partition(dataSets$Yr2044,"CO2-data")
+    print(part2044)
+    message("Change partition to make Treatment a folder\n")
+    part <- VEPartition$new(c(Global="folder",Year="folder",Type="name",Treatment="folder"))
+    print(part$partition(dataSets$Yr2044,"RetryTreatment"))
+    message("Try with NA data in a partition field\n")
+    dftry <- dataSets$Yr2044$Global <- NA
+    print(part$partition(dataSets$Yr2044,"NAGlobal"))
+  }
+
+  testExport <- function() {
+    
 }
