@@ -29,11 +29,12 @@ Suggests:
     markdown
 Encoding: UTF-8
 VignetteBuilder: knitr
-RoxygenNote: 7.1.1
+RoxygenNote: 7.2.3
 Collate: 
     'environment.R'
+    'export.R'
     'models.R'
-    'scenarios.R'
     'results.R'
     'query.R'
+    'scenarios.R'
     'zzz.R'

@@ -1,4 +1,4 @@
-s# Test functions for VEModel
+# Test functions for VEModel
 
 # Load required packages
 
@@ -35,7 +35,7 @@ testStep <- function(msg) {
 }
 
 stopTest <- function(msg="Stop Test") {
-  stop(msg)
+  stop(msg,call.=FALSE)
 }
 
 getModelDirectory <- function() { # hack to support pkgload which won't see the function as exported for some reason
@@ -560,7 +560,7 @@ test_02_model <- function(modelName="VERSPM-Test", oldstyle=FALSE, log="info", b
   return(invisible(bare)) # Return model for additional processing
 }
 
-test_02_basic_export(reset=FALSE,log="warn")
+test_02_basic_export <- function(reset=FALSE,log="warn")
 {
   testStep("Set up VERSPM-base model instance for export tests")
   mod <- test_01_run("VERSPM-export",reset=reset,log="warn")
@@ -570,10 +570,12 @@ test_02_basic_export(reset=FALSE,log="warn")
   # MORE TESTS LATER: See more detailed tests below to exercise export options
   br <- mod$results()
   print(br)
+
   connection=list( TablePrefix="ExportTest" )
   R.data <- br$extract(connection=connection) # Returns a list of R data.frames
   exporter <- attr(R.data,"Exporter") # VEExporter object (see br$export below)
   
+  stopTest()
   testStep("Default export")
   br$export(connection=connection) # default export creates CSV files in a subfolder of the model's results/outputs folder
   cat("Directory:\n")
@@ -793,7 +795,7 @@ test_03_results <- function (existingResults=FALSE,log="info") {
   cat("Scenarios (identified as 'stages')\n")
   print(sl$stages())     # List all of them, even if not reportable
   cat("Scenarios (using 'stages' function) - same as sl$scenarios\n")
-  print(sl$stages(Reportable=TRUE)))
+  print(sl$stages(Reportable=TRUE))
   cat("Groups\n")
   print(sl$groups())
   cat("Tables\n")
@@ -1817,8 +1819,7 @@ test_06_scenarios <- function(
   scenarioVariant <- if (useStages) "scenarios-ms" else "scenarios-cat"
   scenarioModelName <- paste0("VERSPM-",scenarioVariant)
   running <- if ( run) ", installing, and running" else " and installing"
-  testStep(paste(paste0("Selecting",running," scenarios as",if(useStages)"Model Stages"else"Scenario Combinations"))
-
+  testStep(paste(paste0("Selecting",running," scenarios as",if(useStages)"Model Stages"else"Scenario Combinations")))
   existingModel <- dir.exists(modelPath <- file.path("models",scenarioModelName))
   if ( run ) {
     mod <- test_01_run(scenarioModelName,baseModel="VERSPM",variant=scenarioVariant,reset=install,log=log,confirm=FALSE,multicore=multicore)
@@ -1858,7 +1859,7 @@ test_06_scenarios <- function(
 
 test_06_scenario_results <- function(
   install=FALSE,
-  extract = TRUE
+  extract = TRUE,
   multicore=TRUE, # or set to number of workers (default is 3)
   log="info"
 ) {
@@ -1893,7 +1894,7 @@ test_06_scenario_results <- function(
 
 test_06_scenario_selection <- function(
   install=FALSE,
-  extract = TRUE
+  extract = TRUE,
   multicore=TRUE, # or set to number of workers (default is 3)
   log="info"
 ) {
@@ -1901,7 +1902,7 @@ test_06_scenario_selection <- function(
   testStep("Set up scenario model")
   pre.run <- test_06_scenario_results(install=install,extract=FALSE,multicore=multicore,log="warn")
   mod <- pre.run$Model
-  rs  <- pre.run$Results)
+  rs  <- pre.run$Results
 
   testStep("List available scenarios")
   testStep("Select one scenario")
@@ -1910,6 +1911,7 @@ test_06_scenario_selection <- function(
   testStep("Export to CSV")
 
   testStep("Test idiom of subsetting results after generation")
+  # TODO: many need to update for new results architecture
   rs.subset <- VEResultsList$new(rs$results()["stage-pop-future"])
   rs.subset$export() # TODO: separate tables per scenario (to code the name)
   

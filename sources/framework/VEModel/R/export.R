@@ -283,13 +283,13 @@ ve.exporter.init <- function(Model,load=NULL,tag=NULL,connection=NULL,partition=
       defaultPartition <- !is.character(partition)
       # Default exporters
       defaultConfigs <- defaultExporters()
-      self$Configuration <- if ( tag in names(defaultConfig) ) defaultConfig[[tag]] else list(
+      self$Configuration <- if ( tag %in% names(defaultConfig) ) defaultConfig[[tag]] else list(
         Partition = character(0),
         Connection = list()
         )
       # Model definitions
       globalConfigs <- getSetup(paramNames="Exporters",fromFile=TRUE)
-      if ( tag in names(globalConfigs) ) {
+      if ( tag %in% names(globalConfigs) ) {
         globalConfig <- globalConfigs[[tag]]
         if ( !is.null(globalConfig$Connection) && length(globalConfig$Connection)>0 ) {
           self$Configuration$Connection[ names(globalConfig$Connection) ] <- globalConfig$Connection
@@ -297,7 +297,7 @@ ve.exporter.init <- function(Model,load=NULL,tag=NULL,connection=NULL,partition=
         if ( defaultPartition && is.character(globalConfig$Partiton) ) self$Configuration$Partition <- globalConfig$Partition
       }
       modelConfigs <- getSetup(paramNames="Exporters",fromFile=TRUE) # will have inherited from global
-      if ( tag in names(modelConfigs) ) {
+      if ( tag %in% names(modelConfigs) ) {
         modelConfig <- modelConfigs[[tag]]
         if ( !is.null(modelConfig$Connection) && length(modelConfig$Connection)>0 ) {
           self$Configuration$Connection[ names(modelConfig$Connection) ] <- modelConfig$Connection
@@ -412,7 +412,7 @@ ve.exporter.print <- function(names=NULL,...) {
   cat("  Partition:\n")
   print(self$Partition)
   cat("  Exported Tables:\n")
-  print(self$list(names=names,...) # could do namesOnly=FALSE in ...
+  print(self$list(names=names,...)) # could do namesOnly=FALSE in ...
 }
 
 ve.exporter.data <- function(tables=NULL,format="data.frame") { # tables: a list of table strings
@@ -424,7 +424,6 @@ ve.exporter.data <- function(tables=NULL,format="data.frame") { # tables: a list
   } ) # generates a list of formatted data from reading each requested table.
 }
 
-#' @import dplyr
 ve.exporter.metadata <- function() {
 # Compile accumulated metadata plus DB TableName (one row per N/TableName), and include
 #  the Units actually written plus the N description. DBTableName is the locator encoded
@@ -872,69 +871,67 @@ makeVEConnection <- function(config) {
   results <- config
 }
 
-if ( interactive() ) {
-
-  writeLog <- function(msg,...) stop(msg,call.=FALSE)
-
-  makeData <- function() {
-    # prepare a data set
-    df <- CO2 # standard R dataset
-    for ( i in 1:length(df) ) {
-      if ( is.factor(df[[i]]) ) df[[i]] <- as.character(df[[i]])
-    }
-    df$Scenario <- sample(paste("Scenario",1:2,sep="_"),nrow(df),replace=TRUE)
-
-    dfg <- df
-    dfg$Global <- "Global"
-    dfg$Group <- dfg$Global
-
-    dfy <- dfg
-    dfy$Year <- "2023"
-    dfy$Group <- dfy$Year
-    dfy[["Global"]] <- NULL
-
-    dfy2 <- dfy
-    dfy2$Year <- "2044"
-    dfy2$Group <- dfy2$Year
-    dfy2[["Global"]] <- NULL
-    
-    return(list(
-      Global=df,
-      Yr2023=dfy,
-      Yr2044=dfy2
-    ) )
-  }
-
-  testPartition <- function() {
-    # Try several partitions and connections
-    message("Testing VEPartition")
-    dataSets <- makeData() # pseudo-data with various fields for reviewing output
-    part <- VEPartition$new(c(Global="folder",Year="folder",Type="path",Treatment="name"))
-    print(part)
-    message("Testing $location function")
-    loc <- part$location(dataSets$Global,"MyTable") # view location structure
-    print(loc)
-    message("Testing $partition function")
-    message("Fields in Global:")
-    print(names(dataSets$Global))
-    message("\nTesting Partitions")
-    message("Global\n")
-    partGlobal <- part$partition(dataSets$Global,"Global")
-    print(partGlobal)
-    message("Year 2023\n")
-    part2023 <- part$partition(dataSets$Yr2023,"CO2-data")
-    print(part2023)
-    message("Year 2044\n")
-    part2044 <- part$partition(dataSets$Yr2044,"CO2-data")
-    print(part2044)
-    message("Change partition to make Treatment a folder\n")
-    part <- VEPartition$new(c(Global="folder",Year="folder",Type="name",Treatment="folder"))
-    print(part$partition(dataSets$Yr2044,"RetryTreatment"))
-    message("Try with NA data in a partition field\n")
-    dftry <- dataSets$Yr2044$Global <- NA
-    print(part$partition(dataSets$Yr2044,"NAGlobal"))
-  }
-
-  testExport <- function() {
-    
-}
+# if ( interactive() ) {
+# 
+#   writeLog <- function(msg,...) stop(msg,call.=FALSE)
+# 
+#   makeData <- function() {
+#     # prepare a data set
+#     df <- CO2 # standard R dataset
+#     for ( i in 1:length(df) ) {
+#       if ( is.factor(df[[i]]) ) df[[i]] <- as.character(df[[i]])
+#     }
+#     df$Scenario <- sample(paste("Scenario",1:2,sep="_"),nrow(df),replace=TRUE)
+# 
+#     dfg <- df
+#     dfg$Global <- "Global"
+#     dfg$Group <- dfg$Global
+# 
+#     dfy <- dfg
+#     dfy$Year <- "2023"
+#     dfy$Group <- dfy$Year
+#     dfy[["Global"]] <- NULL
+# 
+#     dfy2 <- dfy
+#     dfy2$Year <- "2044"
+#     dfy2$Group <- dfy2$Year
+#     dfy2[["Global"]] <- NULL
+#     
+#     return(list(
+#       Global=df,
+#       Yr2023=dfy,
+#       Yr2044=dfy2
+#     ) )
+#   }
+# 
+#   testPartition <- function() {
+#     # Try several partitions and connections
+#     message("Testing VEPartition")
+#     dataSets <- makeData() # pseudo-data with various fields for reviewing output
+#     part <- VEPartition$new(c(Global="folder",Year="folder",Type="path",Treatment="name"))
+#     print(part)
+#     message("Testing $location function")
+#     loc <- part$location(dataSets$Global,"MyTable") # view location structure
+#     print(loc)
+#     message("Testing $partition function")
+#     message("Fields in Global:")
+#     print(names(dataSets$Global))
+#     message("\nTesting Partitions")
+#     message("Global\n")
+#     partGlobal <- part$partition(dataSets$Global,"Global")
+#     print(partGlobal)
+#     message("Year 2023\n")
+#     part2023 <- part$partition(dataSets$Yr2023,"CO2-data")
+#     print(part2023)
+#     message("Year 2044\n")
+#     part2044 <- part$partition(dataSets$Yr2044,"CO2-data")
+#     print(part2044)
+#     message("Change partition to make Treatment a folder\n")
+#     part <- VEPartition$new(c(Global="folder",Year="folder",Type="name",Treatment="folder"))
+#     print(part$partition(dataSets$Yr2044,"RetryTreatment"))
+#     message("Try with NA data in a partition field\n")
+#     dftry <- dataSets$Yr2044$Global <- NA
+#     print(part$partition(dataSets$Yr2044,"NAGlobal"))
+#   }
+# 
+# }

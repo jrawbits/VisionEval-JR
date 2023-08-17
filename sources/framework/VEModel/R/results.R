@@ -45,7 +45,7 @@ ve.resultslist.init <- function(stages=NULL,model=NULL) {
 
   # Find model stages from which to get results
   if ( missing(stages) || ! all(inherits(stages,"VEModelStage")) ) {
-    if ( ! is.null(self$Model) ) stages <- self$Model$stages() else stages <- NULL
+    if ( ! is.null(self$Model) ) stages <- self$Model$findstages() else stages <- NULL
   } else {
     # have stages; check model consistency and set self$Model
     modelNames <- unique(sapply(stages,function(s) s$Model$modelName))
@@ -77,7 +77,7 @@ ve.resultslist.init <- function(stages=NULL,model=NULL) {
   
   if ( ! is.null(self$Model) && ! is.null(self$Results) ) { # found something
     # Build results index (S/G/T/N plus other metadata) for use in selecting
-    self$resultsIndex <- do.call("rbind", lapply( self$Results,function(r) r$list() ) )
+    self$resultsIndex <- do.call("rbind", lapply( self$Results,function(r) r$list(details=TRUE) ) )
     valid <- sapply( self$Results, function(r) r$valid() )
   } else {
     valid <- FALSE # Didn't find anything...
@@ -102,6 +102,9 @@ ve.resultslist.init <- function(stages=NULL,model=NULL) {
     writeLog("Have you run the model?",Level="warn")
     self$valid <- FALSE
   } else self$valid <- TRUE
+
+  # Initialize selection
+  self$selection <- VESelection$new(self)
 
   # Finally, pull the RunParam_ls and loadedParam_ls out of the model
   # Provides interface for environment.R/getSetup
@@ -236,9 +239,8 @@ ve.resultslist.list <- function(pattern="", selected=TRUE, details=FALSE, ...) {
   if ( ! missing(pattern) && is.character(pattern) && nzchar(pattern) ) {
     filter <- filter & grepl(pattern,self$resultsIndex$Name,ignore.case=TRUE )
   }
-
   if ( missing(details) || ! details ) {
-    ret.value <- with( self$resultsIndex[ filter, ], paste(Scenario,Group,Table,Name,sep="/") ) # generates a character vector
+    ret.value <- with( self$resultsIndex[ filter, ,drop=FALSE], paste(Scenario,Group,Table,Name,sep="/") ) # generates a character vector
   } else {
     ret.value <- self$resultsIndex[ filter, ] # Generates a data.frame with all metadata columns
   }
@@ -278,7 +280,10 @@ ve.resultslist.inputs <- function( fields=FALSE, module="", filename="" ) {
 ve.resultslist.select <- function(selection) {
   return.self <- missing(selection)
   if ( return.self ) {
-    self$selection <- VESelection$new(self,self$list())
+    selectlist <- self$list()
+    message("Constructing selection")
+    self$selection <- VESelection$new(self,selectist)
+    
   } else {
     if ( ! inherits("VESelection", selection) || self$Model$modelPath != selection$modelPath ) {
       # see if we can make a selection (stop inside $new if selection can't be interpreted)
@@ -522,21 +527,15 @@ ve.results.modelstate <- function(ModelState_ls=NULL) {
   return (private$modelStateEnv$ModelState_ls)
 }
 
-ve.results.list <- function(pattern="", details=FALSE, selected=TRUE, ...) {
+ve.results.list <- function(pattern="", details=FALSE ) {
   # Show details about model fields
-  # selected = TRUE shows just the selected fields
-  # selected = FALSE shows all fields (not just unselected)
-  # pattern matches (case-insensitive regexp) some portion of field name
   # details = TRUE returns a data.frame self$modelIndex (units, description)
   # detail = FALSE returns just the "Name" vector from self$modelIndex
   
   if ( ! self$valid() ) stop("Model has not been run yet.")
 
-  filter <- if ( missing(selected) || selected ) {
-    which( 1:nrow(self$modelIndex) %in% self$selection$selection )
-  } else {
-    rep(TRUE,nrow(self$modelIndex))
-  }
+  filter <- rep(TRUE,nrow(self$modelIndex))
+
   if ( ! missing(pattern) && is.character(pattern) && nzchar(pattern) ) {
     filter <- filter & grepl(pattern,self$modelIndex$Name,ignore.case=TRUE )
   }
@@ -727,9 +726,6 @@ ve.results.elements <- function() {
 }
 
 # List out the units applied to results for this scenario (see addDisplayUnits above)
-# TODO: Should have a function in VEResultsList that will aggregate these results...
-# TODO: Also, the selection is managed in VEResultsList now, so we should always just do this for
-#   the entire VEResults set, and let the VEResultsList pare that down to what we are interested in
 ve.results.units <- function(selected=TRUE,display=NULL) {
   # if display==TRUE, show DisplayUnits plus Datastore Units
   # if display==FALSE, show only Datastore units
@@ -794,23 +790,11 @@ ve.results.queryprep <- function() {
 }
 
 # Print the VEResults summary (called recurively when printing VEResultsList)
-ve.results.print <- function(name="",details=FALSE) {
+ve.results.print <- function(name="",...) {
   # Update for output
   cat("VEResults object for",if(nzchar(name)) name else self$Name,":\n")
-  print(self$resultsPath)
+  print(self$resultsPath,...)
   cat("Output is valid:",self$valid(),"\n")
-  if ( self$valid() ) {
-    if ( ! details ) {
-      sel <- length(self$selection$selection)
-      all <- nrow(self$modelIndex)
-      if ( sel < all ) {
-        cat("Selected",sel,"out of",all,"fields.\n")
-        print(self$selection) # Just the field names
-      } else cat("Selected all fields.\n")
-    } else {
-      print(self$selection,details=TRUE)
-    }
-  }
 }
 
 # Definition of VEResults R6 class
@@ -868,21 +852,17 @@ ve.select.init <- function( results, select=integer(0) ) {
   # self$selection is just a list of integers pointing to rows
   #  in self$results$modelIndex
   self$results <- results
-  if ( self$results$valid() ) {
-    rows <- self$parse(select)
-    if ( is.null(rows) || any(is.na(rows)) ) {
-      self$selection <- as.integer(NA) # no rows selected
-    } else if (
-      ! is.numeric(rows) ||
-      length(rows)==0 ||
-      ! min(rows)>0 ||
-      max(rows)>nrow(self$results$modelIndex) ) {
-      self$selection <- 1:nrow(self$results$modelIndex)
-    } else {
-      self$selection <- rows
-    }
+  rows <- self$parse(select)
+  if ( is.null(rows) || any(is.na(rows)) ) {
+    self$selection <- as.integer(NA) # no rows selected
+  } else if (
+    ! is.numeric(rows) ||
+    length(rows)==0 ||
+    ! min(rows)>0 ||
+    max(rows)>nrow(self$results$resultsIndex) ) {
+    self$selection <- 1:nrow(self$results$resultsIndex)
   } else {
-    self$selection <- integer(0)
+    self$selection <- rows
   }
 }
 
@@ -982,8 +962,8 @@ ve.select.parse <- function(select) {
       return( select$selection )
     }
   }
-  # select can be another VEResults object
-  #   if the other VEResults is not from the same model, use its $fields set of names
+  # select can be another VEResultsList object
+  #   if the other VEResultsList is not from the same model, use its $fields set of names
   #   then parse as a character vector
   #   if it is the same model, just copy its selection
   if ( "VEResults" %in% class(select) ) {
