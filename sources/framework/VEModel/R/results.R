@@ -73,6 +73,8 @@ ve.resultslist.init <- function(stages=NULL,model=NULL) {
       function(stg) VEResults$new(stg$RunPath,ResultsName=stg$Name,ModelStage=stg)
     )
     names(self$Results) <- names(stages)
+    # print(names(self$Results))
+    # for ( r in self$Results ) print(r)
   } else self$Results <- NULL
   
   if ( ! is.null(self$Model) && ! is.null(self$Results) ) { # found something
@@ -141,7 +143,7 @@ ve.resultslist.export <- function(
 
   # Set up the exporter (defaults to CSV - use $extract to default to list of data.frames)
   if ( ! inherits(exporter,"VEExporter") ) {
-    exporter <- openExporter(exporter,connection,partition,self$Model)
+    exporter <- self$Model$exporter(tag=exporter,connection=connection,partition=partition,self$Model)
   }
   # Just ignore connection and partition if we're passing a pre-built exporter
 
@@ -150,8 +152,8 @@ ve.resultslist.export <- function(
   # Default is everything available in the VEResultsList
   # TODO: make sure list produces the full list...
   selection <- if ( ! is.null(selection) ) {
-    self$select(selection)$list()
-  } else self$list() # different from self$select, self$list does not deep-copy the selection
+    self$select(selection)$list(details=TRUE)
+  } else self$list(details=TRUE) # different from self$select, self$list does not deep-copy the selection
 
   # TODO: decide whether a selection is a set of selected indexes or the results of applying that
   # to the index table. If the latter, do the index table reduction here; lines below presume
@@ -168,10 +170,25 @@ ve.resultslist.export <- function(
   for ( stage in selected.stages ) {
     stage.selection <- selection[selection$Scenario==stage,]
     # Just the elements selected for this stage
-    data <- self$Results[[stage.selection]]$extract( # That's the VERresult$extract (below)
+    message("Extracting stage results for ",stage)
+    print(names(stage.selection))
+    print(nrow(stage.selection))
+    message("Stages:")
+    print(names(self$Results))
+    print(selected.stages)
+    print(stage)
+    stageResults <- self$Results[[stage]]
+    message("Results:")
+    print(stageResults)
+    message("functions in stageResults")
+    print(class(stageResults))
+    message("Extracting results...")
+    data <- stageResults$extract( # That's the VERresult$extract (below)
       selection=stage.selection[,c("Scenario","Group","Table","Name","Units")],
       convertUnits=convertUnits) # Generates a list of data.frames
-    # data is a named list of Groups, each being a named list of Tables, each of which is a data.frame
+    # data is a named list of Groups, each being a named list of Tables, each of which is a
+    # data.frame
+    message("breaking up data to retrieve in groups and tables")
     for ( group in names(data) ) {
       for ( table in names(data[[group]]) ) {
         # Generate input Metadata (fields in this S/G/T) which the exporter will merge with the
@@ -363,6 +380,7 @@ ve.results.extract <- function(
   selection,             # data.frame of Scenario/Group/Table/Name/Units/DisplayUnits elements for this stage
   convertUnits=TRUE      # will convert if display units are present; FALSE not to attempt any conversion (use Units from selection)
 ) {
+  message("Extracting stage")
   if ( ! self$valid() ) {
     bad.results <- if ( ! is.null(self$modelStage) ) self$modelStage$Name else self$resultsPath
     stop("Model Stage contains no results: ",bad.results)

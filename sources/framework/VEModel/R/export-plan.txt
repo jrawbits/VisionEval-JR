@@ -1,5 +1,12 @@
 The Partitioning plan in brief:
 
+TODO: 8/18/2023
+
+Hanging up extracting model results. There's a mismatch in the base test model between
+the name attached to the Results in the VEResultsList and the name of the scenario
+selected for investigation - is the wrong Scenario name going into the results list?
+
+
 TODO: 8/16/2023
 
 In developing the TableString, we need to track names of the Paths and Names elements in the

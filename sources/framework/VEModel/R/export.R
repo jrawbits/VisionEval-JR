@@ -283,7 +283,7 @@ ve.exporter.init <- function(Model,load=NULL,tag=NULL,connection=NULL,partition=
       defaultPartition <- !is.character(partition)
       # Default exporters
       defaultConfigs <- defaultExporters()
-      self$Configuration <- if ( tag %in% names(defaultConfig) ) defaultConfig[[tag]] else list(
+      self$Configuration <- if ( tag %in% names(defaultConfigs) ) defaultConfigs[[tag]] else list(
         Partition = character(0),
         Connection = list()
         )
@@ -459,7 +459,7 @@ ve.exporter.load <- function(filename) { # .VEexport file (.Rdata)
 
   if ( ! is.null(self$Connection) ) self$Connection$close() # varies by class
 
-  self$Connection <- makeVEConnection(self$Configuration$Connection)
+  self$Connection <- makeVEConnection(self$Model,self$Configuration$Connection)
   self$Partition  <- VEPartition$new(self$Configuration$Partition)
 }
 
@@ -783,6 +783,34 @@ VEConnection.DBI <- R6::R6Class(
 # Exporter factory
 ##################
 
+defaultExporters <- function() {
+  exporters <- list(
+    # bare minimum default exporters
+    # augment with actual connection details in global or model visioneval.cnf
+    csv = list(
+      Connection = list(
+        driver = "csv"
+      ),
+      Partition = c(Global="name")
+    ),
+    sql = list(
+      Connection = list(
+        driver = "dbi"
+      ),
+      Partition = c(Global="name") # break out Global, otherwise
+    ),
+    data.frame = list(
+      Connection = list(
+        driver = "data.frame"
+      ),
+      Partition = c(Scenario="folder",Global="folder",Year="folder")
+    )
+  )
+  exporters[["sqlite"]] <- exporters[["sql"]]
+  exporters[["dbi"]] <- exporters[["sql"]]
+  return(exporters)
+}
+
 # This is really the connection list...
 connectionList <- list(
   csv=VEConnection.CSV,
@@ -832,9 +860,6 @@ connectionList <- list(
 #' `c("Scenario"="merge",Group="merge",Table="name")` - that is, the Table name will always be
 #' forced into the name.
 #'
-#' NOTE: Any connection or partition provided when calling openExporter will override anything
-#'   defined in the global or Model environment.
-#'
 #' NOTE: In keeping with usual DBI protocol, the "sql"/"dbi" connections will NOT create a database.
 #'  So if you're hoping to export to an Access, MySQL, or PostgreSQL database, you should create the
 #'  database first outside of VisionEval and include database location information in the
@@ -850,23 +875,10 @@ connectionList <- list(
 #'   you need to make standard changes for production, add an Exporter block to your global or
 #'   model-specific visioneval.cnf and those will be used by default.
 #'
-#' @param tag A character string tag selecting an exporter from the default list (see
-#'   openExporter()). If none is provided, return a list of known exporter names.
-#' @param driver A character string or RDBI back end driver (e.g. `RSQListe::SQlite`
-#' @param connection A string or named list specific to the exporter type that will open a
-#'   connection to the ' output location. See the documentation for each individual exporter.
-#' @param partition A named character string specifying partition strategy for items being written.
-#'   default partition is c(Scenario=folder,Group=folder,Table=name). See Details.
-#' @param Model A VEModel object; if present, unfurnished settings for the desired exporter will be
-#'   sought in the model configuration. Default is no Model, in which case default or global
-#'   parameters will be used, if they are present, and otherwise connection defaults.
-#' @param load A character vector identifying a .VEexport file (if relative, must have Model and
-#'   file is sought in Model OutputDir). The file will contain the connection and partition
-#'   information. The resulting exporter is read-only, but can be copied to a different connection
-#'   with a possibly different partitioning scheme.
-#' @return A VEResults object giving access to the VisionEval results in `path`
+#' @param config a named list of parameters used to build a VEConnection
+#' @return A VEConnection (or derived) object giving access to the VisionEval results in `path`
 #' @export
-makeVEConnection <- function(config) {
+makeVEConnection <- function(Model,config) {
   # config is a list of named parameters that we will use to set up a VEConnection subclass
   results <- config
 }
