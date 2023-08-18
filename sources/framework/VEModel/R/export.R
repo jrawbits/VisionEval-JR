@@ -332,7 +332,7 @@ ve.exporter.init <- function(Model,load=NULL,tag=NULL,connection=NULL,partition=
 # May rewrite "folder" to "name" e.g.
 # Folders will get created as data is written
 
-ve.exporter.write <- function(data, Table, Metadata=NULL, Scenario=NULL, Group=NULL, overwrite=FALSE ) {
+ve.exporter.write <- function(Data, Table, Metadata=NULL, Scenario=NULL, Group=NULL, overwrite=FALSE ) {
   # Table must be provided as the root name for the Table being written. Table is used to
   #   select the recipient for the partitioned data. The actual Table name written will be
   #   composed of the results of partitioning data into path elements, name elements, the
@@ -361,36 +361,18 @@ ve.exporter.write <- function(data, Table, Metadata=NULL, Scenario=NULL, Group=N
   #   fail (respecting the 'overwrite' parameter.
 
   locations <- if ( ! ( is.null(Scenario) || is.null(Group) ) ) { # no partitioning
-    self$Partition$partition(data,Table)
-  } else self$Partition$locate(data,Table) # creates a TableLocation with the entire range
+    self$Partition$partition(Data,Table)
+  } else self$Partition$locate(Data,Table) # creates a TableLocation with the entire range
 
   # TODO: process each location into low-level calls to Connection$writeTable
-  # TODO: add the location tables and field names (via Connection$makeTableName ) to the TableList
-  # TODO: can the Connection$writeTable return the list of field names actually in the Table
-  #       in case any got added, and replace fields in TableList[[TableName]]
-
+  for ( loc in locations ) {
+    TableName <- self$Connection$nameTable(loc)
+    TableFields <- self$Connection$writeTable(Data[loc$Range],loc$Table)\
+    # TODO: save field names vector under TableName in TableList
+  }
   # Manage TableList
   # This is a list of tables (after partitioning) with a vector of field names in them so
   # we can make field adjustments when writing a new set of rows into that table.
-
-  # Use the TableLocator string as names on the list. Then add fields (value=NA) to an
-  # existing table if the new data has a previously-unseen field, or add fields to the
-  # data (value=NA) if it is missing any fields required in the Table. Suggests the
-  # VEConnection should have a function to add fields given a list of names (readTable,
-  # cbind missing names with NA values, and rewrite the table, dropping it first:
-  # dbRemoveTable,dbWriteTable). This is a convenience to prevent having to read back the
-  # fields names from the connection. And since we're only doing it as we write, it would
-  # be best to take the re-loaded database table and append the rows from the new data
-  # directly to it, then rewrite the entirety. It will speed things up to have
-  # VEExporter$write flag any new fields that we haven't seen go into the database.
-
-  # Should append the rows from data to the corresponding table
-  # Iterate over the locations, use location$Range to subset data, then write to the
-  # Connection (if the table is not in TableList, flag Connection to create; otherwise
-  # presume appending). This function will conform the names, and there is a parameter
-  # on VEConnection$writeTable to pass names of new fields to be inserted into the table
-  # (via a read/rewrite, or perhaps eventually some more efficient option); the
-  # data.frame can be adjusted here prior to writing.
 }
 
 ve.exporter.list <- function(names=NULL, namesOnly=TRUE) {
@@ -410,7 +392,7 @@ ve.exporter.list <- function(names=NULL, namesOnly=TRUE) {
     if ( isTRUE(namesOnly) ) {
       names[names %in% names(self$TableList)] # vector of table locations string
     } else {
-      self$TableList[names] # a list of data.frames
+      self$TableList[names] # a list of field name vectors.
     }
   )
 }
@@ -733,7 +715,7 @@ ve.connection.df.createTable <- function(Data,Table) {
   }
 
 ve.connection.df.writeTable <- function(Data,Table) {
-  if ( ! is.character(Table) ) stop("createTable: Table must come from nameTable")
+  if ( ! is.character(Table) ) Table <- self$nameTable(Table) # TODO: check explicitly with VETableLocator...
   if ( ! Table %in% names(self$exportedData) ) {
     self$createTable(Data,Table) }
   else {
