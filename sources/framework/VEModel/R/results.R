@@ -43,6 +43,7 @@ ve.resultslist.init <- function(stages=NULL,model=NULL) {
   # Set up the model, if provided explicitly
   if ( ! missing(model) && ! is.null(model) && inherits(model,"VEModel") ) self$Model <- model
 
+  message("DEBUG: finding model stages")
   # Find model stages from which to get results
   if ( missing(stages) || ! all(inherits(stages,"VEModelStage")) ) {
     if ( ! is.null(self$Model) ) stages <- self$Model$findstages() else stages <- NULL
@@ -118,10 +119,12 @@ ve.resultslist.init <- function(stages=NULL,model=NULL) {
 # Connection won't be used here (though we could use it to generate other table types such as data
 # tables / tibbles). Partitioning can be changed from the system/model defaults
 ve.resultslist.extract <-  function(exporter="data.frame",connection=NULL,partition=NULL,wantMetadata=FALSE,convertUnits=TRUE) {
+  message("DEBUG: exporting data to data.frame connection")
   export <- self$export(exporter=exporter,
     connection=connection,partition=partition,
     wantMetadata=wantMetadata,convertUnits=convertUnits)
-  return(invisible(structure(exporter$data(),Exporter=export)))
+  message("DEBUG: Extracting results list - delegate to export")
+  return(invisible(structure(export$data(),Exporter=export)))
 } # shortcut to generate a list of data.frames via the export function
 
 # Export results from each set in the results list to an exporter
@@ -142,9 +145,11 @@ ve.resultslist.export <- function(
 ) {
 
   # Set up the exporter (defaults to CSV - use $extract to default to list of data.frames)
+  message("DEBUG: Set up exporter")
   if ( ! inherits(exporter,"VEExporter") ) {
     exporter <- self$Model$exporter(tag=exporter,connection=connection,partition=partition,self$Model)
   }
+  print(exporter)
   # Just ignore connection and partition if we're passing a pre-built exporter
 
   # Apply a selection if provided, otherwise use entire list of outputs
@@ -155,10 +160,6 @@ ve.resultslist.export <- function(
     self$select(selection)$list(details=TRUE)
   } else self$list(details=TRUE) # different from self$select, self$list does not deep-copy the selection
 
-  # TODO: decide whether a selection is a set of selected indexes or the results of applying that
-  # to the index table. If the latter, do the index table reduction here; lines below presume
-  # we have the actual table.
-
   # partition the selection into stages/scenarios and iterate across just those results
   # Note that the export partitioning is controlled by the partition parameter (or the default
   # for the type of exporter, which can be externally configured in visioneval.cnf), so if
@@ -168,27 +169,15 @@ ve.resultslist.export <- function(
   selected.stages <- unique(selection$Scenario) # names of scenario
 
   for ( stage in selected.stages ) {
+    message("DEBUG: Extracting stage ",stage)
     stage.selection <- selection[selection$Scenario==stage,]
     # Just the elements selected for this stage
-    message("Extracting stage results for ",stage)
-    print(names(stage.selection))
-    print(nrow(stage.selection))
-    message("Stages:")
-    print(names(self$Results))
-    print(selected.stages)
-    print(stage)
     stageResults <- self$Results[[stage]]
-    message("Results:")
-    print(stageResults)
-    message("functions in stageResults")
-    print(class(stageResults))
-    message("Extracting results...")
     data <- stageResults$extract( # That's the VERresult$extract (below)
       selection=stage.selection[,c("Scenario","Group","Table","Name","Units")],
       convertUnits=convertUnits) # Generates a list of data.frames
     # data is a named list of Groups, each being a named list of Tables, each of which is a
     # data.frame
-    message("breaking up data to retrieve in groups and tables")
     for ( group in names(data) ) {
       for ( table in names(data[[group]]) ) {
         # Generate input Metadata (fields in this S/G/T) which the exporter will merge with the
@@ -199,6 +188,7 @@ ve.resultslist.export <- function(
         # To see what got created, print the exporter returned from this function
 
         # Need to distinguish group=Global versus group=Year=Y
+        message("DEBUG: exporter$write ",group,"/",table)
         exporter$write( data[[group]][[table]], Scenario=stage, Group=group, Table=table, Metadata=Metadata )
       }
     }
@@ -298,7 +288,6 @@ ve.resultslist.select <- function(selection) {
   return.self <- missing(selection)
   if ( return.self ) {
     selectlist <- self$list()
-    message("Constructing selection")
     self$selection <- VESelection$new(self,selectist)
     
   } else {
@@ -380,7 +369,7 @@ ve.results.extract <- function(
   selection,             # data.frame of Scenario/Group/Table/Name/Units/DisplayUnits elements for this stage
   convertUnits=TRUE      # will convert if display units are present; FALSE not to attempt any conversion (use Units from selection)
 ) {
-  message("Extracting stage")
+  message("DEBUG: VEResults$extrct")
   if ( ! self$valid() ) {
     bad.results <- if ( ! is.null(self$modelStage) ) self$modelStage$Name else self$resultsPath
     stop("Model Stage contains no results: ",bad.results)
@@ -404,6 +393,9 @@ ve.results.extract <- function(
   QueryPrep_ls <- self$queryprep()
   results <- list()
 
+  message("DEBUG: extracting Groups and Tables:")
+  print(extractTables)
+
   for ( group in extractGroups ) {
     # Build Tables_ls for readDatastoreTables
     Tables_ls <- list()
@@ -422,7 +414,10 @@ ve.results.extract <- function(
     }
 
     # Get a list of data.frames, one for each Table configured in Tables_ls
+    message("DEBUG: readDatastoreTables for Group/Table: ",group)
     Data_ls <- visioneval::readDatastoreTables(Tables_ls, group, QueryPrep_ls)
+    message("DEBUG: read these tables:")
+    print(names(Data_ls$Data))
 
     # Report Missing Tables from readDatastoreTables
     HasMissing_ <- unlist(lapply(Data_ls$Missing, length)) != 0
@@ -453,6 +448,7 @@ ve.results.extract <- function(
 
     if ( ! all(is.df <- sapply(Data_ls$Data,is.data.frame)) ) {
       # Unpack "multi-tables"
+      message("DEBUG: Processing multiTables")
       MultiTables <- Data_ls$Data[which(! is.df)] # usually, there's just one of these...
       if ( length(MultiTables) > 0 ) {
         for ( multi in names(MultiTables) ) {
@@ -485,16 +481,21 @@ ve.results.extract <- function(
     # Now visit each of the resulting data.frames and prepend the Scenario, Global and Year columns
     if ( group=="Global" ) {
       Data_ls$Data <- lapply(Data_ls$Data,function(df) {
+        if ( any(c("Global","Year") %in% names(df)) ) stop("Program error: Global or Year already present in ",group,"/",table)
         cbind(Global=group,Year=NA,df)
       })
     } else { # group==someYear
       Data_ls$Data <- lapply(Data_ls$Data,function(df) {
+        if ( any(c("Global","Year") %in% names(df)) ) stop("Program error: Global or Year already present in ",group,"/",table)
         cbind(Global=NA,Year=group,df)
       })
     }
-    Data_ls$Data <- lapply(Data_ls$Data,function(df) cbind(Scenario=scenarioName,df))
-
-    # TODO: stop around here and look at the columns of Data_ls$Data and the Metadata
+    Data_ls$Data <- lapply(
+      Data_ls$Data,function(df) {
+        if ( "Scenario" %in% names(df) ) stop("Program error: Scenario already present in ",group,"/",table)
+        cbind(Scenario=scenarioName,df)
+      }
+    )
 
     # Process the table data.frames into results, adding Metadata as an attribute
     results[[ group ]] <- structure(Data_ls$Data,Metadata=Metadata)
@@ -616,7 +617,9 @@ ve.results.index <- function() {
   InputDir[ is.na(InputDir) ] <- ""
   File <- sapply(ds$attributes, attributeGet, "FILE",simplify=TRUE) # should yield a character vector
   File[ is.na(File) ] <- ""
-  scenario <- rep(visioneval::getRunParameter("Scenario",Default="Unknown Scenario",Param_ls=self$RunParam_ls),length(Description))
+
+  #scenario <- rep(visioneval::getRunParameter("Scenario",Default="Unknown Scenario",Param_ls=self$RunParam_ls),length(Description))
+  scenario <- self$Name
 
   splitGroupTableName <- strsplit(ds$groupname, "/")
   if ( length(Description) != length(splitGroupTableName) ) stop("Inconsistent table<->description correspondence")

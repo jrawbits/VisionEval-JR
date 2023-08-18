@@ -571,10 +571,14 @@ test_02_basic_export <- function(reset=FALSE,log="warn")
   br <- mod$results()
   print(br)
 
+  testStep("Set up connection")
   connection=list( TablePrefix="ExportTest" )
   R.data <- br$extract(connection=connection) # Returns a list of R data.frames
-  exporter <- attr(R.data,"Exporter") # VEExporter object (see br$export below)
-  
+  message("what is R.data?")
+  print(class(R.data))
+  message("printing R.data")
+  print(R.data) # Should be an Exporter with a data.frame Connection
+
   stopTest()
   testStep("Default export")
   br$export(connection=connection) # default export creates CSV files in a subfolder of the model's results/outputs folder

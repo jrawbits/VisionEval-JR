@@ -102,13 +102,17 @@ ve.partition.partition <- function(theData,Table) {
 
   # reduce self$Partition to fields present in theData (can't partition what is not there)
   use.partition <- self$Partition[ which( names(self$Partition) %in% names(theData) ) ]
-  # also reduce partition to ignore any field which only contains NA values
-  validFields <- sapply(theData[,names(use.partition)],function(d) all(!is.na(d)))
-  if ( any(!validFields) ) {
-    warning("Export Data to be partitioned has NA values.")
-    warning(paste(names(use.partition)[!validFields],collapse=",")," will not be partitioned.")
+  # reduce partition to ignore any field which only contains NA values
+  naFields <- sapply(theData[,names(use.partition)],function(d) all(is.na(d)) )
+  if ( any(naFields) ) use.partition <- use.partition[ ! naFields ]
+
+  # now do the same with fields having some NA values, but warn about it
+  invalidFields <- sapply(theData[,names(use.partition)],function(d) any(is.na(d)))
+  if ( any(invalidFields) ) {
+    warning("Export Data to be partitioned has fields with some but not all NA values.")
+    warning(paste(names(use.partition)[invalidFields],collapse=",")," will not be partitioned.")
+    use.partition <- use.partition[ ! invalidFields ]
   }
-  use.partition <- use.partition[ validFields ]
 
   # identify unique values in each of the partition columns
   partition.values <- lapply( names(use.partition), function(p) unique(theData[[p]]) )
@@ -334,6 +338,7 @@ ve.exporter.write <- function(data, Table, Metadata=NULL, Scenario=NULL, Group=N
   #   composed of the results of partitioning data into path elements, name elements, the
   #   Table name and built by the connection object (adding any TablePrefix or TableSuffix).
   Table <- paste0(self$TablePrefix,Table,self$TableSuffix)
+  message("DEBUG: exporting Table ",Table)
 
   # Manage Metadata (which says what we've written into the Exporter)
   # Optional Scenario and Group are injected into the internal Metadata, keeping track of what
@@ -357,7 +362,12 @@ ve.exporter.write <- function(data, Table, Metadata=NULL, Scenario=NULL, Group=N
 
   locations <- if ( ! ( is.null(Scenario) || is.null(Group) ) ) { # no partitioning
     self$Partition$partition(data,Table)
-  } else self$Partition$locate(data,Table) # creates a TableLocation 
+  } else self$Partition$locate(data,Table) # creates a TableLocation with the entire range
+
+  # TODO: process each location into low-level calls to Connection$writeTable
+  # TODO: add the location tables and field names (via Connection$makeTableName ) to the TableList
+  # TODO: can the Connection$writeTable return the list of field names actually in the Table
+  #       in case any got added, and replace fields in TableList[[TableName]]
 
   # Manage TableList
   # This is a list of tables (after partitioning) with a vector of field names in them so
@@ -407,21 +417,42 @@ ve.exporter.list <- function(names=NULL, namesOnly=TRUE) {
 
 ve.exporter.print <- function(names=NULL,...) {
   cat("Exporter for Model: ",self$Model$modelName,"\n")
-  cat("  Connection:\n")
+  cat("Connection:\n")
   print(self$Connection)
-  cat("  Partition:\n")
+  cat("Partition:\n")
   print(self$Partition)
-  cat("  Exported Tables:\n")
-  print(self$list(names=names,...)) # could do namesOnly=FALSE in ...
+  tables <- self$list(names=names,...) # could do namesOnly=FALSE in ...
+  if ( ! is.null(tables) ) {
+    cat("Exported Tables:\n")
+    print(tables)
+  } else cat("No Tables Exported Yet.\n")
+}
+
+ve.exporter.formatter <- function(Data,format="data.frame") {
+  if ( ! is.data.frame(Data) ) stop("Can't format Data (expecting data.frame):",class(Data))
+  if ( format == "data.frame" ) {
+    return( as.data.frame(Data) ) # probably already is...
+  } else if ( format == "data.table" ) {
+    return( data.table::as.data.table(Data) )
+  } else if ( format == "tibble" ) {
+    return( tibble::as.tibble(Data) )
+  } else if ( format == "tbl" ) {
+    return( dplyr::tbl(Data) )
+  } else {
+    message("Unrecognized format for VEExporter:$data: ",format,"; returning Data verbatim")
+    return(Data)
+  }
 }
 
 ve.exporter.data <- function(tables=NULL,format="data.frame") { # tables: a list of table strings
   # Generate a list of requested table data in the requested format (which will be
   # interpreted by self$Connection as it reads out the data).
   tables <- self$list(tables,namesOnly=TRUE)
-  lapply( tables, function(t) {
-    self$Connection$readTable(t,format=format)
-  } ) # generates a list of formatted data from reading each requested table.
+  if ( missing(format) || format=="data.frame" ) {
+    lapply( tables, function(t) self$Connection$readTable(t) )
+  } else {
+    lapply( tables, function(t) self$formatter(self$Connection$readTable(t),format=format) )
+  }
 }
 
 ve.exporter.metadata <- function() {
@@ -496,7 +527,8 @@ VEExporter <- R6::R6Class(
     list=ve.exporter.list,             # list tables that have been created within this exporter
     print=ve.exporter.print,           # print list of table identifiers
     data=ve.exporter.data,             # return list of data.frames corresponding to list of table names (all or some of self$list)
-                                       # generates a partitioned (nested) list of data.frames (each level is a "folder" element)
+                                       # If format is given, use VEExporter$formatter to convert
+    formatter=ve.exporter.formatter,
 
     # Use Prefix/Suffix to identify different exports
     TablePrefix = NULL,                         # if set, send to Table during $writeTable or $readTable
@@ -504,9 +536,9 @@ VEExporter <- R6::R6Class(
 
     # implementation methods
     # for the following, "table" is a table navigator (folder, folder, name) as stored in TableList
-    createTable = function(data,table) NULL, # Create or re-create a Table from scratch (includes append)
-    writeTable  = function(data,table) NULL, # Append data to existing table (restructure as needed)
-    readTable   = function(table) NULL       # Read named table into a data.frame
+    createTable = function(data,table) NULL,  # Create or re-create a Table from scratch (includes append)
+    writeTable  = function(data,table) NULL,  # Append data to existing table (restructure as needed)
+    readTable   = function(table)      NULL   # Read named table into (always) a data.frame; use VEExporter$formatter for something else
   ),
   private = list(
     saveFileName = NULL,               # File name if exporter has been loaded/saved
@@ -539,46 +571,56 @@ VEExporter <- R6::R6Class(
 #    csv (option perahsp to use parquet or alternte csv driver) default is csv in subdirectory of OutputDir named after model
 #    dbi (options to pick a specific driver) default is SQLite into a file in OutputDir named after model
 
-ve.connection.init <- function(tag,...) {
+ve.connection.missing <- function(dataFields) {
+  tableFields <- private$tableFields[[Table]]
+  missingTableNames <- ! dataFields %in% tableFields # add these fields as NA to existing table
+  missingDataNames  <- ! tableFields %in% dataFields # add these fields as NA to incoming data source
+  missing <- list(Data=character(0),Table=character(0))
+  if ( any(missingDataNames) ) {
+    missing$Data <- dataFields[missingDataNames]
+  }
+  if ( any(missingTableNames) ) {
+    missing$Tables <- tableFields[missingTableFields]
+  }
+  return(missing)
 }
 
-ve.connection.summary <- function() {
-}
-
-ve.connection.print <- function() {
-}
-
-ve.connection.raw       <- function() {} # override in specific subclasses
-ve.connection.close     <- function() {} # override as needed (e.g. for DBI connection)
-ve.connection.nameTable <- function() {}
-ve.connection.createTable <- function() {}
-ve.connection.writeTable <- function() {}
-ve.connection.readTable <- function() {}
-
+# ve.connection.init        <- function(config) {} # initialize the connection from parameters
+# ve.connection.raw         <- function() { message("Base class does not have raw data"); return(NULL) } # override in specific subclasses
+# ve.connection.close       <- function() {} # Base class doesn't need to do anything
+# ve.connection.nameTable   <- function(loc) {} # turn table location into a string
+# ve.connection.createTable <- function(Data,Table) {}
+# ve.connection.writeTable  <- function(Data,Table,addFields=character(0)) {}
+# ve.connection.readTable   <- function(Table) {} # Table can be a "loc" or compatible nameTable
 
 VEConnection <- R6::R6Class(
   # Default class does nothing
   # Calling its $data function will list available exporters
-  "VECnnection",
+  "VEConnection",
   public = list(
     # public data
 
     # methods (each connecton type will implement its own version of these)
-    initialize=ve.connection.init,              # call from subclasses to establish internal connection and partition
-    summary=ve.connection.summary,              # simplified text representation of the connection details
+    initialize  = function(config) {},          # call from subclasses to establish internal connection and partition
+    summary     = function() { "Base VEConnection" }, # simplified text representation of the connection details
                                                 # format and content depends on the connection class
-    print=ve.connection.print,                  # cat's the summary
-    raw=ve.connection.raw,                      # returns CSV folder or list of data.frames or DBI connection
+    print       = function(...) cat(self$summary,"\n"), # Whatever makes sense for the derived class
+    raw         = function() {},                # returns CSV folder or list of data.frames or DBI connection
                                                 # specific value is class-specific and is enough to re-open and
                                                 # review what is in the connection (e.g. to list actually written
                                                 # tables)
+    close       = function() {},                # release internal connection (whatever is returned by "raw")
 
     nameTable   = function(TableLoc) NULL,      # Turn the TableLoc into an actual table name suitable for creating/writing/reading
                                                 # Exporter will add this name to the TableLoc Metadata
     createTable = function(data,table) NULL,    # Create or re-create a Table from scratch (includes append)
     writeTable  = function(data,table) NULL,    # Append data to existing table (restructure as needed)
-    readTable   = function(table) NULL          # Read named table into a data.frame
+    readTable   = function(table) NULL,         # Read named table into a data.frame
                                                 # Throughout, 'table' may be a TableLoc or a TableLocator string
+    missingFields = ve.connection.missing       # Internal helper to find differences between saved table and new data
+  ),
+  private = list(
+    tableFields = list()
   )
 )
 
@@ -684,11 +726,39 @@ parseTableString <- function(tableString,pathSep="/",nameSep="_",tableSep=":",ti
 #
 #######################################
 
-ve.connection.df.init      <- function() {}
-ve.connection.df.raw       <- function() {} # override in specific subclasses
-ve.connection.df.createTable <- function() {}
-ve.connection.df.writeTable <- function() {}
-ve.connection.df.readTable <- function() {}
+ve.connection.df.createTable <- function(Data,Table) {
+  if ( ! is.character(Table) ) stop("createTable: Table must come from nameTable")
+  private$tableFields[[Table]] <- names(Data)
+  self$exportedData[[Table]] <- Data
+  }
+
+ve.connection.df.writeTable <- function(Data,Table) {
+  if ( ! is.character(Table) ) stop("createTable: Table must come from nameTable")
+  if ( ! Table %in% names(self$exportedData) ) {
+    self$createTable(Data,Table) }
+  else {
+    # Conform the columns (ideally, we never end up using this code...)
+    missingFields <- self$missingFields(names(Data))
+    # How to conform them will depend on the underlying table storate mechanism
+    if ( length(missingFields$Data) > 0 ) {
+      naValue <- as.list(rep(NA,length(missingFields$Data)))
+      names(naValue) <- missingFields$Data
+      Data <- cbind(Data,data.frame(naValue))
+    }
+    if ( length(missingFields$Table) > 0 ) {
+      # External data sources will need to read back the table, add fields, recreate (drop/add) table
+      naValue <- as.list(rep(NA,length(missingFields$Table)))
+      names(naValue) <- missingFields$Table
+      self$exportedData[[Table]] <- cbind(self$exportedData[[Table]],data.frame(naValue))
+    }
+    # Append the rows
+    self$exportedData[[Table]] <- rbind(self$exportedData[[Table]],Table)
+  }
+}
+
+ve.connection.df.readTable <- function(Table) {
+  return( self$exportedData[[Table]] )
+}
 
 VEConnection.Dataframe <- R6::R6Class(
   # Accumulates data.frames in memory
@@ -698,15 +768,21 @@ VEConnection.Dataframe <- R6::R6Class(
   inherit = VEConnection,
   public = list(
     # methods
-    initialize  = ve.connection.df.init,
+    initialize  = function() {},  # No initialization needed
+    summary     = function() {
+      c("Tables:")
+      if ( length(self$exportedData)>0 ) names(self$exportedData) else "None written yet"
+    },
+    # print = {} # base class implementation
+    raw         = function() { invisible(self$exportedData) },
     # implementing methods
-    nameTable   = function(loc) { makeTableString( Paths=c(), Names=loc$Names, Table=loc$Table ) },
+    nameTable   = function(loc) { makeTableString( Paths=loc$Paths, Names=loc$Names, Table=loc$Table ) },
     createTable = ve.connection.df.createTable,
     writeTable  = ve.connection.df.writeTable,
     readTable   = ve.connection.df.readTable
   ),
   private = list(
-    exportedData = list(),              # will be hierarchical named list of data.frames (hierarchy per partitioning)
+    exportedData = list(),              # named list of data.frames (tage is from nameTable)
     Tags = c("data.frame","raw","data") # valid tags used in initialize; first one is default tag
   )
 )
