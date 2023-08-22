@@ -526,9 +526,9 @@ VEExporter <- R6::R6Class(
 
     # implementation methods
     # for the following, "table" is a table navigator (folder, folder, name) as stored in TableList
-    createTable = function(data,table) NULL,  # Create or re-create a Table from scratch (includes append)
-    writeTable  = function(data,table) NULL,  # Append data to existing table (restructure as needed)
-    readTable   = function(table)      NULL   # Read named table into (always) a data.frame; use VEExporter$formatter for something else
+    createTable = function(Data,Table) NULL,  # Create or re-create a Table from scratch (includes append)
+    writeTable  = function(Data,Table) NULL,  # Append data to existing table (restructure as needed)
+    readTable   = function(Table)      NULL   # Read named table into (always) a data.frame; use VEExporter$formatter for something else
   ),
   private = list(
     saveFileName = NULL,               # File name if exporter has been loaded/saved
@@ -594,7 +594,7 @@ VEConnection <- R6::R6Class(
     # public data
 
     # methods (each connecton type will implement its own version of these)
-    initialize  = function(config) {},          # call from subclasses to establish internal connection and partition
+    initialize  = function(Model,config) {},    # call from subclasses to establish internal connection and partition
     summary     = function() { "Base VEConnection" }, # simplified text representation of the connection details
                                                 # format and content depends on the connection class
     print       = function(...) cat(self$summary(),"\n"), # Whatever makes sense for the derived class
@@ -606,11 +606,16 @@ VEConnection <- R6::R6Class(
 
     nameTable   = function(TableLoc) NULL,      # Turn the TableLoc into an actual table name suitable for creating/writing/reading
                                                 # Exporter will add this name to the TableLoc Metadata
-    createTable = function(data,table) NULL,    # Create or re-create a Table from scratch (includes append)
-    writeTable  = function(data,table) NULL,    # Append data to existing table (restructure as needed)
-    readTable   = function(table) NULL,         # Read named table into a data.frame
+    createTable = function(Data,Table) NULL,    # Create or re-create a Table from scratch (includes append)
+    writeTable  = function(Data,Table) NULL,    # Append data to existing table (restructure as needed)
+    readTable   = function(Table) NULL,         # Read named table into a data.frame
                                                 # Throughout, 'table' may be a TableLoc or a TableLocator string
     missingFields = ve.connection.missing       # Internal helper to find differences between saved table and new data
+    saveTableFields = function(Data,Table) {    # Helper to stow updated table field names
+      private$tableFields[[Table]] <- names(Data)
+      return( names(private$tableFields[[Table]]) )
+    }
+
   ),
   private = list(
     tableFields = list()
@@ -721,33 +726,32 @@ parseTableString <- function(tableString,pathSep="/",nameSep="_",tableSep=":",ti
 
 ve.connection.df.createTable <- function(Data,Table) {
   if ( ! is.character(Table) ) stop("createTable: Table must come from nameTable")
-  private$tableFields[[Table]] <- names(Data)
   private$exportedData[[Table]] <- Data
-  }
+  return( self$saveTableFields(Data,Table) )
+}
 
 ve.connection.df.writeTable <- function(Data,Table) {
   if ( ! is.character(Table) ) Table <- self$nameTable(Table) # TODO: check explicitly with VETableLocator...
   if ( ! Table %in% names(private$exportedData) ) {
-    self$createTable(Data,Table) }
-  else {
-    # Conform the columns (ideally, we never end up using this code...)
-    missingFields <- self$missingFields(names(Data),Table)
-    # How to conform them will depend on the underlying table storate mechanism
-    if ( length(missingFields$Data) > 0 ) {
-      naValue <- as.list(rep(NA,length(missingFields$Data)))
-      names(naValue) <- missingFields$Data
-      Data <- cbind(Data,data.frame(naValue))
-    }
-    if ( length(missingFields$Table) > 0 ) {
-      # External data sources will need to read back the table, add fields, recreate (drop/add) table
-      naValue <- as.list(rep(NA,length(missingFields$Table)))
-      names(naValue) <- missingFields$Table
-      private$exportedData[[Table]] <- cbind(private$exportedData[[Table]],data.frame(naValue))
-    }
+    return( self$createTable(Data,Table)  )
+  }
+  # Conform the columns (ideally, we never end up using this code...)
+  # How to conform them will depend on the underlying table storate mechanism
+  missingFields <- self$missingFields(names(Data),Table)
+  if ( length(missingFields$Data) > 0 ) {
+    naValue <- as.list(rep(NA,length(missingFields$Data)))
+    names(naValue) <- missingFields$Data
+    Data <- cbind(Data,data.frame(naValue))
+  }
+  if ( length(missingFields$Table) > 0 ) {
+    # External data sources will need to read back the table, add fields, recreate (drop/add) table
+    naValue <- as.list(rep(NA,length(missingFields$Table)))
+    names(naValue) <- missingFields$Table
+    private$exportedData[[Table]] <- cbind(private$exportedData[[Table]],data.frame(naValue))
   }
   # Append the rows
   private$exportedData[[Table]] <- rbind(private$exportedData[[Table]],Table)
-  return( names(private$exportedData[[Table]]) ) # required return for writeTable API: names in DB table
+  return( self$saveTableFields(Data,Table) )
 }
 
 ve.connection.df.readTable <- function(Table) {
@@ -762,7 +766,7 @@ VEConnection.Dataframe <- R6::R6Class(
   inherit = VEConnection,
   public = list(
     # methods
-    initialize  = function(config) {},  # No initialization needed
+    initialize  = function(Model,config) {},  # No initialization needed
     summary     = function() {
       c("Tables:")
       if ( length(self$exportedData)>0 ) names(self$exportedData) else "None written yet"
@@ -787,11 +791,60 @@ VEConnection.Dataframe <- R6::R6Class(
 #
 #################################
 
-ve.connection.csv.init      <- function(config) {}
-ve.connection.csv.raw       <- function() {} # override in specific subclasses
-ve.connection.csv.createTable <- function() {}
-ve.connection.csv.writeTable <- function() {}
-ve.connection.csv.readTable <- function() {}
+ve.connection.csv.init      <- function(Model,config) {
+  # TODO: config must have "Model" (injected by export) and "Directory"
+  rootDirectory <- file.path(Model$modelPath,Model$setting("ResultsDir"),Model$setting("OutputDir"))
+  if ( "Directory" %in% names(config) ) {
+    self$Directory <- file.path(rootDirectory,config$Directory)
+  } else { # default name
+    self$Directory <- file.path(rootDirectory,paste0("Export_CSV_.",format(TimeStamp,"%Y%m%d%H%M")))
+  }
+}
+ve.connection.csv.raw       <- function() {
+  # Connection specific description
+  return private$Directory
+}
+
+ve.connection.csv.createTable <- function(Data, Table) {
+  # Overwrite Table with Data
+  write.csv( Data, file=Table, row.names=FALSE, append=FALSE)
+  return( self$saveTableFields(Data,Table) )
+}
+
+ve.connection.csv.writeTable <- function(Data, Table) {
+  # TODO: a lot of this is generic, except for the low-level write to table
+  #   that can be either append or overwrite.
+  # Append Data onto Table
+  # Check field names and rewrite table if necessary
+  if ( ! is.character(Table) ) Table <- self$nameTable(Table) # TODO: check explicitly with VETableLocator...
+  if ( ! Table %in% names(private$tableFields) ) {
+    return( self$createTable(Data,Table) )
+  }
+  # Conform the columns (ideally, we never end up using this code...)
+  missingFields <- self$missingFields(names(Data),Table)
+  # How to conform them will depend on the underlying table storate mechanism
+  if ( length(missingFields$Data) > 0 ) {
+    naValue <- as.list(rep(NA,length(missingFields$Data)))
+    names(naValue) <- missingFields$Data
+    Data <- cbind(Data,data.frame(naValue))
+  }
+  if ( length(missingFields$Table) > 0 ) {
+    # External data sources will need to read back the table, add fields, recreate (drop/add) table
+    naValue <- as.list(rep(NA,length(missingFields$Table)))
+    names(naValue) <- missingFields$Table
+    oldTable <- self$readTable(Table)
+    oldTable <- cbind(oldTable,data.frame(naValue))
+    Data <- rbind(oldTable,Data)
+    return( self$createTable(Data, Table) ) # Data columns changed; overwrites previous table
+  }
+  # Append the data and return the field names
+  write.csv( Data, file=Table, row.names=FALSE, append=TRUE )
+  return( self$saveTableFields( Data, Table ) )
+}
+
+ve.connection.csv.readTable <- function(Table) {
+  return ( read.csv(Table) ) # double check this picks up col.names correctly...
+}
 
 VEConnection.CSV <- R6::R6Class(
   # CSV implementation writes out CSV files using the Partition strategy
@@ -802,8 +855,8 @@ VEConnection.CSV <- R6::R6Class(
     initialize  = ve.connection.csv.init,
     # implementing methods
     nameTable = function(loc) {
-      makeTableString(loc$Partition$Paths, loc$Partition$Names, loc$Partition$Table, self$connectTime,
-                      tableSep="/", timeSep="_")
+      paste0(makeTableString(loc$Partition$Paths, loc$Partition$Names, loc$Partition$Table, self$connectTime,
+                      tableSep="/", timeSep="_"), ".csv")
     },
     createTable = ve.connection.csv.createTable,
     writeTable  = ve.connection.csv.writeTable,
@@ -813,7 +866,6 @@ VEConnection.CSV <- R6::R6Class(
   ),
   private = list(
     Directory = NULL,    # Default to "OutputDir/Export_<Timestamp>" in initializer
-    Tags = c("csv") # later perhaps also parquet
   )
 )
 
@@ -965,7 +1017,7 @@ makeVEConnection <- function(Model,config) {
     message("Creating Driver for ",driverClass$classname)
   }
   # Create new driver object using "config"
-  return ( driverClass$new(config) )
+  return ( driverClass$new(Model,config) )
 }
 
 # if ( interactive() ) {

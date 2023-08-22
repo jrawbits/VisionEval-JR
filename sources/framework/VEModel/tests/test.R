@@ -569,7 +569,7 @@ test_02_basic_export <- function(reset=FALSE,log="warn")
   testStep("extract model results, show directory")
   # MORE TESTS LATER: See more detailed tests below to exercise export options
   br <- mod$results()
-  print(br)
+  print(br)Thanks for co
 
   testStep("Set up connection")
   connection=list( TablePrefix="ExportTest_" ) # NOTE: must include necessary delimiter, if any
@@ -579,7 +579,7 @@ test_02_basic_export <- function(reset=FALSE,log="warn")
 
   return(invisible(list(br=br,R.data=R.data)))
 
-  testStep("Default export")
+  testStep("Default export (CSV)")
   br$export(connection=connection) # default export creates CSV files in a subfolder of the model's results/outputs folder
   cat("Directory:\n")
   print(mod$dir(outputs=TRUE,all.files=TRUE))
@@ -589,11 +589,6 @@ test_02_basic_export <- function(reset=FALSE,log="warn")
   extractor <- br$export("sql",connection=connection) # returns a VEExporter object
   cat("Extractor list:\n")
   print(extractor$list())
-  cat("Directory:\n")
-  print(mod$dir(outputs=TRUE,all.files=TRUE))
-
-  testStep("Re-format an existing export (CSV to SQLite)")
-  SQLextract <- newExporter("sql",data=extractor) # extract is the previous export
   cat("Directory:\n")
   print(mod$dir(outputs=TRUE,all.files=TRUE))
 
@@ -608,54 +603,7 @@ test_02_basic_export <- function(reset=FALSE,log="warn")
   mod$clear(force=!interactive(),outputOnly=FALSE) # default is FALSE if no outputs exist - delete results
   print(mod$dir())
 
-  testStep("copy a model (includes results and outputs)")
-  cp <- mod$copy("BARE-COPY")
-  print(cp)
-  cat("Model directory of BARE-COPY")
-  print(cp$dir())
-
-  testStep("Forcibly clear results from model copy")
-  cp$clear(force=TRUE,outputOnly=FALSE) # forcibly removes outputs and results
-  print(cp$dir())
-
-  testStep("Break the run_model.R script in the copy and observe failure")
-  runModelFile <- file.path(cp$modelPath,"run_model.R")
-  runModel_vc[4] <- 'runModule("BorrowHouseholds","VESimHouseholds",RunFor="AllYears",RunYear=Year)'
-  cat(runModelFile,paste(runModel_vc,collapse="\n"),sep="\n")
-  writeLines(runModel_vc,con=runModelFile)
-  result <- try( cp$run() ) # Should throw error message about missing module...
-  print(result)
-
-  testStep("Display log from failed run...")
-  logs <- cp$log(shorten=FALSE)
-  for ( log in logs ) {
-    cat("Log file",log,"\n")
-    cat(readLines(log),sep="\n")
-  }
-  
-  testStep("remove model results")
-  cat("Directory before...\n")
-  print(cp$dir(all.files=TRUE))
-  cp$clear(force=TRUE,outputOnly=FALSE,archives=TRUE)
-  cat("\nDirectory after...\n")
-  print(cp$dir(all.files=TRUE))
-
-  testStep("Delete model in file system")
-  cat("The model:\n")
-  print(cp)
-  cat("All current models:\n")
-  print(dir("models"))
-  cat("Unlinking",cp$modelName,"\n")
-  unlink(file.path("models",cp$modelName),recursive=TRUE)
-  cat("Is",cp$modelName,"still present?\n")
-  print(dir("models"))
-
-  testStep("directory still accessible?")
-  print(cp$dir())
-  rm(cp)
-
-  testStep("return bare model")
-  return(bare)
+  return(mod)
 }
 
 test_02_multicore <- function(model=NULL, log="info", workers=3) {
