@@ -123,7 +123,6 @@ ve.resultslist.extract <-  function(exporter="data.frame",connection=NULL,partit
   export <- self$export(exporter=exporter,
     connection=connection,partition=partition,
     wantMetadata=wantMetadata,convertUnits=convertUnits)
-  message("DEBUG: Extracting results list - delegate to export")
   return(invisible(structure(export$data(),Exporter=export)))
 } # shortcut to generate a list of data.frames via the export function
 

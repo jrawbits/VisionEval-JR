@@ -572,14 +572,13 @@ test_02_basic_export <- function(reset=FALSE,log="warn")
   print(br)
 
   testStep("Set up connection")
-  connection=list( TablePrefix="ExportTest" )
+  connection=list( TablePrefix="ExportTest_" ) # NOTE: must include necessary delimiter, if any
   R.data <- br$extract(connection=connection) # Returns a list of R data.frames
   message("what is R.data?")
   print(class(R.data))
-  message("printing R.data")
-  print(R.data) # Should be an Exporter with a data.frame Connection
 
-  stopTest()
+  return(invisible(list(br=br,R.data=R.data)))
+
   testStep("Default export")
   br$export(connection=connection) # default export creates CSV files in a subfolder of the model's results/outputs folder
   cat("Directory:\n")
