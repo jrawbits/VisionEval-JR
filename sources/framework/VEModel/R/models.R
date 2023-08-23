@@ -885,8 +885,8 @@ ve.model.clear <- function(force=FALSE,outputOnly=NULL,archives=FALSE,stage=NULL
   # Remove outputs and/or results, either interactively or in batch
   # 'show' controls maximum number of outputs to display for selection
   # Can limit just to outputs or results in a certain 'stage'
-  # outputOnly=FALSE will show results as well as outputs for deletion;
-  #   if outputs exist, and outputOnly is NULL, we only show those by default
+  # outputOnly=FALSE will show/clear results as well as outputs for deletion;
+  #   if outputs exist, and outputOnly is NULL, we only show/clear those by default
   # "archives" TRUE will offer to delete results archives
   #   archives FALSE will ignore results archives
   # By default, clear is interactive. If "force=TRUE", then it will

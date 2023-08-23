@@ -560,7 +560,144 @@ test_02_model <- function(modelName="VERSPM-Test", oldstyle=FALSE, log="info", b
   return(invisible(bare)) # Return model for additional processing
 }
 
-test_02_basic_export <- function(reset=FALSE,log="warn")
+test_02_export_connections <- function(
+  mysql=FALSE,
+  reset=TRUE,
+  testConnections=c("data.frame","csv") # later add "sql"and "mysql"
+) {
+  # Run through the nameTable / createTable / writeTable elements
+  testStep("Set up a model for testing; just for output location")
+  mod <- test_01_run("VERSPM-export",reset=FALSE,log="warn")
+  print(mod)
+
+  if ( reset ) mod$clear(force=TRUE,outputOnly=TRUE)
+
+  Data <- data.frame(
+    Marea = c("Marea1","Marea2"),
+    Azone = c("Azone1","Azone2"),
+    Value1 = 1:2,
+    Value2 = 3:4,
+    Value3 = letters[5:6],
+    Value4 = LETTERS[7:8]
+  )
+
+  writeMe <- function(Connection,Data) {
+    # Test a Connection by writing different things to it
+    # Exercise nameTable
+    cat("\nTesting Connection:\n")
+    print(Connection$summary())
+    cat("Name Table:\n")
+    loc = list(
+      Partition=list(Paths=c("path1","path2"),Names=c("name1","name2"),Table="TestTable")
+    )
+    class(loc) = "VETableLocator"
+    print( Connection$nameTable(loc) ) # Connection formatted
+    # We'll save actually writing to a Path for the basic_export test below
+    browser()
+    cat("Creating Data to bare",Table,"\n") # in the real world, export will call nameTable
+    # Table goes into OutputDir
+    cat("Field Names:\n")
+    print( Connection$createTable(Data,Table) )
+    cat("Read back the created table contents")
+    print( Connection$readTable(Table) )
+    cat("What's in the model outputs?\n")
+    print(mod$dir(outputs=TRUE,all.files=TRUE))
+    cat("Append the Data to the Table\n")
+    print( Connection$writeTable(Data,Table) )
+    cat("Should be two copies of the Data rows\n")
+    print( Connection$readTable(Table) )
+    cat("Re-create the table; should have one copy of Data\n")
+    print( Connection$createTable(Data,Table) )
+    print( Connection$readTable(Table) )
+    cat("Test adding Data with columns missing from Data compared to existing ",Table)
+    DataReduced <- Data[,-which( names(Data) == "Value2" )]
+    print( Connection$writeTable(Data,Table) )
+    print( Connection$readTable(Table) )
+    cat("Test adding Data with columns missing from ",Table)
+    DataAugmented <- cbind(Data,Value5=paste0(Data$Value3,Data$Value4))
+    print( Connection$writeTable(Data,Table) )
+    print( Connection$readTable(Table) )
+    cat("Test connection summary:\n")
+    print( Connection$summary() )
+    print( Connection$list() )             # The field names only
+    print( Connection$list(nameOnly=FALSE) # The full metadata
+  }
+
+  if ( "data.frame" %in% testConnections ) {
+    # data.frame connection
+    cdf <- makeVEConnection(Model, config=list(driver="data.frame"))
+    writeMe(cdf,Data)
+  }
+  if ( "csv" %in% testConnections ) {
+    require(RSQLite) # will also require RDBI as a dependency
+    ccsv <- makeVEConnection(Model) # default is csv
+    # ccsv <- makeVEConnection(Model, config=list(driver="csv"))
+    writeMe(ccsv,Data)
+  }
+  if ( "sql" %in% testConnections ) {
+    csql <- makeVEConnection(Model,config=list(driver="sql")) # SQLite, default DB Name
+    writeMe(csql,Data)
+
+    sqlConfig <- list( # SQLite with explict DBName
+      driver="sql",
+      Database="ExplicitDBName"
+      # Can add DBIConfig elements to deeply override the the database name
+    )
+    csql <- makeVEConnection(Model,sqlConfig) # Positional parameter work for configuration
+    writeMe(csql,Data)
+  }
+  if ( "mysql" %in% testConnections ) {
+    require(RMariaDB)
+    # Requires that the named database already be set up for user 'visioneval' password 'showme'
+    mysqlConfig <- list(
+      # In makeVEConnection, if "driver" is not present but "drv" is present, presume driver="sql"
+      # driver = "dbi",    # same as "sql" - uses low-level R DBI driver
+      # parameters in the connection DBIConfig sub-list will be passed to dbConnect using do.call
+      drv = RMariaDB::MariaDB(), # or drv="RMariaDB::MariaDB()" - character string will be parsed
+      DBIConfig = list(
+        dbname = "visioneval",
+        user = "visioneval",
+        password = "showme"
+      )
+    )
+    # NOTE: better to do the following to keep the credentials out of the model script:
+    # mysqlConfig <- list(
+    #    driver="sql",
+    #    DBIConfig = list(
+    #      drv="RMariaDB::RMariaDB()",
+    #      group="visionevalDB"
+    #    )
+    # )
+    # Then in your "my.cnf" file, put this block:
+    #
+    # [visionevalDB]
+    # database=visioneval
+    # user=visioneval
+    # password=showme
+    # 
+    mysql <- makeVEConnection(Model,mysqlConfig)
+    if ( reset ) {
+      con = mysql$raw() # for DBI/SQL connection, returns the DBI connection
+      # NOTE: Example SQL below for creating database/user presumes MariaDB; You might have to
+      #   tweak the syntax for original MySQL or other DB services
+      # In MySQL/MariaDB, the user permissions (once set) don't care if the the database is dropped
+      #   and re-created. Permissions are by name not by object.
+      # The specific syntax here might need to be tweaked for your database
+      dbExecute(con,"CREATE DATABASE OR REPLACE visioneval;")
+      dbExecute(con,"USE visioneval;")
+      # We won't build the user here, but you can set up the test user like the following,
+      #   presuming you're running MariaDB/MySQL on localhost
+      # con <- dbConnect(RMariaDB::MariaDB(),user='admin',password='$adminpassword')
+      # dbExecute(con,"CREATE USER 'visioneval'@localhost IDENTIFIED BY 'showme';")
+      # dbExecute(con,"GRANT ALL PRIVILEGES ON 'visioneval'.* TO 'visioneval'@localhost;")
+      # dbExecute(con,"FLUSH PRIVILEGES;")
+      # dbDisconnect(con); rm(con)
+    }
+    writeMe(mysql,Data)
+  }
+}
+
+test_02_basic_export <- function(reset=FALSE,log="warn",exporter="data.frame")
 {
   testStep("Set up VERSPM-base model instance for export tests")
   mod <- test_01_run("VERSPM-export",reset=reset,log="warn")
@@ -569,14 +706,15 @@ test_02_basic_export <- function(reset=FALSE,log="warn")
   testStep("extract model results, show directory")
   # MORE TESTS LATER: See more detailed tests below to exercise export options
   br <- mod$results()
-  print(br)Thanks for co
+  print(br)
 
   testStep("Set up connection")
   connection=list( TablePrefix="ExportTest_" ) # NOTE: must include necessary delimiter, if any
-  R.data <- br$extract(connection=connection) # Returns a list of R data.frames
+  R.data <- br$extract(connection=connection)  # Returns a list of R data.frames
   message("what is R.data?")
   print(class(R.data))
 
+  # DEBUGGING
   return(invisible(list(br=br,R.data=R.data)))
 
   testStep("Default export (CSV)")
@@ -585,22 +723,18 @@ test_02_basic_export <- function(reset=FALSE,log="warn")
   print(mod$dir(outputs=TRUE,all.files=TRUE))
 
   testStep("Export to an SQLite database")
-  # In this case, copy to "sql" which by default creates an SQLite database in results/outputs
+  # In this case, export to "sql" which by default creates an SQLite database in results/outputs
   extractor <- br$export("sql",connection=connection) # returns a VEExporter object
-  cat("Extractor list:\n")
+  cat("Exporter list of tables:\n")
   print(extractor$list())
   cat("Directory:\n")
   print(mod$dir(outputs=TRUE,all.files=TRUE))
 
-  testStep("clear the bare model extracts")
+  testStep("clear the 0model extracts")
   cat("Interactive clearing of outputs (not results):\n")
   mod$clear(force=!interactive())
 
   testStep("model after clearing outputs...")
-  print(mod$dir())
-
-  testStep("clear results as well...")
-  mod$clear(force=!interactive(),outputOnly=FALSE) # default is FALSE if no outputs exist - delete results
   print(mod$dir())
 
   return(mod)

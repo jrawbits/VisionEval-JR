@@ -22,11 +22,14 @@ Imports:
     future,
     future.callr,
     jrc,
-    dplyr
+    dplyr,
+    DBI,
+    RSQLite
 Suggests:
     knitr,
     pkgload,
-    markdown
+    markdown,
+    RMariaDB
 Encoding: UTF-8
 VignetteBuilder: knitr
 RoxygenNote: 7.2.3

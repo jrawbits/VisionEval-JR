@@ -436,7 +436,7 @@ ve.exporter.data <- function(tables=NULL,format="data.frame") { # tables: a list
   # Generate a list of requested table data in the requested format (which will be
   # interpreted by self$Connection as it reads out the data).
   tables <- self$list(tables,namesOnly=TRUE)
-  exportedData <- if ( missing(format) || format=="data.frame" ) {
+  exportedData <- if ( missing(format) || !is.character(format) || format=="data.frame" ) {
     lapply( tables, function(t) self$Connection$readTable(t) )
   } else {
     lapply( tables, function(t) self$formatter(self$Connection$readTable(t),format=format) )
@@ -521,14 +521,8 @@ VEExporter <- R6::R6Class(
     formatter=ve.exporter.formatter,
 
     # Use Prefix/Suffix to identify different exports
-    TablePrefix = NULL,                         # if set, send to Table during $writeTable or $readTable
-    TableSuffix = NULL,                         # if set, send to connection$writeTable or readTable
-
-    # implementation methods
-    # for the following, "table" is a table navigator (folder, folder, name) as stored in TableList
-    createTable = function(Data,Table) NULL,  # Create or re-create a Table from scratch (includes append)
-    writeTable  = function(Data,Table) NULL,  # Append data to existing table (restructure as needed)
-    readTable   = function(Table)      NULL   # Read named table into (always) a data.frame; use VEExporter$formatter for something else
+    TablePrefix = NULL,                # if set, send to Table during $writeTable or $readTable
+    TableSuffix = NULL                 # if set, send to connection$writeTable or readTable
   ),
   private = list(
     saveFileName = NULL,               # File name if exporter has been loaded/saved
@@ -598,19 +592,20 @@ VEConnection <- R6::R6Class(
     summary     = function() { "Base VEConnection" }, # simplified text representation of the connection details
                                                 # format and content depends on the connection class
     print       = function(...) cat(self$summary(),"\n"), # Whatever makes sense for the derived class
-    raw         = function() {},                # returns CSV folder or list of data.frames or DBI connection
+    raw         = function() {},                # returns CSV folder or DBI connection
                                                 # specific value is class-specific and is enough to re-open and
                                                 # review what is in the connection (e.g. to list actually written
                                                 # tables)
     close       = function() {},                # release internal connection (whatever is returned by "raw")
 
-    nameTable   = function(TableLoc) NULL,      # Turn the TableLoc into an actual table name suitable for creating/writing/reading
+    nameTable   = function(TableLoc) makeTableString(TableLoc),
+                                                # Turn the TableLoc into an actual table name suitable for creating/writing/reading
                                                 # Exporter will add this name to the TableLoc Metadata
     createTable = function(Data,Table) NULL,    # Create or re-create a Table from scratch (includes append)
     writeTable  = function(Data,Table) NULL,    # Append data to existing table (restructure as needed)
     readTable   = function(Table) NULL,         # Read named table into a data.frame
                                                 # Throughout, 'table' may be a TableLoc or a TableLocator string
-    missingFields = ve.connection.missing       # Internal helper to find differences between saved table and new data
+    missingFields = ve.connection.missing,      # Internal helper to find differences between saved table and new data
     saveTableFields = function(Data,Table) {    # Helper to stow updated table field names
       private$tableFields[[Table]] <- names(Data)
       return( names(private$tableFields[[Table]]) )
@@ -780,8 +775,7 @@ VEConnection.Dataframe <- R6::R6Class(
     readTable   = ve.connection.df.readTable
   ),
   private = list(
-    exportedData = list(),              # named list of data.frames (tage is from nameTable)
-    Tags = c("data.frame","raw","data") # valid tags used in initialize; first one is default tag
+    exportedData = list()
   )
 )
 
@@ -792,7 +786,9 @@ VEConnection.Dataframe <- R6::R6Class(
 #################################
 
 ve.connection.csv.init      <- function(Model,config) {
-  # TODO: config must have "Model" (injected by export) and "Directory"
+  # TODO: config must have "Model" (injected by export) and "Directory", which is a
+  # subdirectory of OutputDir
+  super$initialize(config)
   rootDirectory <- file.path(Model$modelPath,Model$setting("ResultsDir"),Model$setting("OutputDir"))
   if ( "Directory" %in% names(config) ) {
     self$Directory <- file.path(rootDirectory,config$Directory)
@@ -802,21 +798,21 @@ ve.connection.csv.init      <- function(Model,config) {
 }
 ve.connection.csv.raw       <- function() {
   # Connection specific description
-  return private$Directory
+  return( private$Directory )
 }
 
 ve.connection.csv.createTable <- function(Data, Table) {
   # Overwrite Table with Data
-  write.csv( Data, file=Table, row.names=FALSE, append=FALSE)
+  write.csv( Data, file=file.path(self$Directory,Table), row.names=FALSE, append=FALSE)
   return( self$saveTableFields(Data,Table) )
 }
 
 ve.connection.csv.writeTable <- function(Data, Table) {
-  # TODO: a lot of this is generic, except for the low-level write to table
-  #   that can be either append or overwrite.
   # Append Data onto Table
-  # Check field names and rewrite table if necessary
+  # Check field names and rewrite table if necessary (Table can be a VETableLocator)
   if ( ! is.character(Table) ) Table <- self$nameTable(Table) # TODO: check explicitly with VETableLocator...
+  # In CSV, nameTable will provide the path of the Table as "path1/path2/table_name1_name2
+  #   which gets attached to the Model output directory
   if ( ! Table %in% names(private$tableFields) ) {
     return( self$createTable(Data,Table) )
   }
@@ -838,12 +834,12 @@ ve.connection.csv.writeTable <- function(Data, Table) {
     return( self$createTable(Data, Table) ) # Data columns changed; overwrites previous table
   }
   # Append the data and return the field names
-  write.csv( Data, file=Table, row.names=FALSE, append=TRUE )
+  write.csv( Data, file=file.path(self$Directory,Table), row.names=FALSE, append=TRUE )
   return( self$saveTableFields( Data, Table ) )
 }
 
 ve.connection.csv.readTable <- function(Table) {
-  return ( read.csv(Table) ) # double check this picks up col.names correctly...
+  return ( read.csv(file.path(self$Directory,Table)) ) # double check this picks up col.names correctly...
 }
 
 VEConnection.CSV <- R6::R6Class(
@@ -853,6 +849,9 @@ VEConnection.CSV <- R6::R6Class(
   public = list(
     # methods
     initialize  = ve.connection.csv.init,
+    summary     = function() {
+      paste("CSV Directory:",self$Directory)
+    },
     # implementing methods
     nameTable = function(loc) {
       paste0(makeTableString(loc$Partition$Paths, loc$Partition$Names, loc$Partition$Table, self$connectTime,
@@ -865,7 +864,7 @@ VEConnection.CSV <- R6::R6Class(
     # methods
   ),
   private = list(
-    Directory = NULL,    # Default to "OutputDir/Export_<Timestamp>" in initializer
+    Directory = NULL    # Default to "OutputDir/Export_<Timestamp>" in initializer
   )
 )
 
@@ -875,7 +874,10 @@ VEConnection.CSV <- R6::R6Class(
 #
 #################################
 
-ve.connection.dbi.init      <- function(config) {}
+ve.connection.dbi.init      <- function(Model,config) {
+  # TODO: need to carefully explore config to get the "drv" element
+  # Then package up the DBDriver elements to open the connection
+  }
 ve.connection.dbi.raw       <- function() {} # override in specific subclasses
 ve.connection.dbi.createTable <- function() {}
 ve.connection.dbi.writeTable <- function() {}
@@ -895,9 +897,6 @@ VEConnection.DBI <- R6::R6Class(
     createTable = ve.connection.dbi.createTable,
     writeTable  = ve.connection.dbi.writeTable,
     readTable   = ve.connection.dbi.readTable
-  ),
-  private = list(
-    Tags = c("sql","sqlite","excel","dbi") # sql and sqlite are probably the same; "dbi" unpacks a more complex connection string
   )
 )
 
@@ -933,12 +932,11 @@ defaultExporters <- function() {
   return(exporters)
 }
 
-# This is really the connection list...
 connectionList <- list(
   csv=VEConnection.CSV,
   dbi=VEConnection.DBI,
   data.frame=VEConnection.Dataframe,
-  sqlite=VEConnection.DBI # shortcut - implies default connection
+  sqlite=VEConnection.DBI         # shortcut - implies default connection
   # parquet=VEConnection.Parquet  # Apache arrow implementation for parquet
   # excel=VEConnection.Excel      # Native Excel implementation rather than DBI
 )
@@ -997,10 +995,15 @@ connectionList <- list(
 #'   you need to make standard changes for production, add an Exporter block to your global or
 #'   model-specific visioneval.cnf and those will be used by default.
 #'
-#' @param config a named list of parameters used to build a VEConnection
+#' @param Model a VEmodel object, used by the interior connection to get model-specific settings like the
+#    output directory.
+#' @param config a named list of parameters used to build a VEConnection. Default config builds CSV
+#    files in the model output directory. At a minimum, config should contain a "driver" element, which
+#    is the name of the connection specification block (either a built-in default or defined in the model
+#    or global visioneval.cnf).
 #' @return A VEConnection (or derived) object giving access to the VisionEval results in `path`
 #' @export
-makeVEConnection <- function(Model,config) {
+makeVEConnection <- function(Model,config=list(driver="csv")) {
   # Find driver class from config (default is "csv")
   message("DEBUG: driver config")
   print(config)

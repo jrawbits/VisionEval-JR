@@ -118,12 +118,12 @@ ve.resultslist.init <- function(stages=NULL,model=NULL) {
 # export results using the data.frame exporter by default
 # Connection won't be used here (though we could use it to generate other table types such as data
 # tables / tibbles). Partitioning can be changed from the system/model defaults
-ve.resultslist.extract <-  function(exporter="data.frame",connection=NULL,partition=NULL,wantMetadata=FALSE,convertUnits=TRUE) {
+ve.resultslist.extract <-  function(exporter="data.frame",connection=NULL,partition=NULL,wantMetadata=FALSE,convertUnits=TRUE,format=NULL) {
   message("DEBUG: exporting data to data.frame connection")
   export <- self$export(exporter=exporter,
     connection=connection,partition=partition,
     wantMetadata=wantMetadata,convertUnits=convertUnits)
-  return(invisible(structure(export$data(),Exporter=export)))
+  return(invisible(structure(export$data(format=format),Exporter=export)))
 } # shortcut to generate a list of data.frames via the export function
 
 # Export results from each set in the results list to an exporter
@@ -146,7 +146,7 @@ ve.resultslist.export <- function(
   # Set up the exporter (defaults to CSV - use $extract to default to list of data.frames)
   message("DEBUG: Set up exporter")
   if ( ! inherits(exporter,"VEExporter") ) {
-    exporter <- self$Model$exporter(tag=exporter,connection=connection,partition=partition,self$Model)
+    exporter <- self$Model$exporter(tag=exporter,connection=connection,partition=partition)
   }
   print(exporter)
   # Just ignore connection and partition if we're passing a pre-built exporter
