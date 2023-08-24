@@ -620,18 +620,36 @@ test_02_export_partitions <- function() {
   print(part$partition(dataSets$Yr2044,"NAGlobal"))
 }
 
+test_dbname <- function(name=c("Junk.try.sqlite","Junk","Junk.csv","Junk.sqlite")) {
+  Timestamp = format(Sys.time(), )
+  results <- sapply( name, function(basename) {
+    dbname <- strsplit(basename, "\\.")[[1]] # now a vector with the extension
+    if ( length(dbname) == 1 ) dbname <- append(dbname,"sqlite")
+    dbname[1] <- paste("Model",dbname[1],sep="_") # prepend model name
+    dbname <- c(paste(dbname[-length(dbname)],collapse="."),dbname[length(dbname)])
+    dbname[1] <- paste(dbname[1],Timestamp<-format(Sys.time(),"%Y%m%d%H%M"),sep=TimeSeparator<-"_")
+    dbname <- paste(dbname,collapse=".")
+  } )
+  return(
+    data.frame(
+      original   = name,
+      configured = results
+    )
+  )
+}
+
 test_02_export_connections <- function(
+  testConnections=c("data.frame","csv"), # later add "sql"and "mysql"
   mysql=FALSE,
-  reset=TRUE,
-  testConnections=c("data.frame","csv") # later add "sql"and "mysql"
+  reset=TRUE
 ) {
   # Run through the nameTable / createTable / writeTable elements
   # Connections are initialized with defaults and exemplary settings
+  # We need a model to satisfy things like OutputDir used e.g. by CSV or SQLite
   testStep("Set up a model for testing; just for output location")
-  mod <- test_01_run("VERSPM-export",reset=FALSE,log="warn")
-  print(mod)
-
-  if ( reset ) mod$clear(force=TRUE,outputOnly=TRUE)
+  Model <- test_01_run("VERSPM-export",reset=FALSE,log="warn")
+  print(Model)
+  if ( reset ) Model$clear(force=TRUE,outputOnly=TRUE)
 
   # Really dumb data designed to be clearly readable
   #   when we do the export. Note that we're writing
@@ -657,17 +675,19 @@ test_02_export_connections <- function(
       Partition=list(Paths=c("path1","path2"),Names=c("name1","name2"),Table="TestTable")
     )
     class(loc) = "VETableLocator"
-    print( Connection$nameTable(loc) ) # Connection formatted
+    cat("Table Locator:\n")
+    print(loc)
+    Table <- Connection$nameTable(loc)
+    print(Table) # Connection formatted
     # We'll save actually writing to a Path for the basic_export test below
-    browser()
-    cat("Creating Data to bare",Table,"\n") # in the real world, export will call nameTable
+    cat("Putting Data in bare table: ",Table,"\n") # in the real world, export will call nameTable
     # Table goes into OutputDir
     cat("Field Names:\n")
     print( Connection$createTable(Data,Table) )
-    cat("Read back the created table contents")
+    cat("Read back the created table contents:\n")
     print( Connection$readTable(Table) )
     cat("What's in the model outputs?\n")
-    print(mod$dir(outputs=TRUE,all.files=TRUE))
+    print(Model$dir(outputs=TRUE,all.files=TRUE))
     cat("Append the Data to the Table\n")
     print( Connection$writeTable(Data,Table) )
     cat("Should be two copies of the Data rows\n")
@@ -675,19 +695,25 @@ test_02_export_connections <- function(
     cat("Re-create the table; should have one copy of Data\n")
     print( Connection$createTable(Data,Table) )
     print( Connection$readTable(Table) )
-    cat("Test adding Data with columns missing from Data compared to existing ",Table)
+    cat("Test adding Data with columns missing from Data compared to existing ",Table,"\n")
     DataReduced <- Data[,-which( names(Data) == "Value2" )]
-    print( Connection$writeTable(Data,Table) )
+    print( Connection$writeTable(DataReduced,Table) )
     print( Connection$readTable(Table) )
-    cat("Test adding Data with columns missing from ",Table)
+    cat("Test adding Data with columns missing from ",Table,"\n")
     DataAugmented <- cbind(Data,Value5=paste0(Data$Value3,Data$Value4))
-    print( Connection$writeTable(Data,Table) )
+    print( Connection$writeTable(DataAugmented,Table) )
     print( Connection$readTable(Table) )
     cat("Test connection summary:\n")
-    print( Connection$summary() )
+    cat( Connection$summary(),"\n" )  # summary produces a single string, possibly with embedded newlines
+    cat("Test connection list:\n")
     print( Connection$list() )               # The field names only
-    print( Connection$list(nameOnly=FALSE) ) # The full metadata
+    cat("Test connection list with full details:\n")
+    print( Connection$list(nameOnly=FALSE) ) # Tables with their names
   }
+
+  # We're doing the connection at a low level, so none of the defaults injected by
+  #  the exporter will apply. Need to fully specify config with the options
+  #  we want to test
 
   if ( "data.frame" %in% testConnections ) {
     testStep("Testing data.frame connection")
@@ -695,34 +721,35 @@ test_02_export_connections <- function(
     cdf <- makeVEConnection(Model, config=list(driver="data.frame"))
     writeMe(cdf,Data)
   }
-  return("Finishing after data.frame")
   if ( "csv" %in% testConnections ) {
     testStep("Testing csv connection")
-    ccsv <- makeVEConnection(Model) # default is csv
-    # ccsv <- makeVEConnection(Model, config=list(driver="csv"))
+    # ccsv <- makeVEConnection(Model) # default is csv
+    ccsv <- makeVEConnection(Model, config=list(driver="csv",Timestamp="database"))
     writeMe(ccsv,Data)
   }
   if ( "sql" %in% testConnections ) {
-    require(RSQLite) # will also require RDBI as a dependency
-    csql <- makeVEConnection(Model,config=list(driver="sql")) # SQLite, default DB Name
+    csql <- makeVEConnection(Model,config=list(driver="sql",Timestamp="database")) # SQLite, default DB Name + Extension
+    browser()
     writeMe(csql,Data)
 
     sqlConfig <- list( # SQLite with explict DBName
       driver="sql",
-      Database="ExplicitDBName"
+      Database="ExplicitDBName",
+      Timestamp="none"
       # Can add DBIConfig elements to deeply override the the database name
     )
     csql <- makeVEConnection(Model,sqlConfig) # Positional parameter work for configuration
     writeMe(csql,Data)
   }
   if ( "mysql" %in% testConnections ) {
-    require(RMariaDB)
     # Requires that the named database already be set up for user 'visioneval' password 'showme'
     mysqlConfig <- list(
       # In makeVEConnection, if "driver" is not present but "drv" is present, presume driver="sql"
       # driver = "dbi",    # same as "sql" - uses low-level R DBI driver
       # parameters in the connection DBIConfig sub-list will be passed to dbConnect using do.call
+      package = "RMariaDB",
       drv = RMariaDB::MariaDB(), # or drv="RMariaDB::MariaDB()" - character string will be parsed
+      Timestamp = "prefix",
       DBIConfig = list(
         dbname = "visioneval",
         user = "visioneval",
@@ -764,6 +791,7 @@ test_02_export_connections <- function(
     }
     writeMe(mysql,Data)
   }
+  return(Model) # to view Model$dir(output=TRUE,all.files=TRUE)
 }
 
 test_02_basic_export <- function(reset=FALSE,log="warn",exporter="data.frame")

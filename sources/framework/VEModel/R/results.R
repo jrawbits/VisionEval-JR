@@ -119,7 +119,6 @@ ve.resultslist.init <- function(stages=NULL,model=NULL) {
 # Connection won't be used here (though we could use it to generate other table types such as data
 # tables / tibbles). Partitioning can be changed from the system/model defaults
 ve.resultslist.extract <-  function(exporter="data.frame",connection=NULL,partition=NULL,wantMetadata=FALSE,convertUnits=TRUE,format=NULL) {
-  message("DEBUG: exporting data to data.frame connection")
   export <- self$export(exporter=exporter,
     connection=connection,partition=partition,
     wantMetadata=wantMetadata,convertUnits=convertUnits)

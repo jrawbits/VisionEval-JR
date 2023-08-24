@@ -56,11 +56,11 @@ self=private=NULL # To avoid global variable warnings
 #    Range : a numeric vector of rows in this partition
 #    Partition : a structure describing the Table:
 #       Path : a character vector of path elements describing the Table in the connection (prepended to Table name
-#              perhaps as folders
+#              perhaps as folders)
 #       Name : a character vector of path elements describing the Table in the connection (prepended to Table name)
 #       Table : root table name
 #    Metadata : a data.frame of all the Names in the Table (TableLoc, separate element, is
-#               implicitly a member
+#               implicitly a member)
 #               Includes Scenario, Group, Table, Name, plus any columns (by Name) in the furnished
 #               Metadata (often Units and Description, but possibly others)
 #    TableString : a string built from Path, Name and Table describing this entry
@@ -304,7 +304,7 @@ ve.exporter.init <- function(Model,load=NULL,tag=NULL,connection=NULL,partition=
         if ( !is.null(globalConfig$Connection) && length(globalConfig$Connection)>0 ) {
           workingConfig[ names(globalConfig$Connection) ] <- globalConfig$Connection
         }
-        if ( defaultPartition && is.character(globalConfig$Partiton) ) self$Configuration$Partition <- globalConfig$Partition
+        if ( defaultPartition && is.character(globalConfig$Partition) ) self$Configuration$Partition <- globalConfig$Partition
       }
       modelConfigs <- getSetup(paramNames="Exporters",fromFile=TRUE) # will have inherited from global
       if ( tag %in% names(modelConfigs) ) {
@@ -316,7 +316,7 @@ ve.exporter.init <- function(Model,load=NULL,tag=NULL,connection=NULL,partition=
       }
       if ( is.list(connection) ) { # merge parameter
         workingConfig[ names(connection) ] <- connection
-      } else workingConfig <- list() # default values for 
+      } else workingConfig <- list() # make everything the default
 
       # Pull TablePrefix and TableSuffix from connection configuration, if present
       if ( "TablePrefix" %in% names(workingConfig) ) {
@@ -339,9 +339,10 @@ ve.exporter.init <- function(Model,load=NULL,tag=NULL,connection=NULL,partition=
           # TimeSeparator is null if not provided
           self$TablePrefix <- paste0(workingConfig$startTime,workingConfig[["TimeSeparator"]],TablePrefix)
         } else if ( workingConfig[["Timestamp"]] == "suffix" ) {
-          self$TableSuffix <- paste0(TableSuffix,workingConfig[["TimeSeparator"]],Timestamp)
+          self$TableSuffix <- paste0(TableSuffix,workingConfig[["TimeSeparator"]],workingConfig[["startTime"]])
         }
       }
+      self$Configuration$Connection <- workingConfig
     }
     # set up the Partition
     if ( ! defaultPartition ) { # partition was provided as a parameter
@@ -370,7 +371,6 @@ ve.exporter.write <- function(Data, Table, Metadata=NULL, Scenario=NULL, Group=N
   #   composed of the results of partitioning data into path elements, name elements, the
   #   Table name and built by the connection object
   Table <- paste0(self$TablePrefix,Table) # We'll attach TableSuffix later using the Names location element
-  message("DEBUG: exporting Table ",Table)
 
   locations <- if ( ! ( is.null(Scenario) && is.null(Group) ) ) { # no partitioning unless one provided
     self$Partition$partition(Data,Table)
@@ -556,7 +556,7 @@ VEExporter <- R6::R6Class(
     readOnly = FALSE # TRUE for loaded exporter if we don't specify the "append=TRUE" flag on $initialize
     # A re-opened exporter can be written to (append mode)
     # Don't include the TimeStamp in the saved exporter name, but should track the connection "tag" and Model
-    # plus perhaps the "Database" (CSV/Parquet root folder, SQLite database - for other DBI, the connection
+    # plus perhaps the "Database" (CSV/Parquet root folder, SQLite database) - for other DBI, the connection
     # is internal, and the "discriminator" is optional and arbitrary (e.g. "MySQL" or "Access"). Presumably the
     # discriminator is the sub-directory/root file name in the same directory as the .VEexport file.
     #   Need to differentiate between writing new data versus skipping provided data already written
@@ -582,21 +582,18 @@ VEExporter <- R6::R6Class(
 
 # ve.connection.missing
 ve.connection.missing <- function(dataFields,Table) {
-  browser()
   tableFields <- private$tableFields[[Table]]
-  missingTableNames <- ! dataFields %in% tableFields # add these fields as NA to existing table
+  missingTableNames <- ! dataFields %in% tableFields # add these fields as NA to existing Table
   missingDataNames  <- ! tableFields %in% dataFields # add these fields as NA to incoming data source
   missing <- list(Data=character(0),Table=character(0))
   if ( any(missingDataNames) ) {
-    missing$Data <- dataFields[missingDataNames]
+    missing$Data <- tableFields[missingDataNames]
   }
   if ( any(missingTableNames) ) {
-    message("Bad news:")
-    message("Dataset for '",Table,"' has fields not present in Table!")
-    message("Missing TableNames:")
-    print(tableFields[missingTableNames])
-    message("Pushing NA into existing table rows in those columns")
-    missing$Tables <- tableFields[missingTableNames]
+    message("Dataset for '",Table,"' has fields not present in Table:")
+    print(dataFields[missingTableNames])
+    message("Will push NA into existing table rows in those columns")
+    missing$Table <- dataFields[missingTableNames]
   }
   return(missing)
 }
@@ -607,7 +604,7 @@ ve.connection.init <- function(Model,config) {
   if ( "Timestamp" %in% names(config) && isTRUE(config[["Timestamp"]]=="database") ) {
     self$Timestamp <- config[["startTime"]]
     if ( is.null(self$Timestamp) ) self$Timestamp <- format(Sys.time(),"%Y%m%d%H%M") # 202308240937
-    self$TimeSeparator <- if ( "TimeSeparator" %in% names(workingConfig) ) workingConfig[["TimeSeparator"]] else "_"
+    self$TimeSeparator <- if ( "TimeSeparator" %in% names(config) ) config[["TimeSeparator"]] else "_"
   } else {
     self$Timestamp <- NULL
     self$TimeSeparator <- NULL
@@ -673,7 +670,7 @@ VEConnection <- R6::R6Class(
     close       = function() {},                # release internal connection (whatever is returned by "raw")
                                                 # currently only needed for DBI
     # Services provided in base class
-    writeTable  = function(Data,Table) NULL,    # Base class implements using functions below (dispatches to create/write,
+    writeTable  = ve.connection.writeTable,     # Base class implements using functions below (dispatches to create/write,
                                                 # after reconciling columns in Data and Table).
     missingFields   = ve.connection.missing,    # Internal helper to find differences between saved table and new data
     tableExists     = function(Table) {         # Used by writeTable to determine if creating or appending
@@ -681,7 +678,14 @@ VEConnection <- R6::R6Class(
     },
     saveTableFields = function(Data,Table) {    # Helper to stow updated table field names (in case they were reconciled)
       private$tableFields[[Table]] <- names(Data)
-      return( names(private$tableFields[[Table]]) )
+      return( private$tableFields[[Table]] )
+    },
+    list        = function(nameOnly=TRUE) {
+      return( if (nameOnly) {
+        names(private$tableFields)
+      } else {
+        private$tableFields
+      } )      # Might eventually want to beef up in derived classes
     },
 
     # Functions we expect to override in derived classes
@@ -712,7 +716,7 @@ VEConnection <- R6::R6Class(
 #
 # e.g. CSV:
 #   loc <- list( Paths='MyScenario', Names='2019, Table='Household' )
-#   csv.table.file <- makeTableString( loc$Partition$Paths, loc$Partition$Names, Loc$Partition$Table)
+#   csv.table.file <- makeTableString( loc$Partition$Paths, loc$Partition$Names, Loc$Partition$Table, tableSep="/")
 #   # MyScenario/2019_Household
 #
 # e.g. SQL/DBI:
@@ -728,9 +732,6 @@ VEConnection <- R6::R6Class(
 #
 makeTableString <- function(Paths, Names, Table,
   pathSep="/", nameSep="_", tableSep=":" ) { # default separators let us reconstruct a TableLocator
-  # TimeStamp = NULL or FALSE: do not include
-  # TimeStamp = TRUE: include system time at moment of function call
-  # TimeStamp = POSIXc like Sys.time(), attach that
   if ( inherits(Paths,"VETableLocator") ) {
     Paths <- Paths$Partition$Paths
     Names <- Paths$Partition$Names
@@ -741,6 +742,7 @@ makeTableString <- function(Paths, Names, Table,
       message("Missing: ",paste(c("Paths","Names","Table")[missingComponents],sep=", "))
       stop("Cannot makeTableString: missing location elements")
     }
+    print(list(Paths=Paths,Names=Names,Table=Table))
   }
   pathString <- if ( length(Paths) > 0 ) paste(Paths,collapse=pathSep) else character(0)
   tableString <- if ( length(Names) > 0 ) paste(Table,paste(Names,collapse=nameSep),sep=nameSep) else Table
@@ -778,14 +780,14 @@ VEConnection.Dataframe <- R6::R6Class(
   inherit = VEConnection,
   public = list(
     # methods
-    initialize  = function(Model,config) { super$initialize() },  # No initialization needed locally
+    initialize  = function(Model,config) { super$initialize(Model,config) },  # No initialization needed locally
     summary     = function() {
       paste( c("Tables:",
-        if ( length(self$exportedData)>0 ) names(self$exportedData) else "None written yet"
-      ), sep="\n")
+        if ( length(private$exportedData)>0 ) names(private$exportedData) else "None written yet"
+      ), collapse="\n")
     },
     # print = {} # base class implementation
-    raw         = function() { invisible(self$exportedData) },
+    raw         = function() { invisible(private$exportedData) },
     # implementing methods
     nameTable   = function(loc) { makeTableString( Paths=loc$Partition$Paths, Names=loc$Partition$Names, Table=loc$Partition$Table ) },
     createTable = ve.connection.df.createTable,
@@ -805,7 +807,7 @@ VEConnection.Dataframe <- R6::R6Class(
 
 ve.connection.csv.init      <- function(Model,config) {
   # CSV provides a default name for Directory
-  super$initialize(config)
+  super$initialize(Model,config)
   if ( ! "Directory" %in% names(config) ) config[["Directory"]] <- config[["Database"]]
   rootDirectory <- file.path(Model$modelPath,Model$setting("ResultsDir"),Model$setting("OutputDir"))
   if ( ! dir.exists( rootDirectory ) ) {
@@ -821,8 +823,9 @@ ve.connection.csv.init      <- function(Model,config) {
   } else {
     defaultDirectory <- TRUE # default name
   }
-  if ( defaultDirectory ) config$Directory <- "Export_CSV"
+  if ( defaultDirectory ) config$Directory <- "CSV"
 
+  config$Directory <- paste(Model$modelName,config$Directory,sep="_")
   config$Directory <- paste0(config$Directory,self$TimeSeparator,self$Timestamp) # Add Timestamp if present
   private$Directory <- normalizePath(file.path(rootDirectory,config$Directory),"/",mustWork=FALSE)
   dir.create(private$Directory,showWarnings=FALSE) # don't do recursive
@@ -836,40 +839,59 @@ ve.connection.csv.raw       <- function() {
   return( private$Directory )
 }
 
+ve.connection.csv.getWriteTable <- function(Table,create=TRUE) {
+  tableDir <- dirname(Table) # will produce "." if no path elements
+  if ( tableDir != "." ) {
+    writeDir <- file.path(private$Directory,tableDir)
+    if ( create && ! dir.exists(writeDir) ) dir.create(writeDir,recursive=TRUE)
+  } else writeDir <- private$Directory
+  return( file.path(writeDir,basename(Table)) )
+}
+
 ve.connection.csv.createTable <- function(Data, Table) {
   # Overwrite Table with Data
-  write.csv( Data, file=file.path(private$Directory,Table), row.names=FALSE, append=FALSE)
+  # Build table path if necessary
+  write.table( Data, file=self$getWriteTable(Table), append=FALSE,
+    row.names=FALSE, col.names=TRUE, qmethod="double", dec=".", sep=",")
   return( self$saveTableFields(Data,Table) )
 }
 
 ve.connection.csv.appendTable <- function(Data,Table) {
-  write.csv( Data, file=file.path(private$Directory,Table), row.names=FALSE, append=TRUE )
+  write.table( Data, file=self$getWriteTable(Table), append=TRUE,
+    row.names=FALSE, col.names=FALSE, qmethod="double", dec=".", sep="," )
 }
 
 ve.connection.csv.readTable <- function(Table) {
-  return ( read.csv(file.path(private$Directory,Table)) ) # double check this picks up col.names correctly...
+  # won't create writeTable
+  readTable <- self$getWriteTable(Table,create=FALSE)
+  if ( ! file.exists(readTable) ) stop("Table does not exist for Read: ",readTable)
+  return ( read.csv(readTable) ) # double check this picks up col.names correctly...
 }
 
 VEConnection.CSV <- R6::R6Class(
   # CSV implementation writes out CSV files using the Partition strategy
   # Depending on how much overlap, could also use this to implement parquet format
   "VEConnection.CSV",
+  inherit = VEConnection,
   public = list(
     # methods
     initialize  = ve.connection.csv.init,
     summary     = function() {
       paste( c(paste("CSV Directory:",private$Directory),
         dir(private$Directory)
-      ), sep="\n")
+      ), collapse="\n")
     },
     # implementing methods
     nameTable = function(loc) {
-      paste0(makeTableString(loc$Partition$Paths, loc$Partition$Names, loc$Partition$Table, self$connectTime,
-                      tableSep="/", timeSep="_"), ".csv")
+      paste0(
+        makeTableString(loc$Partition$Paths, loc$Partition$Names, loc$Partition$Table, tableSep="/"),
+        ".csv"
+      )
     },
-    createTable = ve.connection.csv.createTable,
-    appendTable = ve.connection.csv.appendTable,
-    readTable   = ve.connection.csv.readTable
+    getWriteTable = ve.connection.csv.getWriteTable,
+    createTable   = ve.connection.csv.createTable,
+    appendTable   = ve.connection.csv.appendTable,
+    readTable     = ve.connection.csv.readTable
 
     # methods
   ),
@@ -885,7 +907,73 @@ VEConnection.CSV <- R6::R6Class(
 #################################
 
 ve.connection.dbi.init      <- function(Model,config) {
+  require(DBI)
   super$initialize(Model,config)
+  # Two avenues here:
+  # If we're missing a full DBI configuration, presume SQLite
+  # If there is a full DBI configuration, fill in blanks like dbname from outside Database
+  if ( "package" %in% names(config) ) {
+    package <- config[["package"]]
+    loadError <- try( library(package,character.only=TRUE) )
+    if ( inherits(loadError,"try-error") ) {
+      stop("Package requested for DBI connection is not installed: ",config[["package"]])
+    }
+  } else {
+    package <- "RSQLite"
+    loadError <- try( library(package,character.only=TRUE) )
+    if ( inherits(loadError,"try-error") ) {
+      stop("Default SQL connection requested but RSQLite is not installed")
+    }
+  }
+  if ( "drv" %in% names(config) ) {
+    if ( is.character(config[["drv"]]) ) {
+      # it should be text that can be parsed and execued to create a DBI Driver
+      private$DBIDriver <- exec(parse(text=config[["drv"]]))
+    }
+    if ( ! inherits(config[["drv"]],"DBIDriver") ) {
+      stop("Could not interpret DBIConfig$drv parameter:",DBIConfig[["drv"]])
+    }
+  } else {
+    private$DBIDriver <- RSQLite::SQLite()
+  }
+  if ( "DBIConfig" %in% names(config) ) {
+    # presume DBIConfig has the full and correct set of parameters to call dbConnect
+    # We're not going attempt to do anything else to it here, except adjust dbname
+    #   if it exists for Timestamp (if it is present, which it probably shouldn't be)
+    DBIConfig <- config[["DBIConfig"]]
+  } else {
+    # SQLite will pre-package more stuff
+    if ( "Database" %in% config ) {
+      dbname <- config[["Database"]]
+    } else {
+      dbname <- "SQLite"
+    }
+
+    # Force default extension if no explicit extension
+    # Also inject model name and timestamp in appropriate places
+    dbname <- strsplit(dbname, "\\.")[[1]] # now a vector with the extension
+    if ( length(dbname) == 1 ) dbname <- append(dbname,"sqlite")
+    dbname[1] <- paste(Model$modelName,dbname[1],sep="_") # prepend model name
+    dbname <- c(paste(dbname[-length(dbname)],collapse="."),dbname[length(dbname)])
+    dbname[1] <- paste(dbname[1],self$Timestamp,sep=self$TimeSeparator)
+    dbname <- paste(dbname,collapse=".")
+
+    # Finally, prepend the directories
+    # Force the file into ResultsDir/OutputDir
+    dbname <- file.path(Model$modelPath,Model$setting("ResultsDir"),Model$setting("OutputDir"),basename(dbname))
+
+    DBIConfig <- list(dbname=dbname)
+  }
+  # Construct the call to dbConnect
+  # Painful to do it this way, but required since we can't otherwise resolve the call
+  #   to dbConnect (which is a dispatched S4 method).
+  dbConnect <- paste(package,"dbConnect",sep="::")
+  dbConnect <- paste0(dbConnect,"(drv=private$DBIDriver")
+  for ( n in names(DBIConfig) ) {
+    dbConnect <- paste0(dbConnect,",",n,"=",deparse(DBIConfig[[n]]))
+  }
+  dbConnect <- paste0(dbConnect,")")
+  private$DBIConnection <- eval(parse(text=dbConnect))
 }
 
 # The DBI implementation is really simple, once the connection is initialized and created
@@ -896,6 +984,7 @@ ve.connection.dbi.raw         <- function() {
 
 ve.connection.dbi.createTable <- function(Data,Table) {
   dbCreateTable(private$DBIConnection,Data,Table) # will trash if it already exists
+  return( self$saveTableFields(Data,Table) )
 }
 
 ve.connection.dbi.appendTable     <- function(Data,Table) {
@@ -910,13 +999,14 @@ VEConnection.DBI <- R6::R6Class(
   # DBI implementation writes out to DBI connection
   # "folder" partitions are mapped to "name"
   "VEConnection.DBI",
+  inherit = VEConnection,
   public = list( 
     # methods
     initialize  = ve.connection.dbi.init,
     summary     = function() {
       paste( c(paste("Database:",private$Database),
         dbListTables(private$DBIConnection)
-      ), sep="\n")
+      ), collapse="\n")
     },
     # implementing methods
     nameTable = function(loc) {
@@ -928,6 +1018,7 @@ VEConnection.DBI <- R6::R6Class(
   ),
   private = list(
     Database = NULL,
+    DBIDriver = NULL,
     DBIConnection = NULL
   )
 )
@@ -945,21 +1036,23 @@ defaultExporters <- function() {
         driver = "csv",
         Timestamp = "database" # attach it to the folder
       ),
-      Partition = c(Global="name")
+      Partition = c(Scenario="name",Year="name",Global="name") # break out Global
     ),
     sql = list(
       Connection = list(
         driver = "dbi",
         Timestamp = "suffix" # standard sql or dbi puts timestamp on table name
       ),
-      Partition = c(Global="name") # break out Global, otherwise
+      Partition = c(Scenario="name",Year="name",Global="name") # break out Global
     ),
     sqlite = list(
       Connection = list(
-        driver = "dbi",
-        Timestamp = "database" # alternate default for sqlite
+        driver      = "dbi",
+        Timestamp   = "database", # alternate default for sqlite
+        Database    = "Database",  # will get SQLite
+        DBExtension = ".sqlite"
       ),
-      Partition = c(Global="name") # break out Global, otherwise
+      Partition = c(Scenario="name",Year="name",Global="name") # break out Global
     ),
     data.frame = list(
       Connection = list(
@@ -977,6 +1070,7 @@ connectionList <- list(
   csv=list(driverClass = VEConnection.CSV),
   dbi=list(driverClass = VEConnection.DBI),
   data.frame=list(driverClass = VEConnection.Dataframe),
+  sql=list(driverClass = VEConnection.DBI),
   sqlite=list(driverClass = VEConnection.DBI)
   # parquet=VEConnection.Parquet  # Apache arrow implementation for parquet
   # excel=VEConnection.Excel      # Native Excel implementation rather than DBI
@@ -1048,9 +1142,8 @@ makeVEConnection <- function(Model,config=list(driver="csv")) {
   # Usually called from within VEExportef initialization, which will provide
   #   useful connection defaults
   # Find driver class from config (default is "csv")
-  message("DEBUG: driver config")
-  print(config)
   driver <- if ( ! "driver" %in% names(config) ) "csv" else config$driver
+  message("DEBUG: driver config: ",driver)
   driverClass <- connectionList[[driver]][["driverClass"]]
   if (
     ! inherits( driverClass, "R6ClassGenerator" )
@@ -1059,7 +1152,8 @@ makeVEConnection <- function(Model,config=list(driver="csv")) {
     print(names(connectionList))
     stop("Driver type '",driver,"' does not have a VEConnection associated with it",call.=FALSE)
   } else {
-    print(connectionList)
+    print(names(connectionList))
+    print(driver)
     message("Creating Driver for ",driverClass$classname)
   }
   # Create new driver object using "config"
