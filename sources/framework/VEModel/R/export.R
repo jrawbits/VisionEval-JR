@@ -503,7 +503,7 @@ ve.exporter.load <- function(filename) { # .VEexport file (.Rdata)
   self$Configuration <- otherExporter$Configuration
   self$TableList     <- otherExporter$TableList
 
-  if ( ! is.null(self$Connection) ) self$Connection$close() # varies by class
+  if ( ! is.null(self$Connection) ) self$Connection <- NULL # queue it for garbage collection
 
   self$Connection <- makeVEConnection(self$Model,self$Configuration$Connection)
   self$Partition  <- VEPartition$new(self$Configuration$Partition)
@@ -667,8 +667,6 @@ VEConnection <- R6::R6Class(
                                                 # specific value is class-specific and is enough to re-open and
                                                 # review what is in the connection; e.g. to list actually written
                                                 # tables using DBI::dbListTables(connection$raw())
-    close       = function() {},                # release internal connection (whatever is returned by "raw")
-                                                # currently only needed for DBI
     # Services provided in base class
     writeTable  = ve.connection.writeTable,     # Base class implements using functions below (dispatches to create/write,
                                                 # after reconciling columns in Data and Table).
@@ -929,9 +927,10 @@ ve.connection.dbi.init      <- function(Model,config) {
     if ( is.character(config[["drv"]]) ) {
       # it should be text that can be parsed and execued to create a DBI Driver
       private$DBIDriver <- exec(parse(text=config[["drv"]]))
-    }
-    if ( ! inherits(config[["drv"]],"DBIDriver") ) {
+    } else if ( ! inherits(config[["drv"]],"DBIDriver") ) {
       stop("Could not interpret DBIConfig$drv parameter:",DBIConfig[["drv"]])
+    } else {
+      private$DBIDriver <- config[["drv"]]
     }
   } else {
     private$DBIDriver <- RSQLite::SQLite()
@@ -955,7 +954,10 @@ ve.connection.dbi.init      <- function(Model,config) {
     if ( length(dbname) == 1 ) dbname <- append(dbname,"sqlite")
     dbname[1] <- paste(Model$modelName,dbname[1],sep="_") # prepend model name
     dbname <- c(paste(dbname[-length(dbname)],collapse="."),dbname[length(dbname)])
-    dbname[1] <- paste(dbname[1],self$Timestamp,sep=self$TimeSeparator)
+    if ( ! is.null(self$Timestamp) ) {
+      if ( is.null(self$TimeSeparator) ) self$TimeSeparator="_"
+      dbname[1] <- paste(dbname[1],self$Timestamp,sep=self$TimeSeparator)
+    }
     dbname <- paste(dbname,collapse=".")
 
     # Finally, prepend the directories
@@ -964,16 +966,26 @@ ve.connection.dbi.init      <- function(Model,config) {
 
     DBIConfig <- list(dbname=dbname)
   }
+
+  private$DBIConnector <- new("DBIConnector",
+    .drv = private$DBIDriver,
+    .conn_args = DBIConfig
+  )
+  
   # Construct the call to dbConnect
   # Painful to do it this way, but required since we can't otherwise resolve the call
-  #   to dbConnect (which is a dispatched S4 method).
-  dbConnect <- paste(package,"dbConnect",sep="::")
-  dbConnect <- paste0(dbConnect,"(drv=private$DBIDriver")
-  for ( n in names(DBIConfig) ) {
-    dbConnect <- paste0(dbConnect,",",n,"=",deparse(DBIConfig[[n]]))
-  }
-  dbConnect <- paste0(dbConnect,")")
-  private$DBIConnection <- eval(parse(text=dbConnect))
+  #   to dbConnect (which is a dispatched S4 method that needs to know its first
+  #   argument).
+  #   dbConnect <- paste(package,"dbConnect",sep="::")
+  #   dbConnect <- paste0(dbConnect,"(drv=private$DBIDriver")
+  #   for ( n in names(DBIConfig) ) {
+  #     dbConnect <- paste0(dbConnect,",",n,"=DBIConfig[[",deparse(n),"]]")
+  #   }
+  #   dbConnect <- paste0(dbConnect,")")
+  # private$DBIConnection <- eval(parse(text=dbConnect))
+
+  private$DBIConnection <- dbConnect(private$DBIConnector)
+  print(private$DBIConnection)
 }
 
 # The DBI implementation is really simple, once the connection is initialized and created
@@ -983,16 +995,16 @@ ve.connection.dbi.raw         <- function() {
 } # override in specific subclasses
 
 ve.connection.dbi.createTable <- function(Data,Table) {
-  dbCreateTable(private$DBIConnection,Data,Table) # will trash if it already exists
+  dbWriteTable(private$DBIConnection,Table,Data,overwrite=TRUE) # will trash if it already exists
   return( self$saveTableFields(Data,Table) )
 }
 
 ve.connection.dbi.appendTable     <- function(Data,Table) {
-  dbWriteTable(private$DBIConnection,Data,Table) # will append to existing table (or create, but we will head that off)
+  dbWriteTable(private$DBIConnection,Table,Data,append=TRUE) # will append to existing table (or create, but we will head that off)
 }
 
 ve.connection.dbi.readTable   <- function(Table) {
-  dbReadTable(Table)
+  dbReadTable(private$DBIConnection,Table)
 }
 
 VEConnection.DBI <- R6::R6Class(
@@ -1003,8 +1015,11 @@ VEConnection.DBI <- R6::R6Class(
   public = list( 
     # methods
     initialize  = ve.connection.dbi.init,
+    raw         = ve.connection.dbi.raw,
     summary     = function() {
-      paste( c(paste("Database:",private$Database),
+      paste( c(paste("Database:\n"),
+        dbGetConnectArgs(private$DBIConnector)$dbname,
+        "Tables:\n",
         dbListTables(private$DBIConnection)
       ), collapse="\n")
     },
@@ -1019,7 +1034,10 @@ VEConnection.DBI <- R6::R6Class(
   private = list(
     Database = NULL,
     DBIDriver = NULL,
-    DBIConnection = NULL
+    DBIConnector = NULL,
+    DBIConnection = NULL,
+    finalize = function() { if ( !is.null(private$DBIConnection) ) dbDisconnect(private$DBIConnection) }
+    # finalize will be called when the object is garbage collected or when R exits
   )
 )
 
@@ -1143,7 +1161,6 @@ makeVEConnection <- function(Model,config=list(driver="csv")) {
   #   useful connection defaults
   # Find driver class from config (default is "csv")
   driver <- if ( ! "driver" %in% names(config) ) "csv" else config$driver
-  message("DEBUG: driver config: ",driver)
   driverClass <- connectionList[[driver]][["driverClass"]]
   if (
     ! inherits( driverClass, "R6ClassGenerator" )

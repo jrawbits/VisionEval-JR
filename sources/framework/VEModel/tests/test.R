@@ -729,7 +729,6 @@ test_02_export_connections <- function(
   }
   if ( "sql" %in% testConnections ) {
     csql <- makeVEConnection(Model,config=list(driver="sql",Timestamp="database")) # SQLite, default DB Name + Extension
-    browser()
     writeMe(csql,Data)
 
     sqlConfig <- list( # SQLite with explict DBName
@@ -747,6 +746,7 @@ test_02_export_connections <- function(
       # In makeVEConnection, if "driver" is not present but "drv" is present, presume driver="sql"
       # driver = "dbi",    # same as "sql" - uses low-level R DBI driver
       # parameters in the connection DBIConfig sub-list will be passed to dbConnect using do.call
+      driver = "sql", # send into DBI driver
       package = "RMariaDB",
       drv = RMariaDB::MariaDB(), # or drv="RMariaDB::MariaDB()" - character string will be parsed
       Timestamp = "prefix",
@@ -779,7 +779,7 @@ test_02_export_connections <- function(
       # In MySQL/MariaDB, the user permissions (once set) don't care if the the database is dropped
       #   and re-created. Permissions are by name not by object.
       # The specific syntax here might need to be tweaked for your database
-      dbExecute(con,"CREATE DATABASE OR REPLACE visioneval;")
+      dbExecute(con,"CREATE OR REPLACE DATABASE visioneval;")
       dbExecute(con,"USE visioneval;")
       # We won't build the user here, but you can set up the test user like the following,
       #   presuming you're running MariaDB/MySQL on localhost
