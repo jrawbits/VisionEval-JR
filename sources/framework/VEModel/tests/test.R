@@ -560,18 +560,84 @@ test_02_model <- function(modelName="VERSPM-Test", oldstyle=FALSE, log="info", b
   return(invisible(bare)) # Return model for additional processing
 }
 
+test_02_export_partitions <- function() {
+  # Note - doesn't work with models yet - see test_02_basic_export below
+  makeData <- function() {
+    # prepare a data set
+    df <- CO2 # standard R dataset
+    for ( i in 1:length(df) ) {
+      if ( is.factor(df[[i]]) ) df[[i]] <- as.character(df[[i]])
+    }
+    df$Scenario <- sample(paste("Scenario",1:2,sep="_"),nrow(df),replace=TRUE)
+
+    dfg <- df
+    dfg$Global <- "Global"
+    dfg$Group <- dfg$Global
+
+    dfy <- dfg
+    dfy$Year <- "2023"
+    dfy$Group <- dfy$Year
+    dfy[["Global"]] <- NULL
+
+    dfy2 <- dfy
+    dfy2$Year <- "2044"
+    dfy2$Group <- dfy2$Year
+    dfy2[["Global"]] <- NULL
+    
+    return(list(
+      Global=df,
+      Yr2023=dfy,
+      Yr2044=dfy2
+    ) )
+  }
+
+  # Try several partitions
+  message("Testing VEPartition")
+  dataSets <- makeData() # pseudo-data with various fields for reviewing output
+  part <- VEPartition$new(c(Global="folder",Year="folder",Type="path",Treatment="name"))
+  print(part)
+  testStep("Testing $location function")
+  loc <- part$location(dataSets$Global,"MyTable") # view location structure
+  print(loc)
+  testStep("Testing $partition function")
+  message("Fields in Global:")
+  print(names(dataSets$Global))
+  testStep("Testing Partitions")
+  message("Global\n")
+  partGlobal <- part$partition(dataSets$Global,"Global")
+  print(partGlobal)
+  message("Year 2023\n")
+  part2023 <- part$partition(dataSets$Yr2023,"CO2-data")
+  print(part2023)
+  message("Year 2044\n")
+  part2044 <- part$partition(dataSets$Yr2044,"CO2-data")
+  print(part2044)
+  testStep("Change partition to make Treatment a folder\n")
+  part <- VEPartition$new(c(Global="folder",Year="folder",Type="name",Treatment="folder"))
+  print(part$partition(dataSets$Yr2044,"RetryTreatment"))
+  testStep("Try with NA data in a partition field\n")
+  dftry <- dataSets$Yr2044$Global <- NA
+  print(part$partition(dataSets$Yr2044,"NAGlobal"))
+}
+
 test_02_export_connections <- function(
   mysql=FALSE,
   reset=TRUE,
   testConnections=c("data.frame","csv") # later add "sql"and "mysql"
 ) {
   # Run through the nameTable / createTable / writeTable elements
+  # Connections are initialized with defaults and exemplary settings
   testStep("Set up a model for testing; just for output location")
   mod <- test_01_run("VERSPM-export",reset=FALSE,log="warn")
   print(mod)
 
   if ( reset ) mod$clear(force=TRUE,outputOnly=TRUE)
 
+  # Really dumb data designed to be clearly readable
+  #   when we do the export. Note that we're writing
+  #   unpartitioned data here - plain table with limited
+  #   features. See test_02_basic_export for full test of
+  #   proper placement of partitioned data.
   Data <- data.frame(
     Marea = c("Marea1","Marea2"),
     Azone = c("Azone1","Azone2"),
@@ -619,22 +685,25 @@ test_02_export_connections <- function(
     print( Connection$readTable(Table) )
     cat("Test connection summary:\n")
     print( Connection$summary() )
-    print( Connection$list() )             # The field names only
-    print( Connection$list(nameOnly=FALSE) # The full metadata
+    print( Connection$list() )               # The field names only
+    print( Connection$list(nameOnly=FALSE) ) # The full metadata
   }
 
   if ( "data.frame" %in% testConnections ) {
+    testStep("Testing data.frame connection")
     # data.frame connection
     cdf <- makeVEConnection(Model, config=list(driver="data.frame"))
     writeMe(cdf,Data)
   }
+  return("Finishing after data.frame")
   if ( "csv" %in% testConnections ) {
-    require(RSQLite) # will also require RDBI as a dependency
+    testStep("Testing csv connection")
     ccsv <- makeVEConnection(Model) # default is csv
     # ccsv <- makeVEConnection(Model, config=list(driver="csv"))
     writeMe(ccsv,Data)
   }
   if ( "sql" %in% testConnections ) {
+    require(RSQLite) # will also require RDBI as a dependency
     csql <- makeVEConnection(Model,config=list(driver="sql")) # SQLite, default DB Name
     writeMe(csql,Data)
 

@@ -1,14 +1,53 @@
 The Partitioning plan in brief:
 
+TODO: 8/24/2023
+
+Finish getting the connection tests working all the way through.
+
+Make addition of the timestamp part of the connnection configuration. Timestamp="suffix"
+(placed at end of table name, after TableSuffix) or Timestamp="prefix" (placed at start of
+table name after ModelName and before TablePrefix) or Timestamp="database" (in which case
+it becomes part of the CSV or SQLite name - that's the default) or Timestamp="none" (do
+not generate a time stamp). Timestamp is managed by the exporter, and passed into the
+Connection nameTable function as necessary (or used to open the Connection when it is
+first created - adjusting Database if needed).
+
+Timestamp should be uniform and reflect YYMMDDHHMM at which the export was requested. If
+Timestamp="suffix", then we need to push it into the Connection so makeTableString will
+use it in naming its Tables.
+
+We hand the "database" Timestamp into the VEConnection initialization (base class).
+Ignore the "database" element for DBI connections unless it's SQLite. So probably
+want an overrideable function to determine if we want to use the Timestamp. For
+DBI, need to explicitly append it to the dbname.
+
+ModelName is just that, for disambiguating export sets. The parameter says what to do with
+the ModelName (the name itself comes from the Model, naturally). For CSV and SQLite,
+default is ModelName="database". That is prepended to Database when the connection is
+opened. For other DBI default for ModelName is "prefix". If ModelName="prefix" for any
+type, it is prepended before TablePrefix. Can prepend ModelName to Database (default for
+CSV/SQLite), or force it by explicit ModelName="database", which may fail for DBI - try
+with ModelName prefix and if USE fails (DBI raises an error, which we can catch), try
+again without the prefix, then fail completely. If ModelName="none" do not include the
+model name anywhere.
+
+Database is a fixed name (with default for CSV and SQLite to something like "Export", and
+with no default for DBI - just use the user's default database...). The Database (possibly
+with Timestamp or ModelName attached) will be injected into the DBIConfig as "dbname".
+And in fact, the "dbname" is how we name the SQLite database.
+
 TODO: 8/21/2023
 
-Need to think about TableList and Metadata: can we just make do with the latter (and the TableList
-functionality is just a subset). Yes: they can be the same thing. The Results List has the master
-table; when we export a selection, a subset of that list is passed into the Exporter, which will
-hold onto it as the "Master" metadata. As we write out the the results, fields are written into
-various DB tables, and we keep the TableList by DB Table Names as the full set of Metadata rows
-for that table. If additional columns get forced in, we check the names that come back from the
-partition and copy over the additional metadata rows.
+Need to think about TableList and Metadata: can we just make do with
+the latter (and the TableList functionality is just a subset). Yes:
+they can be the same thing. The Results List has the master table;
+when we export a selection, a subset of that list is passed into the
+Exporter, which will hold onto it as the "Master" metadata. As we
+write out the the results, fields are written into various DB tables,
+and we keep the TableList by DB Table Names as the full set of
+Metadata rows for that table. If additional columns get forced in, we
+check the names that come back from the partition and copy over the
+additional metadata rows.
 
 Also thinking about key fields: we can ID those as any that end in "Id" or any that are listed in
 Geo.csv (the model/first scenario should be able find its structural fields). We disallow those
