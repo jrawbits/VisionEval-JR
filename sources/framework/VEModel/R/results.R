@@ -43,7 +43,6 @@ ve.resultslist.init <- function(stages=NULL,model=NULL) {
   # Set up the model, if provided explicitly
   if ( ! missing(model) && ! is.null(model) && inherits(model,"VEModel") ) self$Model <- model
 
-  message("DEBUG: finding model stages")
   # Find model stages from which to get results
   if ( missing(stages) || ! all(inherits(stages,"VEModelStage")) ) {
     if ( ! is.null(self$Model) ) stages <- self$Model$findstages() else stages <- NULL
@@ -143,7 +142,7 @@ ve.resultslist.export <- function(
 ) {
 
   # Set up the exporter (defaults to CSV - use $extract to default to list of data.frames)
-  message("DEBUG: Set up exporter")
+  message("DEBUG: Set up exporter ",exporter)
   if ( ! inherits(exporter,"VEExporter") ) {
     exporter <- self$Model$exporter(tag=exporter,connection=connection,partition=partition)
   }
@@ -188,6 +187,7 @@ ve.resultslist.export <- function(
         # Need to distinguish group=Global versus group=Year=Y
         message("DEBUG: exporter$write ",group,"/",table)
         exporter$write( data[[group]][[table]], Scenario=stage, Group=group, Table=table, Metadata=Metadata )
+        message("DEBUG: done writing")
       }
     }
   }
@@ -197,6 +197,7 @@ ve.resultslist.export <- function(
     # in the connection description (usually a table with a distinctive name in the connection
     # root). The Metadata will identify what was written, and where (in the exporter outputs)
     # it was written to.
+    message("DEBUG: writing Metadata")
     exporter$writeMetadata()
   }
 
@@ -367,7 +368,6 @@ ve.results.extract <- function(
   selection,             # data.frame of Scenario/Group/Table/Name/Units/DisplayUnits elements for this stage
   convertUnits=TRUE      # will convert if display units are present; FALSE not to attempt any conversion (use Units from selection)
 ) {
-  message("DEBUG: VEResults$extrct")
   if ( ! self$valid() ) {
     bad.results <- if ( ! is.null(self$modelStage) ) self$modelStage$Name else self$resultsPath
     stop("Model Stage contains no results: ",bad.results)
@@ -391,7 +391,6 @@ ve.results.extract <- function(
   QueryPrep_ls <- self$queryprep()
   results <- list()
 
-  message("DEBUG: extracting Groups and Tables:")
   print(extractTables)
 
   for ( group in extractGroups ) {

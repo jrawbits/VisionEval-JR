@@ -707,7 +707,7 @@ test_02_export_connections <- function(
     cat( Connection$summary(),"\n" )  # summary produces a single string, possibly with embedded newlines
     cat("Test connection list:\n")
     print( Connection$list() )               # The field names only
-    cat("Test connection list with full details:\n")
+    cat("Test connection list with full details (field names, not just tables):\n")
     print( Connection$list(nameOnly=FALSE) ) # Tables with their names
   }
 
@@ -770,7 +770,8 @@ test_02_export_connections <- function(
     # database=visioneval
     # user=visioneval
     # password=showme
-    # 
+    #
+    requireNamespace("DBI")
     mysql <- makeVEConnection(Model,mysqlConfig)
     if ( reset ) {
       con = mysql$raw() # for DBI/SQL connection, returns the DBI connection
@@ -779,8 +780,8 @@ test_02_export_connections <- function(
       # In MySQL/MariaDB, the user permissions (once set) don't care if the the database is dropped
       #   and re-created. Permissions are by name not by object.
       # The specific syntax here might need to be tweaked for your database
-      dbExecute(con,"CREATE OR REPLACE DATABASE visioneval;")
-      dbExecute(con,"USE visioneval;")
+      DBI::dbExecute(con,"CREATE OR REPLACE DATABASE visioneval;")
+      DBI::dbExecute(con,"USE visioneval;")
       # We won't build the user here, but you can set up the test user like the following,
       #   presuming you're running MariaDB/MySQL on localhost
       # con <- dbConnect(RMariaDB::MariaDB(),user='admin',password='$adminpassword')
@@ -794,40 +795,36 @@ test_02_export_connections <- function(
   return(Model) # to view Model$dir(output=TRUE,all.files=TRUE)
 }
 
-test_02_basic_export <- function(reset=FALSE,log="warn",exporter="data.frame")
+test_02_basic_export <- function(reset=FALSE,log="warn",exporter="sql")
 {
   testStep("Set up VERSPM-base model instance for export tests")
   mod <- test_01_run("VERSPM-export",reset=reset,log="warn")
   print(mod)
 
   testStep("extract model results, show directory")
-  # MORE TESTS LATER: See more detailed tests below to exercise export options
   br <- mod$results()
   print(br)
 
   testStep("Set up connection")
   connection=list( TablePrefix="ExportTest_" ) # NOTE: must include necessary delimiter, if any
-  R.data <- br$extract(connection=connection)  # Returns a list of R data.frames
-  message("what is R.data?")
-  print(class(R.data))
 
-  # DEBUGGING
-  return(invisible(list(br=br,R.data=R.data)))
+  testStep("Extract to data.frames")
+  R.data <- br$extract(connection=connection)  # Returns a list of R data.frames
 
   testStep("Default export (CSV)")
   br$export(connection=connection) # default export creates CSV files in a subfolder of the model's results/outputs folder
   cat("Directory:\n")
   print(mod$dir(outputs=TRUE,all.files=TRUE))
 
-  testStep("Export to an SQLite database")
+  testStep(paste0("Export to exporter '",exporter,"'"))
   # In this case, export to "sql" which by default creates an SQLite database in results/outputs
-  extractor <- br$export("sql",connection=connection) # returns a VEExporter object
+  extractor <- br$export(exporter,connection=connection) # returns a VEExporter object
   cat("Exporter list of tables:\n")
   print(extractor$list())
   cat("Directory:\n")
   print(mod$dir(outputs=TRUE,all.files=TRUE))
 
-  testStep("clear the 0model extracts")
+  testStep("clear the model extracts")
   cat("Interactive clearing of outputs (not results):\n")
   mod$clear(force=!interactive())
 

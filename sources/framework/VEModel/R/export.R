@@ -203,15 +203,6 @@ print.VETableLocator <- function(x,...) {
   cat("  Names: ",paste(x$Partition$Names,collapse=","),"\n",sep="")
 }
     
-# Save and load are used by VEExporter$save to make an easy-to-parse YAML named list
-#   (YAML has trouble distinguishing a named vector from a named list)
-ve.partition.load <- function(partitions) {
-  self$Partitions <- sapply(partitions,as.character) # preserves names of partitions
-}
-ve.partition.save <- function() {
-  return( lapply(self$Partitions,function(s) s ) ) # named list of partition elements
-}
-
 VEPartition <- R6::R6Class(
   "VEPartition",
   public = list(
@@ -222,9 +213,7 @@ VEPartition <- R6::R6Class(
     initialize=ve.partition.init,     # initialize internal partition
     print=ve.partition.print,         # print the partition
     partition=ve.partition.partition, # partition a data.frame into output tables
-    location=ve.partition.location,   # generate a TableLocator from data + Table name
-    save=function() self$Partition,   # generate a list of self$Partition for saving
-    load=ve.partition.load            # load a named list of strings into self$Partition
+    location=ve.partition.location    # generate a TableLocator from data + Table name
   )
 )
 
@@ -285,71 +274,81 @@ ve.exporter.init <- function(Model,load=NULL,tag=NULL,connection=NULL,partition=
     return()
   }
   if ( ! missing(tag) ) {
+    message("DEBUG: tag for new exporter = ",tag)
     # if tag is already a VEExporter:
     if ( inherits(tag,"VEExporter") ) {
       self$Configuration <- tag$config()
     } else if ( is.character(tag) ) {
-      defaultPartition <- !is.character(partition)
       # Default exporters
       defaultConfigs <- defaultExporters()
-      self$Configuration <- if ( tag %in% names(defaultConfigs) ) defaultConfigs[[tag]] else list(
-        Partition = character(0),
-        Connection = list()
+      message("DEBUG: default Configs:")
+      print(names(defaultConfigs))
+      defaultConfiguration <- if ( tag %in% names(defaultConfigs) ) {
+        defaultConfigs[[tag]]
+      } else {
+        list(
+          Partition = character(0),
+          Connection = list()
         )
-      workingConfig <- list()
-      # Model definitions
-      globalConfigs <- getSetup(paramNames="Exporters",fromFile=TRUE)
-      if ( tag %in% names(globalConfigs) ) {
-        globalConfig <- globalConfigs[[tag]]
-        if ( !is.null(globalConfig$Connection) && length(globalConfig$Connection)>0 ) {
-          workingConfig[ names(globalConfig$Connection) ] <- globalConfig$Connection
-        }
-        if ( defaultPartition && is.character(globalConfig$Partition) ) self$Configuration$Partition <- globalConfig$Partition
       }
-      modelConfigs <- getSetup(paramNames="Exporters",fromFile=TRUE) # will have inherited from global
-      if ( tag %in% names(modelConfigs) ) {
-        modelConfig <- modelConfigs[[tag]]
-        if ( !is.null(modelConfig$Connection) && length(modelConfig$Connection)>0 ) {
-          workingConfig[ names(modelConfig$Connection) ] <- modelConfig$Connection
-        }
-        if ( defaultPartition && is.character(modelConfig$Partiton) ) self$Configuration$Partition <- modelConfig$Partition
+      # Global and Model customized defaults
+      globalConfig <- getSetup(paramNames="Exporters",fromFile=TRUE)
+      globalConfig <- if ( tag %in% names(globalConfig) ) globalConfig[[tag]] else list()
+      modelConfig <- getSetup(paramNames="Exporters",fromFile=TRUE) # will have inherited from global
+      modelConfig <- if ( tag %in% names(modelConfig) ) modelConfig[[tag]] else list()
+
+      # Set partition
+      self$Configuration$Partition <- if ( is.character(partition) ) {
+        partition
+      } else if ( is.character(modelConfig$Partition) ) {
+        modelConfig$Partition
+      } else if ( is.character(globalConfig$Partition) ) {
+        globalConfig$Partition
+      } else defaultConfiguration$Partition
+
+      # Set up connection (built up the other way from partition since we'll
+      #   start with default elements and override them as they are reconfigured)
+      adjustConnection <- defaultConfiguration$Connection
+      if ( is.list(globalConfig$Connection) && length(globalConfig$Connection)>0 ) {
+        adjustConnection[ names(globalConfig$Connection) ] <- globalConfig$Connection
       }
-      if ( is.list(connection) ) { # merge parameter
-        workingConfig[ names(connection) ] <- connection
-      } else workingConfig <- list() # make everything the default
+      if ( is.list(modelConfig$Connection) && length(modelConfig$Connection)>0 ) {
+        adjustConnection[ names(modelConfig$Connection) ] <- modelConfig$Connection
+      }
+      if ( is.list(connection) ) { # merge parameters over defaults
+        adjustConnection[ names(connection) ] <- connection
+      }
 
       # Pull TablePrefix and TableSuffix from connection configuration, if present
-      if ( "TablePrefix" %in% names(workingConfig) ) {
-        self$TablePrefix <- workingConfig$TablePrefix
-        self$TablePrefix <- as.character(self$TablePrefix)[[1]]
+      # They will be consumed here by the VEExporter and not passed to VEConnection
+      if ( "TablePrefix" %in% names(adjustConnection) ) {
+        self$TablePrefix <- adjustConnection$TablePrefix
+        adjustConnection$TablePrefix <- NULL # remove it
+        self$TablePrefix <- as.character(self$TablePrefix)[[1]] # make sure it is characters!
       } else self$TablePrefix <- character(0)
 
-      if ( "TableSuffix" %in% names(workingConfig) ) {
-        self$TableSuffix <- workingConfig[["TableSuffix"]]
-        self$TableSuffix <- as.character(self$TableSuffix)[[1]]
+      if ( "TableSuffix" %in% names(adjustConnection) ) {
+        self$TableSuffix <- adjustConnection$TableSuffix
+        adjustConnection$TableSuffix <- NULL
+        self$TableSuffix <- as.character(self$TableSuffix)[[1]] # make sure it is characters!
       } else self$TableSuffix <- character(0)
 
-      if ( "Timestamp" %in% names(workingConfig) && workingConfig[["Timestamp"]] %in% c("prefix","suffix") ) {
-        workingConfig[["startTime"]] <- format(Sys.time(),"%Y%m%d%H%M") # 202308240937
+      if ( "Timestamp" %in% names(adjustConnection) && adjustConnection$Timestamp %in% c("prefix","suffix") ) {
+        adjustConnection$startTime <- format(Sys.time(),"%Y%m%d%H%M") # 202308240937
         # Note TimeSeparator is only relevant for TablePrefix or Database Timestamp
         # TableSuffix will use the Names separator for the table location
-        if ( ! "TimeSeparator" %in% names(workingConfig) ) workingConfig[["TimeSeparator"]] <- "_"
-        if ( workingConfig[["Timestamp"]] == "prefix" ) {
-          # TimeSeparator is null if not provided
-          self$TablePrefix <- paste0(workingConfig$startTime,workingConfig[["TimeSeparator"]],self$TablePrefix)
-        } else if ( workingConfig[["Timestamp"]] == "suffix" ) {
-          self$TableSuffix <- paste0(self$TableSuffix,workingConfig[["TimeSeparator"]],workingConfig[["startTime"]])
-        }
+        if ( ! "TimeSeparator" %in% names(adjustConnection) ) adjustConnection$TimeSeparator <- "_"
+        if ( adjustConnection$Timestamp == "prefix" ) {
+          self$TablePrefix <- paste0(startTime,adjustConnection$TimeSeparator,self$TablePrefix)
+        } else if ( adjustConnection$Timestamp == "suffix" ) {
+          self$TableSuffix <- paste0(self$TableSuffix,adjustConnection$TimeSeparator,adjustConnectioN$startTime)
+        } # else adjustConnection$Timestamp might be "database"
       }
-      self$Configuration$Connection <- workingConfig
-    }
-    # set up the Partition
-    if ( ! defaultPartition ) { # partition was provided as a parameter
-      self$Configuration$Partition = partition
+      # Stash the build connection
+      self$Configuration$Connection <- adjustConnection
     }
   } else {
     # No tag; let's hope connection and partition have what we need...
-    workingConfig <- connection
     self$Configuration <- list(
       Connection = connection,
       Partition = partition
@@ -397,6 +396,7 @@ ve.exporter.write <- function(Data, Table, Metadata=NULL, Scenario=NULL, Group=N
       if ( ! is.null(Group) ) selector <- selector & Metadata$Group == Group
       self$TableList[[TableName]] <- Metadata[selector,]
       self$TableList[[TableName]] <- cbind(self$TableList[[TableName]],DBTable=TableName)
+      message("DEBUG: Done with Metadata Construction")
     } else {
       if ( is.null(Scenario) ) Scenario <- NA
       if ( is.null(Group) )    Group <- NA
@@ -476,11 +476,15 @@ ve.exporter.metadata <- function() {
 #  the Units actually written plus the N description. DBTableName is the locator encoded
 #  form (makeTableString with default parameters). Metadata is just intended to understand
 #  what is in TableName.
+# TODO: actually build the full metadata (S/G/T/N/...) while writing tables
+  message("DEBUG: return metadatalist for each table")
   metadatalist <- lapply( names(self$TableList), function(t) {
     metadata <- self$TableList[[t]]
     medadata$DBTableName <- self$Connection$findName(t) # standard name => database corresponding name
   } )
-  return( unique(do.call(rbind,metadatalist)) )
+  metadatalist <- unique(do.call(rbind,metadatalist))
+  print( metadatalist )
+  return( metadatalist  )
   # will fail if not all metadata tables have the same columns. In practice, shouldn't be
   # a problem: Un-partitioned tables do not end up in the metadatalist, and the are best
   # all written from the same VEResultsList.
@@ -491,7 +495,7 @@ ve.exporter.writeMetadata <- function(data, Table="Metadata") {
 }
 
 # Save Connection, Partition, TableList, and Metadaa.
-ve.exporter.load <- function(filename) { # .VEexport file (.Rdata)
+ve.exporter.load <- function(filename) { # .VEexport file (.Rdata format)
   # Filename should already be normalized to the model's output location
   # This function will usually be called via VEModel$exporter(file=...), which will build a good path
   otherExporter <- new.env()
@@ -511,7 +515,7 @@ ve.exporter.load <- function(filename) { # .VEexport file (.Rdata)
 }
 
 ve.exporter.save <- function(filename) { # .VEexport file (.Rdata)
-  filename      <- file.path(self$Model$exportPath,basename(filename))
+  filename      <- file.path(self$Model$exportPath,paste0(basename(filename),".VEexport"))
   Configuration <- self$Configuration
   TableList     <- self$TableList
   save(Configuration,TableList,file=filename)
@@ -543,28 +547,17 @@ VEExporter <- R6::R6Class(
     list=ve.exporter.list,             # list tables that have been created within this exporter
     print=ve.exporter.print,           # print list of table identifiers
     data=ve.exporter.data,             # return list of data.frames corresponding to list of table names (all or some of self$list)
-                                       # If format is given, use VEExporter$formatter to convert
-    formatter=ve.exporter.formatter,
+    formatter=ve.exporter.formatter,   # If format is given, use VEExporter$formatter to convert
+    writeMetadata=ve.exporter.writeMetadata # Write self$Metadata
 
     # Use Prefix/Suffix to identify different exports
     TablePrefix = NULL,                # if set, send to Table during $writeTable or $readTable
     TableSuffix = NULL                 # if set, send to connection$writeTable or readTable
   ),
   private = list(
-    saveFileName = NULL,               # File name if exporter has been loaded/saved
+    saveFileName = NULL                # File name if exporter has been loaded/saved
                                        # from $initialize(load=filename) - need not exist
                                        # Can construct a default file name when initializing, for later use
-    readOnly = FALSE # TRUE for loaded exporter if we don't specify the "append=TRUE" flag on $initialize
-    # A re-opened exporter can be written to (append mode)
-    # Don't include the TimeStamp in the saved exporter name, but should track the connection "tag" and Model
-    # plus perhaps the "Database" (CSV/Parquet root folder, SQLite database) - for other DBI, the connection
-    # is internal, and the "discriminator" is optional and arbitrary (e.g. "MySQL" or "Access"). Presumably the
-    # discriminator is the sub-directory/root file name in the same directory as the .VEexport file.
-    #   Need to differentiate between writing new data versus skipping provided data already written
-    #   That's a Metadata operation based on original S/G/T/N (and perhaps just initial S(cenario))
-    #   It would be quick and easy to check loaded Metadata for Scenario and refuse to write it if
-    #     it's already present in the Exporter output.
-    #   Aiming to run new scenarios on a model and add them to the same export connection
   )
 )
 
@@ -741,7 +734,6 @@ makeTableString <- function(Paths, Names, Table,
       message("Missing: ",paste(c("Paths","Names","Table")[missingComponents],sep=", "))
       stop("Cannot makeTableString: missing location elements")
     }
-    print(list(Paths=Paths,Names=Names,Table=Table))
   }
   pathString <- if ( length(Paths) > 0 ) paste(Paths,collapse=pathSep) else character(0)
   tableString <- if ( length(Names) > 0 ) paste(Table,paste(Names,collapse=nameSep),sep=nameSep) else Table
@@ -948,7 +940,7 @@ ve.connection.dbi.init <- function(Model,config) {
     }
 
     # Force default extension if no explicit extension
-    # Also inject model name and timestamp in appropriate places
+    # Also inject model name (and timestamp if set up) in appropriate places
     dbname <- strsplit(dbname, "\\.")[[1]] # now a vector with the extension
     if ( length(dbname) == 1 ) dbname <- append(dbname,"sqlite")
     dbname[1] <- paste(Model$modelName,dbname[1],sep="_") # prepend model name
@@ -1017,9 +1009,9 @@ VEConnection.DBI <- R6::R6Class(
     raw         = ve.connection.dbi.raw,
     summary     = function() {
       paste( c(paste("Database:\n"),
-        dbGetConnectArgs(private$DBIConnector)$dbname,
+        DBI:::dbGetConnectArgs(private$DBIConnector)$dbname,
         "Tables:\n",
-        dbListTables(private$DBIConnection)
+        DBI::dbListTables(private$DBIConnection)
       ), collapse="\n")
     },
     # implementing methods
