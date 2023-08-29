@@ -1,8 +1,34 @@
 The Partitioning plan in brief:
 
+TODO: 8/29/2023
+
+Get the full export tests working (should be close).
+In particular, want to add/test the following:
+  - Have the default exporter be "default"
+  - Exporters section in visioneval.cnf (for global/model)
+  - Make the export work with queries too (backward compatible)
+  - Fix up the selections (can we streamline this with subsets of names
+    rather than indexing into the model descriptors? Perhaps use the model
+    descriptors to verify that anything is left to export). Do not allow
+    key fields (geographies and "Id" fields) to be deselected.
+Basic Documentation:
+  - All tests working all the way through: retry everything
+  - Basic walkthrough updated for query/export etc
+  - Advanced walkthrough reviewed for completeness and up to date
+How-To and Reference Documentation for the following:
+  - Basically a narrative from the basic and advanced walkthroughs
+  - Setting up and running VE
+  - Creating Scenarios
+  - Running Models (including parallel processing)
+  - Querying VisionEval results
+  - Exporting Data (start with the Queries)
+  - Configurating export destinations
+  - Selecting VE Scenarios and Tables for output
+  - Partioning Scenario results into tables
+
 TODO: 8/24/2023
 
-Finish getting the connection tests working all the way through.
+Finish getting the connection tests working all the way through [DONE]
 
 Make addition of the timestamp part of the connnection configuration. Timestamp="suffix"
 (placed at end of table name, after TableSuffix) or Timestamp="prefix" (placed at start of

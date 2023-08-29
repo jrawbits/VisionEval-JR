@@ -286,7 +286,7 @@ ve.resultslist.select <- function(selection) {
   return.self <- missing(selection)
   if ( return.self ) {
     selectlist <- self$list()
-    self$selection <- VESelection$new(self,selectist)
+    self$selection <- VESelection$new(self,selectlist)
     
   } else {
     if ( ! inherits("VESelection", selection) || self$Model$modelPath != selection$modelPath ) {

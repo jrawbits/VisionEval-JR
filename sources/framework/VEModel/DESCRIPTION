@@ -23,8 +23,11 @@ Imports:
     future.callr,
     jrc,
     dplyr,
+    methods,
     DBI,
-    RSQLite
+    RSQLite,
+    data.table,
+    tibble
 Suggests:
     knitr,
     pkgload,

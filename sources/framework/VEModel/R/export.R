@@ -30,7 +30,7 @@ NULL
 #' @name  VEConnection
 NULL
 
-self=private=NULL # To avoid global variable warnings
+super=self=private=NULL # To avoid global variable warnings for R6 elements
 
 ############################
 #
@@ -323,23 +323,22 @@ ve.exporter.init <- function(Model,load=NULL,tag=NULL,connection=NULL,partition=
         self$TablePrefix <- workingConfig$TablePrefix
         self$TablePrefix <- as.character(self$TablePrefix)[[1]]
       } else self$TablePrefix <- character(0)
-      self$TablePrefix <- as.character(self$TablePrefix)[[1]]
 
       if ( "TableSuffix" %in% names(workingConfig) ) {
         self$TableSuffix <- workingConfig[["TableSuffix"]]
         self$TableSuffix <- as.character(self$TableSuffix)[[1]]
       } else self$TableSuffix <- character(0)
 
-      if ( "Timestamp" %in% names(workingConfig) && Timestamp %in% c("prefix","suffix") ) {
+      if ( "Timestamp" %in% names(workingConfig) && workingConfig[["Timestamp"]] %in% c("prefix","suffix") ) {
         workingConfig[["startTime"]] <- format(Sys.time(),"%Y%m%d%H%M") # 202308240937
         # Note TimeSeparator is only relevant for TablePrefix or Database Timestamp
-        # TableSuffix with use the Names separator for the table location
+        # TableSuffix will use the Names separator for the table location
         if ( ! "TimeSeparator" %in% names(workingConfig) ) workingConfig[["TimeSeparator"]] <- "_"
         if ( workingConfig[["Timestamp"]] == "prefix" ) {
           # TimeSeparator is null if not provided
-          self$TablePrefix <- paste0(workingConfig$startTime,workingConfig[["TimeSeparator"]],TablePrefix)
+          self$TablePrefix <- paste0(workingConfig$startTime,workingConfig[["TimeSeparator"]],self$TablePrefix)
         } else if ( workingConfig[["Timestamp"]] == "suffix" ) {
-          self$TableSuffix <- paste0(TableSuffix,workingConfig[["TimeSeparator"]],workingConfig[["startTime"]])
+          self$TableSuffix <- paste0(self$TableSuffix,workingConfig[["TimeSeparator"]],workingConfig[["startTime"]])
         }
       }
       self$Configuration$Connection <- workingConfig
@@ -441,6 +440,8 @@ ve.exporter.print <- function(names=NULL,...) {
   } else cat("No Tables Exported Yet.\n")
 }
 
+#' @import data.table
+#' @import tibble
 ve.exporter.formatter <- function(Data,format="data.frame") {
   if ( ! is.data.frame(Data) ) stop("Can't format Data (expecting data.frame):",class(Data))
   if ( format == "data.frame" ) {
@@ -803,6 +804,7 @@ VEConnection.Dataframe <- R6::R6Class(
 #
 #################################
 
+#' @importFrom utils read.csv write.table
 ve.connection.csv.init      <- function(Model,config) {
   # CSV provides a default name for Directory
   super$initialize(Model,config)
@@ -904,29 +906,26 @@ VEConnection.CSV <- R6::R6Class(
 #
 #################################
 
-ve.connection.dbi.init      <- function(Model,config) {
-  require(DBI)
+#' @import DBI
+#' @import RSQLite
+#' @importFrom methods new
+ve.connection.dbi.init <- function(Model,config) {
   super$initialize(Model,config)
   # Two avenues here:
   # If we're missing a full DBI configuration, presume SQLite
   # If there is a full DBI configuration, fill in blanks like dbname from outside Database
+  # NOTE: the following evades build-time checks on available packages
   if ( "package" %in% names(config) ) {
     package <- config[["package"]]
     loadError <- try( library(package,character.only=TRUE) )
     if ( inherits(loadError,"try-error") ) {
       stop("Package requested for DBI connection is not installed: ",config[["package"]])
     }
-  } else {
-    package <- "RSQLite"
-    loadError <- try( library(package,character.only=TRUE) )
-    if ( inherits(loadError,"try-error") ) {
-      stop("Default SQL connection requested but RSQLite is not installed")
-    }
   }
   if ( "drv" %in% names(config) ) {
     if ( is.character(config[["drv"]]) ) {
-      # it should be text that can be parsed and execued to create a DBI Driver
-      private$DBIDriver <- exec(parse(text=config[["drv"]]))
+      # it should be text that can be parsed and executed to create a DBI Driver
+      private$DBIDriver <- eval(parse(text=config[["drv"]]))
     } else if ( ! inherits(config[["drv"]],"DBIDriver") ) {
       stop("Could not interpret DBIConfig$drv parameter:",DBIConfig[["drv"]])
     } else {
@@ -995,16 +994,16 @@ ve.connection.dbi.raw         <- function() {
 } # override in specific subclasses
 
 ve.connection.dbi.createTable <- function(Data,Table) {
-  dbWriteTable(private$DBIConnection,Table,Data,overwrite=TRUE) # will trash if it already exists
+  DBI::dbWriteTable(private$DBIConnection,Table,Data,overwrite=TRUE) # will trash if it already exists
   return( self$saveTableFields(Data,Table) )
 }
 
 ve.connection.dbi.appendTable     <- function(Data,Table) {
-  dbWriteTable(private$DBIConnection,Table,Data,append=TRUE) # will append to existing table (or create, but we will head that off)
+  DBI::dbWriteTable(private$DBIConnection,Table,Data,append=TRUE) # will append to existing table (or create, but we will head that off)
 }
 
 ve.connection.dbi.readTable   <- function(Table) {
-  dbReadTable(private$DBIConnection,Table)
+  DBI::dbReadTable(private$DBIConnection,Table)
 }
 
 VEConnection.DBI <- R6::R6Class(
