@@ -22,12 +22,10 @@ Imports:
     future,
     future.callr,
     jrc,
-    dplyr,
     methods,
     DBI,
     RSQLite,
-    data.table,
-    tibble
+    data.table
 Suggests:
     knitr,
     pkgload,

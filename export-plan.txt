@@ -1,11 +1,14 @@
 The Partitioning plan in brief:
 
-TODO: 8/29/2023
+TODO: 8/30/2023
+
+Can we do the test just extracting the results table one time?
+Provide some way to cache the readDatastoreTables call in the VEResultsList
+(and invalidate the cache when the selection changes).
 
 Get the full export tests working (should be close).
 In particular, want to add/test the following:
-  - Have the default exporter be "default"
-  - Exporters section in visioneval.cnf (for global/model)
+  - Test Exporters section in visioneval.cnf
   - Make the export work with queries too (backward compatible)
   - Fix up the selections (can we streamline this with subsets of names
     rather than indexing into the model descriptors? Perhaps use the model

@@ -115,13 +115,14 @@ ve.resultslist.init <- function(stages=NULL,model=NULL) {
 }
 
 # export results using the data.frame exporter by default
-# Connection won't be used here (though we could use it to generate other table types such as data
-# tables / tibbles). Partitioning can be changed from the system/model defaults
-ve.resultslist.extract <-  function(exporter="data.frame",connection=NULL,partition=NULL,wantMetadata=FALSE,convertUnits=TRUE,format=NULL) {
+# "format" parameter follows the rules of VEExporter and you can pass in conversion functions
+#   from other packages:  e.g. format=tibble::tibble if you have that library; ... can provide
+#   extra parameters to such a function.
+ve.resultslist.extract <-  function(exporter="data.frame",connection=NULL,partition=NULL,wantMetadata=FALSE,convertUnits=TRUE,format=NULL,...) {
   export <- self$export(exporter=exporter,
     connection=connection,partition=partition,
     wantMetadata=wantMetadata,convertUnits=convertUnits)
-  return(invisible(structure(export$data(format=format),Exporter=export)))
+  return(invisible(structure(export$data(format=format,...),Exporter=export)))
 } # shortcut to generate a list of data.frames via the export function
 
 # Export results from each set in the results list to an exporter
@@ -135,18 +136,16 @@ ve.resultslist.extract <-  function(exporter="data.frame",connection=NULL,partit
 # wantMetadata TRUE will generate a top-level tabel from the selection parameter list
 # convertUnits TRUE will use an available display_units.csv conversion table (FALSE use raw Datastore units)
 ve.resultslist.export <- function(
+  exporter="default",connection=NULL,partition=NULL, # see export.R for docs on exporter, connection, partition
   selection=NULL,     # what we get from selecting a subset using VEResultsList$select() and VESelection operations
-  exporter="csv",connection=NULL,partition=NULL, # see export.R for docs on exporter, connection, partition
   wantMetadata=TRUE,  # Generate a metadata table at the root of the output
   convertUnits=TRUE   # Use "display_units.csv" to convert units for selected fields (otherwise Datastore units)
 ) {
 
   # Set up the exporter (defaults to CSV - use $extract to default to list of data.frames)
-  message("DEBUG: Set up exporter ",exporter)
   if ( ! inherits(exporter,"VEExporter") ) {
     exporter <- self$Model$exporter(tag=exporter,connection=connection,partition=partition)
   }
-  print(exporter)
   # Just ignore connection and partition if we're passing a pre-built exporter
 
   # Apply a selection if provided, otherwise use entire list of outputs
@@ -166,7 +165,6 @@ ve.resultslist.export <- function(
   selected.stages <- unique(selection$Scenario) # names of scenario
 
   for ( stage in selected.stages ) {
-    message("DEBUG: Extracting stage ",stage)
     stage.selection <- selection[selection$Scenario==stage,]
     # Just the elements selected for this stage
     stageResults <- self$Results[[stage]]
@@ -185,9 +183,7 @@ ve.resultslist.export <- function(
         # To see what got created, print the exporter returned from this function
 
         # Need to distinguish group=Global versus group=Year=Y
-        message("DEBUG: exporter$write ",group,"/",table)
         exporter$write( data[[group]][[table]], Scenario=stage, Group=group, Table=table, Metadata=Metadata )
-        message("DEBUG: done writing")
       }
     }
   }
@@ -197,7 +193,6 @@ ve.resultslist.export <- function(
     # in the connection description (usually a table with a distinctive name in the connection
     # root). The Metadata will identify what was written, and where (in the exporter outputs)
     # it was written to.
-    message("DEBUG: writing Metadata")
     exporter$writeMetadata()
   }
 
@@ -231,7 +226,7 @@ ve.resultslist.print <- function(...) {
 
 ve.resultslist.list <- function(pattern="", selected=TRUE, details=FALSE, ...) {
   # Show details about model fields
-  # selected = TRUE shows just the selected fields
+  # selected = TRUE shows just the selected elements
   # selected = FALSE shows all fields (not just unselected)
   # pattern matches (case-insensitive regexp) some portion of field names (not groups or tables)
   # details = TRUE returns a data.frame self$modelIndex (units, description)
@@ -411,10 +406,7 @@ ve.results.extract <- function(
     }
 
     # Get a list of data.frames, one for each Table configured in Tables_ls
-    message("DEBUG: readDatastoreTables for Group/Table: ",group)
     Data_ls <- visioneval::readDatastoreTables(Tables_ls, group, QueryPrep_ls)
-    message("DEBUG: read these tables:")
-    print(names(Data_ls$Data))
 
     # Report Missing Tables from readDatastoreTables
     HasMissing_ <- unlist(lapply(Data_ls$Missing, length)) != 0
@@ -445,8 +437,8 @@ ve.results.extract <- function(
 
     if ( ! all(is.df <- sapply(Data_ls$Data,is.data.frame)) ) {
       # Unpack "multi-tables"
-      message("DEBUG: Processing multiTables")
       MultiTables <- Data_ls$Data[which(! is.df)] # usually, there's just one of these...
+      writeLog(paste("Processing multitables: ",paste(MultiTables,collapse=",")),Level="warn")
       if ( length(MultiTables) > 0 ) {
         for ( multi in names(MultiTables) ) {
           # multi is a list of datasets not made into a data.frame by readDatastoreTables
@@ -1013,7 +1005,11 @@ ve.select.parse <- function(select) {
   if ( is.numeric(select) ) {
     if ( length(select)>0 ) {
       if ( any(is.na(select)) ) return( as.integer(NA) )
-      if ( ! ( min(select)>0 && max(select)<=nrow(self$results$modelIndex) ) ) {
+      message("Parse select:")
+      str(select)
+      message("Parse select rows in self$results$modelIndex")
+      str(self$results$resultsIndex)
+      if ( ! ( min(select)>0 && max(select)<=nrow(self$results$resultsIndex) ) ) {
         message("Field selection out of range")
         return( as.integer(NA) )
       }

@@ -43,7 +43,8 @@ getModelDirectory <- function() { # hack to support pkgload which won't see the 
   # no NAMESPACE by default. I added NAMESPACE to .gitignore, and setting up to do "live
   # development" with ve.test just requires that the package be built once and the NAMESPACE copied
   # back from /built/.../src/VEModel/NAMESPACE. As long as the development doesn't produce any new
-  # exported functions, we're fine.
+  # exported functions, we're fine. And if it does, we do one build and copy back NAMESPACE from
+  # built/.../src
   return(
     if ( ! "getModelDirectory" %in% getNamespaceExports("VEModel") ) {
       # Hack to support pkgload from source folder which does not have a Namespace
@@ -617,7 +618,7 @@ test_02_export_partitions <- function() {
   print(part$partition(dataSets$Yr2044,"RetryTreatment"))
   testStep("Try with NA data in a partition field\n")
   dftry <- dataSets$Yr2044$Global <- NA
-  print(part$partition(dataSets$Yr2044,"NAGlobal"))
+  print(part$partition(dataSets$Yr2044,"GlobalWithNA"))
 }
 
 test_dbname <- function(name=c("Junk.try.sqlite","Junk","Junk.csv","Junk.sqlite")) {
@@ -639,7 +640,7 @@ test_dbname <- function(name=c("Junk.try.sqlite","Junk","Junk.csv","Junk.sqlite"
 }
 
 test_02_export_connections <- function(
-  testConnections=c("data.frame","csv"), # later add "sql"and "mysql"
+  testConnections=c("data.frame","csv","sql","mysql"),
   mysql=FALSE,
   reset=TRUE
 ) {
@@ -669,12 +670,10 @@ test_02_export_connections <- function(
     # Test a Connection by writing different things to it
     # Exercise nameTable
     cat("\nTesting Connection:\n")
+    message("Starting at ",Sys.time())
     print(Connection$summary())
     cat("Name Table:\n")
-    loc = list(
-      Partition=list(Paths=c("path1","path2"),Names=c("name1","name2"),Table="TestTable")
-    )
-    class(loc) = "VETableLocator"
+    loc <- VETableLocator$new(Paths=c("path1","path2"),Names=c("name1","name2"),Table="TestTable")
     cat("Table Locator:\n")
     print(loc)
     Table <- Connection$nameTable(loc)
@@ -709,20 +708,22 @@ test_02_export_connections <- function(
     print( Connection$list() )               # The field names only
     cat("Test connection list with full details (field names, not just tables):\n")
     print( Connection$list(nameOnly=FALSE) ) # Tables with their names
+    message("Ended at ",Sys.time())
   }
 
   # We're doing the connection at a low level, so none of the defaults injected by
   #  the exporter will apply. Need to fully specify config with the options
   #  we want to test
 
+  # TODO: need to test model Exporters configuration setting
+  # Could add Exporters section but that might trigger a re-run (need to mark Exporters
+  # as irrelevant to "out of date").
   if ( "data.frame" %in% testConnections ) {
-    testStep("Testing data.frame connection")
     # data.frame connection
     cdf <- makeVEConnection(Model, config=list(driver="data.frame"))
     writeMe(cdf,Data)
   }
   if ( "csv" %in% testConnections ) {
-    testStep("Testing csv connection")
     # ccsv <- makeVEConnection(Model) # default is csv
     ccsv <- makeVEConnection(Model, config=list(driver="csv",Timestamp="database"))
     writeMe(ccsv,Data)
@@ -774,6 +775,8 @@ test_02_export_connections <- function(
     requireNamespace("DBI")
     mysql <- makeVEConnection(Model,mysqlConfig)
     if ( reset ) {
+      # TODO: create a "reset" method for VEConnection generally?
+      # Could remove CSV/SQLite/other tables
       con = mysql$raw() # for DBI/SQL connection, returns the DBI connection
       # NOTE: Example SQL below for creating database/user presumes MariaDB; You might have to
       #   tweak the syntax for original MySQL or other DB services
@@ -795,10 +798,13 @@ test_02_export_connections <- function(
   return(Model) # to view Model$dir(output=TRUE,all.files=TRUE)
 }
 
-test_02_basic_export <- function(reset=FALSE,log="warn",exporter="sql")
+test_02_basic_export <- function(exporter="sql",reset=FALSE,log="warn",connection=list())
 {
+  modelReset <- is.character(reset) && reset=="model"
+  if ( modelReset || !is.logical(reset) ) reset=TRUE
+
   testStep("Set up VERSPM-base model instance for export tests")
-  mod <- test_01_run("VERSPM-export",reset=reset,log="warn")
+  mod <- test_01_run("VERSPM-export",reset=modelReset,log="warn")
   print(mod)
 
   testStep("extract model results, show directory")
@@ -806,23 +812,64 @@ test_02_basic_export <- function(reset=FALSE,log="warn",exporter="sql")
   print(br)
 
   testStep("Set up connection")
-  connection=list( TablePrefix="ExportTest_" ) # NOTE: must include necessary delimiter, if any
+  if ( ! "TablePrefix" %in% names(connection) ) {
+    connection=c(connection,list( TablePrefix="ExportTest_" )) # NOTE: must include necessary delimiter, if any
+  }
 
-  testStep("Extract to data.frames")
-  R.data <- br$extract(connection=connection)  # Returns a list of R data.frames
-
-  testStep("Default export (CSV)")
-  br$export(connection=connection) # default export creates CSV files in a subfolder of the model's results/outputs folder
-  cat("Directory:\n")
-  print(mod$dir(outputs=TRUE,all.files=TRUE))
-
-  testStep(paste0("Export to exporter '",exporter,"'"))
-  # In this case, export to "sql" which by default creates an SQLite database in results/outputs
-  extractor <- br$export(exporter,connection=connection) # returns a VEExporter object
-  cat("Exporter list of tables:\n")
-  print(extractor$list())
-  cat("Directory:\n")
-  print(mod$dir(outputs=TRUE,all.files=TRUE))
+  testStep(paste("Exporting to ",paste(exporter,collapse=", ")))
+  for ( format in exporter ) {
+    if ( format == "data.frame" ) {
+      testStep("Extract to data.frames")
+      R.data <- br$extract(connection=connection)  # Returns a list of R data.frames
+      str(R.data)
+      extractor <- attr(R.data,"Exporter")
+    } else if ( format == "default" ) {
+      testStep("Export to default format (usually CSV)")
+      extractor <- br$export(connection=connection) # Creates files and folders in OutputDir
+      cat("Directory:\n")
+      print(mod$dir(outputs=TRUE,all.files=TRUE))
+    } else if ( format == "csv" ) {
+      testStep("Export to CSV explicitly")
+      extractor <- br$export("csv",connection=connection) # Creates files and folders in OutputDir
+      cat("Directory:\n")
+      print(mod$dir(outputs=TRUE,all.files=TRUE))
+    } else if ( format == "mysql" ) {
+      testStep(paste0("Export to MySQL exporter"))
+      mysqlConnection<- list(
+        TablePrefix=connection$TablePrefix,
+        driver = "sql", # send into DBI driver
+        package = "RMariaDB",
+        drv = RMariaDB::MariaDB(), # or drv="RMariaDB::MariaDB()" - character string will be parsed
+        Timestamp = "prefix",
+        DBIConfig = list(
+          dbname = "visioneval", # Adjust for local mysel database / user / password
+          user = "visioneval",
+          password = "showme"
+        )
+      )
+      if ( reset ) {
+        mysqlConnection <- makeVEConnection(Model,mysqlConnection)
+        con <- mysqlConnectionxs$raw()
+        DBI::dbExecute(con,"CREATE OR REPLACE DATABASE visioneval;")
+        DBI::dbExecute(con,"USE visioneval;")
+      }
+      extractor <- br$export(exporter,connection=mysqlConnection) # returns a VEExporter object
+      cat("Exporter list of tables:\n")
+      print(extractor$list()) # names of tables
+      R.data <- extractor$data()
+      str(R.data)
+      extractor$close() # generally nice to do for DBI
+    } else {
+      testStep(paste0("Export to exporter '",format,"'"))
+      partition <- c(Global="path") # Merge scenarios and years
+      extractor <- br$export(exporter=exporter,partition=partition,connection=connection) # returns a VEExporter object
+      cat("Exporter list of tables:\n")
+      print(extractor$list())
+      R.data <- extractor$data()
+      # str(R.data) # may generate voluminous output
+      extractor$close() # if it's SQLite need to close the extractor to delete the file below
+    }
+  }
 
   testStep("clear the model extracts")
   cat("Interactive clearing of outputs (not results):\n")
@@ -939,26 +986,14 @@ test_03_results <- function (existingResults=FALSE,log="info") {
     cp$clear(force=TRUE,outputOnly=FALSE) # Blow away all outputs
     cat("Directory after clearing...\n")
     print(cp$dir())
-    cat("Results after clearing... (Generates error)\n")
-    rs <- cp$results()
-    print(rs)
-#   # TODO: retiring selection interface for simpler filtering on Group or Table
-#     cat("Selection after clearing...\n")
-#     sl <- rs$select()
-#     print(sl)             # TODO: What is the expected behavior?
-    rm(cp) # Should be no results
+    rm(cp) # Should be no results 
 
     testStep("Pull out results and selection from VERSPM-pop test model...")
     cat("Results...\n")
     mod$results()  # Gets results for all stages as VEResultsList (default print lists scenarios)
-  } else {
-    # Don't use the flatten test if you want to test DatastorePath changes
-    mod <- NULL
-    test_01A_flatten(useResults=TRUE,log="warn") # May take a while if we haven't flattened it yet
   }
   logLevel(log)
 
-  # TODO: Simplify selection process
   # Selection can select Scenario=..., Stage=...,
   # Group=ExplicitYears, Group=Years, Group=Global, or Table=c(name1,name2,...)
 

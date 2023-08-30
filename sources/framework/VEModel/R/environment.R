@@ -114,7 +114,8 @@ default.parameters.table = list(
   QueryOutputTemplate = "Query_%queryname%.Rda",  # For the generated outputs (in stage results folder next to Datastore)
   QueryExtractTemplate= "QueryExtract_%queryname%_%timestamp%", # For VEQuery$export to create table in output folder
   RunStatusDelay      = 60,               # seconds between status updates when multi-processing
-  RunPollDelay        = 2                 # seconds between status poll for multi-process completion
+  RunPollDelay        = 2,                # seconds between status poll for multi-process completion
+  Exporters           = list(Default="csv") # Set Default Exporter format (configurable in global or model visioneval.cnf)
 )
 
 #GET DEFAULT PARAMETERS
@@ -186,7 +187,7 @@ getSetup <- function(object=NULL,paramNames=NULL,fromFile=TRUE,reload=FALSE) {
   } else if ( is.null(object) ) {
     if ( reload ) ve.env$RunParam_ls <- ve.env$loadedParam_ls <- loadRuntimeConfig()
     object <- ve.env
-  }
+  } # else presume ist a VEModel or VEModelStage or something else with RunParam_Ls/loadedParam_ls
   RunParam_ls <- if ( ! fromFile ) object$RunParam_ls else object$loadedParam_ls
   if ( is.character(paramNames) ) {
     RunParam_ls <- RunParam_ls[names(RunParam_ls) %in% paramNames]

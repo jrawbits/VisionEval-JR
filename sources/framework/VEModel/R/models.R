@@ -2626,7 +2626,8 @@ ve.model.exporter <- function(file=NULL,tag=NULL,connection=NULL,partition=NULL)
   }
   # If file provided, process that
   if ( is.character(file) ) {
-    return( VEExporter$new(Model=self,load=file.path(output.dir,file)[1]) ) # Will report error if can't load
+    filepath <- file.path(output.dir,file)[1]
+    if ( file.exists(file.path) ) return( VEExporter$new(Model=self,load=filepath) ) # Will report error if can't load
   }
   if ( !is.null(tag) || is.character(connection) ) {
     return( VEExporter$new(Model=self,tag=tag,connection=connection,partition=partition) )
