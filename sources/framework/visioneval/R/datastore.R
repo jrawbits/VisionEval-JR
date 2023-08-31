@@ -1913,6 +1913,7 @@ mergeDatastoreListings <- function(baseListing, addListing) {
   newListing <- as.list(baseListing) # drop data.frame class
   newItems <- which( ! addListing$groupname %in% baseListing$groupname ) # indexes into newListing
   baseNames <- names(baseListing)
+  newNames <- names(newListing[newItems])
   for ( fieldname in baseNames ) {
     if ( fieldname != "attributes" ) {
       if ( fieldname %in% newNames ) {

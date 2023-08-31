@@ -922,9 +922,9 @@ test_02_multicore <- function(model=NULL, log="info", workers=3) {
   testStep("Add model stages (just duplicates) to run in parallel")
   # To run in parallel, different stages must have the same "StartFrom"
 
-  # For this test, we'll restructure the CORE-test model so it has three identical
-  # stages, each of which just runs the base model over and over. We'll get
-  # CORE-base, Stage-1, Stage-2, Stage-3 and Stage-4 as sub-directories of
+  # For this test, we'll restructure the CORE-test model so it has four more identical
+  # stages, each of which just runs the base model over and over. We'll get CORE-base,
+  # Stage-1, Stage-2, Stage-3 and Stage-4 as sub-directories of
   # coreModel$modelPath/ResultsDir.
   for ( newstage in 1:4 ) {
     coreModel$addstage(
@@ -937,7 +937,7 @@ test_02_multicore <- function(model=NULL, log="info", workers=3) {
   }
   cat("Show model with new stages\n")
   print(coreModel)
-
+  
   logLevel(log=log)
 
   testStep("Run model with callr")

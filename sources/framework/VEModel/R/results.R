@@ -964,6 +964,7 @@ ve.select.parse <- function(select) {
   # select can be another VESelection
   #   if it is the same model, just copy its selection
   #   if not the same model, get other selection's VEResults object and parse that
+  browser()
   if ( "VESelection" %in% class(select) ) {
     if ( select$results$resultsPath != self$results$resultsPath ) {
       select <- select$fields()
@@ -984,18 +985,19 @@ ve.select.parse <- function(select) {
     }
   }
   # select can be a character vector
-  #   split the vector into group/table/name, providing defaults
-  # locate the rows with matching group/table/name in results$modelIndex
+  #   split the vector into scenario/group/table/name, providing defaults
+  # locate the rows with matching scenario/group/table/name in results$modelIndex
   #   That vector of row indices becomes the selection to act on
   if ( is.character(select) ) {
     build <- integer(0)
     for ( s in select ) {
       t <- unlist(strsplit(s,"/"))
-      name <- c( rep(NA,3-length(t)), t )
-      if ( is.na(name[3]) || ! nzchar(name[3]) ) next  else field=name[3]
-      if ( is.na(name[2]) || ! nzchar(name[2]) ) table <- NULL else table=name[2]
-      if ( is.na(name[1]) || ! nzchar(name[1]) ) group <- NULL else group=name[1]
-      fld <- self$find(Name=field,Group=group,Table=table,as.object=FALSE)
+      name <- c( rep(NA,4-length(t)), t )
+      if ( is.na(name[4]) || ! nzchar(name[4]) ) next          else field=name[4]
+      if ( is.na(name[3]) || ! nzchar(name[3]) ) table <- NULL else table=name[3]
+      if ( is.na(name[2]) || ! nzchar(name[2]) ) group <- NULL else group=name[2]
+      if ( is.na(name[1]) || ! nzchar(name[1]) ) scenario <- NULL else scenario=name[1]
+      fld <- self$find(Name=field,Group=group,Table=table,Scenario=scenario,as.object=FALSE)
       build <- union( build, fld )
     }
     select <- build # should be a vector of integers
@@ -1061,10 +1063,11 @@ ve.select.addkeys <- function(Scenario=NULL,Group=NULL,Table=NULL,Keys=NULL) {
 # Find does NOT alter the object it is called on unless 'select=TRUE'
 # It either produces a new VESelection from the matching elements of self$selection (as.object==TRUE)
 # OR it produces a vector of matching element indices (as.object==FALSE)
-ve.select.find <- function(pattern=NULL,Group=NULL,Table=NULL,Name=NULL,as.object=TRUE,select=FALSE) {
+ve.select.find <- function(pattern=NULL,Scenario=Null,Group=NULL,Table=NULL,Name=NULL,as.object=TRUE,select=FALSE) {
   # if pattern (regexp) given, find names matching pattern (only within the "fields"/Name part)
   # if group or table not specified, look in any group or table
   # return vector of indices for matching rows or (as.object==TRUE) a new VESelection object
+  searchScenario <- Scenario
   searchGroup <- Group
   searchTable <- Table
   searchName  <- Name
@@ -1076,6 +1079,9 @@ ve.select.find <- function(pattern=NULL,Group=NULL,Table=NULL,Name=NULL,as.objec
       fld <- Name %in% searchName                     # Exact name match
     } else {
       fld <- rep(TRUE,nrow(self$results$modelIndex))  # Start with all selected
+    }
+    if ( !is.null(searchScenario) ) {
+      fld <- fld & (Scenario %in% searchScenario)
     }
     if ( !is.null(searchGroup) ) {
       if ( any(searchGroup %in% c("Year","Years","AllYears")) ) {  # shorthand for non-Global group

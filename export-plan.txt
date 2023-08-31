@@ -1,5 +1,35 @@
 The Partitioning plan in brief:
 
+TODO: 9/1/2023
+
+Get the selection working with scenarios/stages, groups, tables and fields.
+Working on the test_03_results test (which does basic selection).
+
+Make the query stuff work all the way (including extracting/exporting).
+
+Run through all the tests.
+
+Rebase/compact the export branch - make a new branch for the pull-request.
+Then go ahead and pull-request it to VisionEval-dev, with release notes.
+
+Try out alternate definitions for the connections (redefine "sql" to do the MySQL stuff;
+create a "JR" connection setup with a different configuration). Document the Exporters
+section.
+
+Down the road: create a module to do a dump of selected fields (or the whole datastore) to
+an external database from within a model run. It will use model Exporters configuration
+and also let the user pick the outputs to generate. Key thing is we'll need to create
+some label (beyond the scenario) to indicate which snapshot it is.
+
+Basic walkthrough:
+
+1. Create a model with several reportable stages
+2. Run the model
+3. Extract/Export the model results
+4. Create / Select a Query
+5. Run the query
+6. Export the query results
+
 TODO: 8/30/2023
 
 Can we do the test just extracting the results table one time?

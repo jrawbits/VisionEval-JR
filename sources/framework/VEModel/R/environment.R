@@ -263,8 +263,8 @@ viewSetup <- function(object=NULL,Param_ls=NULL,fromFile=FALSE,
 #'
 #' @param object identifies the parameter set to write. NULL (default) uses 
 #' ve.runtime. Otherwise the object should be a VEModel or VEModelStage.
-#' @param inFile a logical. If TRUE, alter the loadedParam_ls, otherwise alter runParam_ls.
-#'   Generally, leave inFile=TRUE. If you alter runParam_ls you can re-run the model without
+#' @param inFile a logical. If TRUE, alter the loadedParam_ls, otherwise alter RunParam_ls.
+#'   Generally, leave inFile=TRUE. If you alter RunParam_ls you can re-run the model without
 #'   running model$configure, but that's risky since parameters can depend on each other in
 #'   sometimes unexpected ways
 #' @param Source a character string describing the source assigned to these parameters

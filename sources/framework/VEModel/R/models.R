@@ -264,7 +264,7 @@ ve.model.torun <- function() {
 
 # configure installs the model parameters (initializing or re-initializing)
 # `reloadFile` says to reload self$loadParam_ls from the model configuration in the file system,
-#  otherwise use self$runParam_ls; it is rarely desirable to change the default, which supports
+#  otherwise use self$RunParam_ls; it is rarely desirable to change the default, which supports
 #  in-memory modifications to self$loadedParam_ls
 # 
 ve.model.configure <- function(modelPath=NULL, reloadFile=FALSE, updateCheck=TRUE) {
@@ -1036,12 +1036,11 @@ ve.stage.init <- function(modelParam_ls,Name=NULL,Model=NULL,ScenarioDir=NULL,st
       self$Name <- stageParam_ls$Name
     } else stop("No Name provided for model stage.")
   } else self$Name <- Name
-
   # Note that modelParam_ls should be provided during model initialization because
   #   RunParam_ls will not yet exist.
   # It can be missing if we're loading a model on the fly and RunParam_ls already exists
   if ( missing(modelParam_ls) || is.null(modelParam_ls) ) {
-    modelParam_ls <- Model$runParam_ls
+    modelParam_ls <- Model$RunParam_ls
     if ( is.null(modelParam_ls) ) modelParam_ls <- list()
   }
 
@@ -2484,7 +2483,7 @@ ve.model.addstage <- function(Name=NULL,...) {
   self$modelStages <- self$initstages(self$modelStages) # existing stages will be skipped
 
   # Report runnability error...
-  if ( ! self$modelStages[[stage$Name]]$runnable() ) {
+  if ( ! stage$Name %in% names(self$modelStages) ) {
     writeLog("The stage you tried to add cannot run and will be ignored!",Level="error")
   }
 
