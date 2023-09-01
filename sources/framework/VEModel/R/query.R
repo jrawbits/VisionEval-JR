@@ -1008,9 +1008,7 @@ ve.query.export <- function(
   ...                     # parameters for extract function, if called here
 ) {
 
-  if ( missing(Results) || is.null(Results) ) {
-    if ( ! is.null(self$Model) ) Results <- self$Model$results() # else Results <- NULL # implied
-  }
+  Results <- self$Model$results() # else Results <- NULL # implied
   if ( is.null(Results) || ! inherits(Results,"VEResultsList") ) {
     stop( writeLogMessage("No results to query",Level="error") )
   }
@@ -1019,16 +1017,6 @@ ve.query.export <- function(
   if ( ! inherits(exporter,"VEExporter") ) {
     # User provides externally constructed exporter
     exporter <- self$Model$exporter(tag=exporter,connection=connection,partition=partition)
-  } else {
-    # Apply any connection or partition to the supplied exporter
-    # Usually not necessary, as the exporter will have been built by hand
-    # and the conneciton and partition have probably already been applied.
-    if ( ! missing(connection) && !is.null(connection) ) {
-      exporter$partition(partition)
-    }
-    if ( ! missing(partition) && !is.null(partition) ) {
-      exporter$partition(partition)
-    }
   }
 
   # Extract results into data.frame (pass control parameters to self$extract via ...)
@@ -1045,18 +1033,14 @@ ve.query.export <- function(
     writeLog("Extracted data is missing ExtractName attribute",Level="warn")
   }
   LongWide <- attr(extract,"Format")
-  if ( isTRUE(LongWide=="Long") ) ExtractName <- paste0(ExtractName,"-Long")
+  if ( isTRUE(LongWide=="Long") ) ExtractName <- paste0(ExtractName,"_Long")
 
-  ExtractTable <- self$Model$setting("QueryExtractTemplate")
-  if ( any(grepl("%(queryname|timestamp)%",ExtractTable)) ) {
-    ExtractTable <- stringr::str_replace(ExtractTable,"%queryname%",ExtractName)
-    ExtractTable <- stringr::str_replace(ExtractTable,"%timestamp%",format(Sys.time(),"%Y_%m_%d-%H_%M"))
-  }
+  ExtractTable <- paste(self$Model$setting("QueryExtractTable"),ExtractName)
 
   # The partitioning default should get the table into the the "root" of the exporter.
   # For file-system-based exporters like CSV or SQLite, the root will be the model's
   #   "ResultsDir/OutputDir")
-  exporter$write(extract,Table=ExtractTable)
+  exporter$write(extract,ExtractTable)
 
   return(invisible(exporter))
 }
@@ -1184,9 +1168,9 @@ ve.query.run <- function(
     queryingModel <- TRUE
     self$model(Model)
     Results <- Model$results() # Convert model Reportable stages into a VEResults or VEResultsList if more than one
-    if ( "VEResultsList" %in% class(Results) ) {
+    if ( "VEResultsList" %in% class(Results) ) { # downshift to a plain list
       Results <- Results$results()
-    } else if ( "VEResults" %in% class(Results) ) {
+    } else if ( "VEResults" %in% class(Results) ) { # upshift to a list
       Results <- list(Results)
     } else {
       stop(

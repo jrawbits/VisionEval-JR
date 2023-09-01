@@ -112,7 +112,7 @@ default.parameters.table = list(
   DisplayUnitsFile    = "display_units.csv",
   QueryFileName       = "New-Query",              # For making a VEQuery file
   QueryOutputTemplate = "Query_%queryname%.Rda",  # For the generated outputs (in stage results folder next to Datastore)
-  QueryExtractTemplate= "QueryExtract_%queryname%_%timestamp%", # For VEQuery$export to create table in output folder
+  QueryExtractTable   = "QueryExtract",   # For VEQuery$export to create table in output folder
   RunStatusDelay      = 60,               # seconds between status updates when multi-processing
   RunPollDelay        = 2,                # seconds between status poll for multi-process completion
   Exporters           = list(Default="csv") # Set Default Exporter format (configurable in global or model visioneval.cnf)
