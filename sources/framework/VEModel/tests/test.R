@@ -1300,7 +1300,7 @@ test_05_query_extract <- function(log="info") {
   print(nrow(extr))
   print(extr[sample(nrow(extr),min(nrow(extr),20)),])
   testStep("Export the long format as .csv")
-  qry$export(longScenarios=TRUE,format="csv",SaveTo=paste0("ExportTest_%timestamp%",qry$Name))
+  qry$export("csv",longScenarios=TRUE)
   return(qry)
 }
 
@@ -1592,13 +1592,13 @@ test_05_query <- function(log="info",Force=TRUE,runModel=FALSE) {
   print(ldf)
 
   testStep("Extract query results into .csv file (default name, wide format)")
-  df <- qry$export(format="csv")
+  df <- qry$export("csv")
   df <- qry$export() # Does the same thing again, possibly overwriting
   # Each extract creates a new file with a different timestamp, but
   # the timestamps only differ by minutes
 
   testStep("Export query results into explicitly named .csv file (long format)")
-  qry$export(format="csv",longScenarios=TRUE,SaveTo=paste0("LongFormat_%timestamp%",qry$Name))
+  qry$export("csv",longScenarios=TRUE)
 
   testStep("Show output files, which will include exports and queries")
   mod$dir(outputs=TRUE,all.files=TRUE)
@@ -1611,7 +1611,7 @@ test_05_query <- function(log="info",Force=TRUE,runModel=FALSE) {
   qry$run(rs,Force=TRUE) # Won't re-run if query is up to date
 
   testStep("Export just the data (wide format)...")
-  qry$export(format="csv",longScenarios=FALSE,SaveTo=paste0("WideDataOnly_%timestamp%",qry$Name))
+  qry$export("csv",longScenarios=FALSE)
 
   testStep("Extract just the metadata (long format)...")
   df <- qry$extract(wantMetadata=TRUE,wantData=FALSE,longScenarios=TRUE)
