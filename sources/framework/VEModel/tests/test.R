@@ -1155,16 +1155,15 @@ test_03_select <- function( log="info" ) {
   testStep("Selecting Worker table")
   sl$select(wkr)
   rs$select(sl)
-  
+  sl
   testStep("Extracting Worker table only to data.frames")
   # The extract function performs an export to data.frames in R (without saving them exernally).
-  partition <- character(0) # Generate one table for all scenarios and years
-  wrk.table <- rs$extract(partition=partition) # defaults to unpartitioned data.frames
+  wrk.table <- rs$extract()
   print(class(wrk.table)) # should be list
   print(names(wrk.table)) # should contain "Worker"
   print(class(wrk.table[[1]])) # should be dataframe with worker elements
-  print(wrk.table[[1]][sample(nrow(wrk.table),10),])
-  rm(extr, wkr.table)
+  print(wrk.table[[1]][sample(nrow(wrk.table[[1]]),min(nrow(wrk.table[[1]]),10)),])
+  rm(wrk.table)
 
   testStep("Export all data.frames to SQLite")
   sl$all()
@@ -1193,7 +1192,7 @@ test_03_select <- function( log="info" ) {
   message("locator names:")
   print(names(locators))
   message("names of extracted data.frames")
-  Print(names(df))
+  print(names(df))
   message("class and first ten rows of first data.frame: ",names(df)[1])
   print(class(df[[1]]))  # Should be a data.frame
   print(df[[1]][1:10,])

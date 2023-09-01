@@ -291,7 +291,7 @@ ve.resultslist.select <- function(selection) {
     self$selection <- VESelection$new(self,selectlist)
     
   } else {
-    if ( ! inherits("VESelection", selection) || self$Model$modelPath != selection$modelPath ) {
+    if ( ! inherits(selection, "VESelection") || self$Model$modelPath != selection$resultsList$Model$modelPath ) {
       # see if we can make a selection (stop inside $new if selection can't be interpreted)
       selection <- VESelection$new(self,selection)
     } else self$selection <- selection

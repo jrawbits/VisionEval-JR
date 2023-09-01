@@ -508,8 +508,6 @@ ve.exporter.data <- function(tables=NULL,format="data.frame") { # tables: a list
   # Generate a list of requested table data in the requested format (which will be
   # interpreted by self$Connection as it reads out the data).
   tables <- self$list(tables,namesOnly=TRUE)
-  message("DEBUG: inspect dbListTables(self$Connection$DBIConnection) and self$list()")
-  browser()
   exportedData <- if ( missing(format) || !is.character(format) || format=="data.frame" ) {
     lapply( tables, function(t) self$Connection$readTable(t) )
   } else {
