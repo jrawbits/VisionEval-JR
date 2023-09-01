@@ -2626,9 +2626,14 @@ ve.model.exporter <- function(file=NULL,tag=NULL,connection=NULL,partition=NULL)
   # If file provided, process that
   if ( is.character(file) ) {
     filepath <- file.path(output.dir,file)[1]
-    if ( file.exists(file.path) ) return( VEExporter$new(Model=self,load=filepath) ) # Will report error if can't load
+    if ( ! any(grepl("\\.VEexport$",filepath)) ) filepath <- paste0(filepath,".VEexport")
+    if ( file.exists(filepath) ) {
+      return( VEExporter$new(Model=self,load=filepath) ) # Will report error if can't load
+    } else {
+      stop("Exporter file does not exist:",filepath)
+    }
   }
-  if ( !is.null(tag) || is.character(connection) ) {
+  if ( ! is.null(tag) || is.character(connection) ) {
     return( VEExporter$new(Model=self,tag=tag,connection=connection,partition=partition) )
   }
   stop("Must provide file, tag, or connection to identify Exporter")

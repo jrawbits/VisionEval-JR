@@ -102,8 +102,8 @@ ve.resultslist.init <- function(stages=NULL,model=NULL) {
       Level="error"
     )
     writeLog("Have you run the model?",Level="warn")
-    self$valid <- FALSE
-  } else self$valid <- TRUE
+    self$isValid <- FALSE
+  } else self$isValid <- TRUE
 
   # Initialize selection
   self$selection <- VESelection$new(self)
@@ -149,7 +149,7 @@ ve.resultslist.export <- function(
   # Just ignore connection and partition if we're passing a pre-built exporter
 
   # Apply a selection if provided, otherwise use entire list of outputs
-  # Reduces the modelIndex to a subset then figures out S/G/T/N from whatever is left
+  # Reduces the resultsIndex to a subset then figures out S/G/T/N from whatever is left
   # Default is everything available in the VEResultsList
   # TODO: make sure list produces the full list...
   selection <- if ( ! is.null(selection) ) {
@@ -165,19 +165,24 @@ ve.resultslist.export <- function(
   selected.stages <- unique(selection$Scenario) # names of scenario
 
   for ( stage in selected.stages ) {
+    writeLog(paste("Exporting scenario ",stage),Level="warn")
     stage.selection <- selection[selection$Scenario==stage,]
     # Just the elements selected for this stage
     stageResults <- self$Results[[stage]]
+    writeLog("Extracting data from Datastore...",Level="warn")
     data <- stageResults$extract( # That's the VERresult$extract (below)
-      selection=stage.selection[,c("Scenario","Group","Table","Name","Units")],
-      convertUnits=convertUnits) # Generates a list of data.frames
+      selection=stage.selection, # keep all the Metadata fields...
+      convertUnits=convertUnits
+    ) # Generates a list of data.frames, with Units being the converted values
     # data is a named list of Groups, each being a named list of Tables, each of which is a
     # data.frame
     for ( group in names(data) ) {
+      writeLog(paste("Exporting Group ",group),Level="warn")
       for ( table in names(data[[group]]) ) {
+        writeLog(paste("Exporting Table ",table),Level="warn")
         # Generate input Metadata (fields in this S/G/T) which the exporter will merge with the
         # output metadata (table and field actually written).
-        Metadata <- stage.selection[stage.selection$Group==group & stage.selection$Table==table,]
+        Metadata <- attr(data[[group]],"Metadata")[[table]] # Metadata should be an expeanded data.frame of field descriptors
 
         # The exporter's partitioning scheme will create tables and merge data.frames as requested
         # To see what got created, print the exporter returned from this function
@@ -219,6 +224,7 @@ ve.resultslist.results <- function(stages=NULL) {
 
 # Print summary of results in the list
 ve.resultslist.print <- function(...) {
+  cat("VEResults List object with these results:\n")
   for ( nm in names(self$Results)) {
     print(self$Results[[nm]],name=nm,...) # Call VEResults$print
   }
@@ -229,8 +235,8 @@ ve.resultslist.list <- function(pattern="", selected=TRUE, details=FALSE, ...) {
   # selected = TRUE shows just the selected elements
   # selected = FALSE shows all fields (not just unselected)
   # pattern matches (case-insensitive regexp) some portion of field names (not groups or tables)
-  # details = TRUE returns a data.frame self$modelIndex (units, description)
-  # details = FALSE returns just the "Name" vector from self$modelIndex
+  # details = TRUE returns a data.frame self$resultsIndex (units, description)
+  # details = FALSE returns just the "Name" vector from self$resultsIndex
 
   filter <- if ( missing(selected) || selected ) {
     which( 1:nrow(self$resultsIndex) %in% self$selection$selection )
@@ -266,15 +272,15 @@ ve.resultslist.inputs <- function( fields=FALSE, module="", filename="" ) {
     ret.fields <- c("Scenario","Module","Name","File","InputDir")
   }
 
-  filter <- nzchar(self$modelIndex$File)
+  filter <- nzchar(self$resultsIndex$File)
   if ( !missing(module) && nzchar(module) ) {
-    filter <- filter & grepl(module,self$modelIndex$Module)
+    filter <- filter & grepl(module,self$resultsIndex$Module)
   }
   if ( !missing(filename) && nzchar(filename) ) {
-    filter <- filter & grepl(filename,self$modelIndex$File)
+    filter <- filter & grepl(filename,self$resultsIndex$File)
   }
 
-  ret.value <- unique(self$modelIndex[ filter, ret.fields ])
+  ret.value <- unique(self$resultsIndex[ filter, ret.fields ])
   return( ret.value[order(ret.value$InputDir,ret.value$File),] )
 }
 
@@ -293,9 +299,38 @@ ve.resultslist.select <- function(selection) {
   invisible( self$selection )
 }
 
+# List out the units applied to results for this scenario (see addDisplayUnits above)
+ve.resultslist.units <- function(selected=TRUE,display=NULL) {
+  # if display==TRUE, show DisplayUnits plus Datastore Units
+  # if display==FALSE, show only Datastore units
+  # if display is NULL (default) merge Display and Datastore and show source
+  # selected == FALSE shows units for ALL fields, not just selected
+  # Transiently attaches DisplayUnits to field list (transient because user
+  #   may be editing the file in this session)
+  # Displays a data.frame for the selected (TRUE) or all (FALSE) fields with
+  #   Group, Table, Name, DisplayUnits, UnitsSource ("Datastore" or DisplayUnitsFilePath)
+  selected <- if ( selected ) self$selection$selection else 1:nrow(self$resultsIndex)
+  Units_df <- self$resultsIndex[ selected, c("Scenario","Group","Table","Name","Units") ]
+  Units_df$Source <- "Datastore"
+  returnFields <- c("Scenario","Group","Table","Name","Units","Source")
+  if ( ! is.logical(display) || display ) {
+    # Add Display Units if requested
+    Units_df <- addDisplayUnits(Units_df,Param_ls=self$RunParam_ls)
+    displayUnits <- !is.na(Units_df$DisplayUnits) # find elements where DisplayUnits are available
+    Units_df$Source[ displayUnits ] <- basename(Units_df$DisplayUnitsFile[ displayUnits ])
+    if ( is.null(display) ) {
+      # merge into single Units Column
+      Units_df$Units[ displayUnits ] <- Units_df$DisplayUnits[ displayUnits ]
+    } else {
+      returnFields <- c(returnFields,"DisplayUnits")
+    }
+  }
+  return( Units_df[,returnFields] )
+}
+
 # Find fields (as objects) within the current results list
 # Note: "Scenarios" correspond to model stages in the model
-# We're using the "end user" friendly word for "reportable stages". The resultslist can be
+# We're using the "end user" friendly word for "reportable stages". The resultsList can be
 # generated with base stages - see VEModel$results.
 ve.resultslist.find <- function(pattern=NULL,Scenario=NULL,Group=NULL,Table=NULL,Name=NULL,select=FALSE) {
   selection <- self$select() # generate a base selection from what is already selected.
@@ -312,7 +347,7 @@ VEResultsList <- R6::R6Class(
     # public data
     Model          = NULL,
     Results        = NULL,
-    valid          = FALSE,
+    isValid        = FALSE,
     selection      = NULL,
     resultsIndex   = NULL,  # consolidated datastore index for all stages
     RunParam_ls    = NULL,  # interface for environment.R/getSetup which is used to find export directories
@@ -326,7 +361,9 @@ VEResultsList <- R6::R6Class(
     extract=ve.resultslist.extract,  # generate nested list of data.frames from model results (for further processing in R)
     list=ve.resultslist.list,        # show the consolidated resultsIndex (used by export to develop metadata table)
     select=ve.resultslist.select,    # return the list's selection definition
-    find=ve.resultslist.find         # constructs but does not embed the selection definition
+    find=ve.resultslist.find,        # constructs but does not embed the selection definition
+    units=ve.resultslist.units,      # Set units on field list (modifies self$modelIndex) TODO: Move/wrap in VEResultsList
+    valid=function() self$isValid    # report state of validity
   )
 )
 
@@ -374,29 +411,24 @@ ve.results.extract <- function(
   } else {
     selection$DisplayUnits <- selection$Units
   }
-  # TODO: should include Description if available in selection (and why wouldn't it be?)
-  if ( ! "Scenario" %in% names (selection ) ) { # Should be redundant...
+  if ( ! "Scenario" %in% names (selection ) ) { # Should be redundant, and Scenario if present should be unique
     selection <- cbind(Scenario=scenarioName,selection)
   }
-  extract <- selection[ , c("Scenario","Name","Table","Group","Units", "DisplayUnits") ]
-
-  extractTables <- unique(extract[,c("Group","Table")])
+  extractTables <- unique(selection[,c("Group","Table")])
   extractGroups <- unique(extractTables$Group)
 
   QueryPrep_ls <- self$queryprep()
   results <- list()
 
-  print(extractTables)
-
   for ( group in extractGroups ) {
     # Build Tables_ls for readDatastoreTables
-    Tables_ls <- list()
+    Tables_ls <- list() 
     tables <- extractTables$Table[ extractTables$Group == group ]
     if ( length(tables)==0 ) next # should not happen given how we built extract
     Metadata <- list()
     for ( table in tables ) {
       # get table Metadata
-      Metadata[[table]] <- extract[ extract$Group==group & extract$Table==table, ]
+      Metadata[[table]] <- selection[ selection$Group==group & selection$Table==table, ]
       fields <- Metadata[[table]][ , c("Name","DisplayUnits") ]
 
       # set up unit conversion...
@@ -407,6 +439,7 @@ ve.results.extract <- function(
 
     # Get a list of data.frames, one for each Table configured in Tables_ls
     Data_ls <- visioneval::readDatastoreTables(Tables_ls, group, QueryPrep_ls)
+    if ( ! is.list(Data_ls) ) stop("Data_ls is not a list")
 
     # Report Missing Tables from readDatastoreTables
     HasMissing_ <- unlist(lapply(Data_ls$Missing, length)) != 0
@@ -463,8 +496,9 @@ ve.results.extract <- function(
         # That way we can later merge equivalent tables across multiple scenarios depending on the
         # consolidation strategy in VEResultsList$export.
         # TODO: really need to fix the source problem in VERPAT (if anyone ever uses it again...)
-        Data_ls$Data <- Data_ls$Data[-which(names(Data_ls$Data) %in% names(MultiTables))]
-        Metadata <- Metadata[-which(names(Metadata) %in% names(MultiTables))]
+        removeTables <- -which(names(Data_ls$Data) %in% names(MultiTables))
+        Data_ls$Data <- Data_ls$Data[removeTables]
+        Metadata <- Metadata[removeTables]
       }
     }
     # Now visit each of the resulting data.frames and prepend the Scenario, Global and Year columns
@@ -485,6 +519,31 @@ ve.results.extract <- function(
         cbind(Scenario=scenarioName,df)
       }
     )
+    # Make sure Metadata includes added column descriptions
+    Metadata <- lapply(names(Metadata),function(tbl) {
+      dfm <- Metadata[[tbl]]
+      rnames <- names(dfm)
+      metaRow <- rep("",length(rnames))
+      names(metaRow) <- rnames
+      metaRow[c("Scenario","Group","Table")] <- c(scenarioName,group,tbl)
+      if ( ! "Global" %in% dfm$Name ) {
+        metaRow["Name"] <- "Global"
+        metaRow["Description"] <- "Global group indicator"
+        dfm <- rbind(dfm,metaRow)
+      }
+      if ( ! "Year" %in% dfm$Name ) {
+        metaRow["Name"] <- "Year"
+        metaRow["Description"] <- "Year group indicator"
+        dfm <- rbind(dfm,metaRow)
+      }
+      if ( ! "Scenario" %in% dfm$Name ) {
+        metaRow["Name"] <- "Scenario"
+        metaRow["Description"] <- "Scenario group indicator"
+        dfm <- rbind(dfm,metaRow)
+      }
+      dfm
+    })
+    names(Metadata) <- names(Data_ls$Data)
 
     # Process the table data.frames into results, adding Metadata as an attribute
     results[[ group ]] <- structure(Data_ls$Data,Metadata=Metadata)
@@ -580,7 +639,9 @@ ve.results.index <- function() {
   }
 
   msList <- rev(visioneval::getModelStatePaths(dropFirst=FALSE,envir=private$modelStateEnv))
-  combinedDatastore <- list()
+  Index <- data.frame()
+  Inputs <- data.frame()
+
   if ( length(msList) > 0 ) {
     msFirst <- TRUE
     for ( ms in msList ) {
@@ -593,9 +654,6 @@ ve.results.index <- function() {
       }
     }
   }
-
-  Index <- data.frame()
-  Inputs <- data.frame()
 
   ds <- combinedDatastore
 
@@ -735,35 +793,6 @@ ve.results.elements <- function() {
   return(as.list(elements)) # converted named vector to named list
 }
 
-# List out the units applied to results for this scenario (see addDisplayUnits above)
-ve.results.units <- function(selected=TRUE,display=NULL) {
-  # if display==TRUE, show DisplayUnits plus Datastore Units
-  # if display==FALSE, show only Datastore units
-  # if display is NULL (default) merge Display and Datastore and show source
-  # selected == FALSE shows units for ALL fields, not just selected
-  # Transiently attaches DisplayUnits to field list (transient because user
-  #   may be editing the file in this session)
-  # Displays a data.frame for the selected (TRUE) or all (FALSE) fields with
-  #   Group, Table, Name, DisplayUnits, UnitsSource ("Datastore" or DisplayUnitsFilePath)
-  selected <- if ( selected ) self$selection$selection else 1:nrow(self$modelIndex)
-  Units_df <- self$modelIndex[ selected, c("Group","Table","Name","Units") ]
-  Units_df$Source <- "Datastore"
-  returnFields <- c("Group","Table","Name","Units","Source")
-  if ( ! is.logical(display) || display ) {
-    # Add Display Units if requested
-    Units_df <- addDisplayUnits(Units_df,Param_ls=self$RunParam_ls)
-    displayUnits <- !is.na(Units_df$DisplayUnits) # find elements where DisplayUnits are available
-    Units_df$Source[ displayUnits ] <- basename(Units_df$DisplayUnitsFile[ displayUnits ])
-    if ( is.null(display) ) {
-      # merge into single Units Column
-      Units_df$Units[ displayUnits ] <- Units_df$DisplayUnits[ displayUnits ]
-    } else {
-      returnFields <- c(returnFields,"DisplayUnits")
-    }
-  }
-  return( Units_df[,returnFields] )
-}
-
 # Wrapper for visioneval::copyDatastore
 # TODO: add a wrapper in VEResultsList that will copy all the model results to another
 #  ToDir - VEResultsList will need to manage the directories...
@@ -831,7 +860,6 @@ VEResults <- R6::R6Class(
     list=ve.results.list,            # show the modelIndex - is this used other than to initialize VEResultsList?
     queryprep=ve.results.queryprep,  # For query or other external access
     print=ve.results.print,          # summary of model results (index)
-    units=ve.results.units,          # Set units on field list (modifies self$modelIndex) TODO: Move/wrap in VEResultsList
     elements=ve.results.elements,    # Get scenario elements (named list of scenario levels) for this scenario
     ModelState=ve.results.modelstate # Set/Get the model state for these results
   ),
@@ -861,7 +889,7 @@ ve.select.init <- function( results, select=integer(0) ) {
   # default select (integer(0)) selects everything
   # self$selection is just a list of integers pointing to rows
   #  in self$results$modelIndex
-  self$results <- results
+  self$resultsList <- results
   rows <- self$parse(select)
   if ( is.null(rows) || any(is.na(rows)) ) {
     self$selection <- as.integer(NA) # no rows selected
@@ -869,14 +897,14 @@ ve.select.init <- function( results, select=integer(0) ) {
     ! is.numeric(rows) ||
     length(rows)==0 ||
     ! min(rows)>0 ||
-    max(rows)>nrow(self$results$resultsIndex) ) {
-    self$selection <- 1:nrow(self$results$resultsIndex)
+    max(rows)>nrow(self$resultsList$resultsIndex) ) {
+    self$selection <- 1:nrow(self$resultsList$resultsIndex)
   } else {
     self$selection <- rows
   }
 }
 
-ve.select.copy <- function(select) VESelection$new(self$results,self$selection)
+ve.select.copy <- function(select) VESelection$new(self$resultsList,self$selection)
 
 ve.select.print <- function(details=FALSE) {
   # print the selected fields
@@ -890,70 +918,68 @@ ve.select.print <- function(details=FALSE) {
 }
 
 ve.select.show <- function() { # show the subset of results$modelIndex for this selection
-  return( self$results$modelIndex[ self$selection, ] )
+  return( self$resultsList$resultsIndex[ self$selection, ] )
 }
 
-ve.select.valid <- function() { return(self$results$valid()) }
+ve.select.valid <- function() { return(self$resultsList$valid()) }
 
 ve.select.scenarios <- function() {
-  if ( ! self$results$valid() ) stop("Model has not been run yet.")
+  if ( ! self$resultsList$valid() ) stop("Model has not been run yet.")
   if ( any(is.na(self$selection)) ) {
-    # TODO: what exactly is this test trying to save us from?
-    # I think it's the caase where we previously suggested stuff and nothing is selected
-    message("No scenarios selected")
+    # Handle case where a previous selection eliminated all scenarios
+    writeLog("No scenarios selected",Level="warn")
     return(character(0))
   }
-  idxScenarios <- unique(self$results$modelIndex[self$selection,c("Scenario"),drop=FALSE])
-  return(idxScenarios[order(idxScenarios$Scenario),]) # Scenarios
+  idxScenarios <- unique(self$resultsList$resultsIndex[self$selection,c("Scenario"),drop=FALSE])
+  return(idxScenarios[order(idxScenarios$Scenario),]) # Scenario
 }
 
-
 ve.select.groups <- function() {
-  if ( ! self$results$valid() ) stop("Model has not been run yet.")
+  if ( ! self$resultsList$valid() ) stop("Model has not been run yet.")
   if ( any(is.na(self$selection)) ) {
-    message("No groups selected")
+    writeLog("No groups selected",Level="warn")
     return(character(0))
   }
-  idxGroups <- unique(self$results$modelIndex[self$selection,c("Scenario","Group"),drop=FALSE])
-  return(idxGroups[order(idxGroups$Group),]) # Group
+  idxGroups <- unique(self$resultsList$resultsIndex[self$selection,c("Scenario","Group"),drop=FALSE])
+  groups <- sort(paste(idxGroups$Scenario,idxGroups$Group,sep="/")) # Scenario/Group
+  return(groups) # Group
 }
 
 ve.select.tables <- function(nameOnly=FALSE) {
-  if ( ! self$results$valid() ) stop("Model has not been run yet.")
+  if ( ! self$resultsList$valid() ) stop("Model has not been run yet.")
   if ( any(is.na(self$selection)) ) {
-    message("No tables selected")
+    writeLog("No tables selected",Level="warn")
     return(character(0))
   }
-  idxTables <- unique(self$results$modelIndex[self$selection,c("Scenario","Group","Table")])
+  idxTables <- unique(self$resultsList$resultsIndex[self$selection,c("Scenario","Group","Table")])
   tables <- if ( nameOnly ) {
     unique(idxTables$Table) # pure name
   } else {
-    sort(paste(idxTables$Group,idxTables$Table,sep="/")) # Group/Table
+    sort(paste(idxTables$Scenario,idxTables$Group,idxTables$Table,sep="/")) # Scenario/Group/Table
   }
   return( tables )
 }
 
 ve.select.fields <- function() {
   # extract fields from the index where groups and tables are selected
-  if ( ! self$results$valid() ) stop("Model has not been run yet.")
+  if ( ! self$resultsList$valid() ) stop("Model has not been run yet.")
   if ( any(is.na(self$selection)) ) {
-    message("No fields selected")
+    writeLog("No fields selected",Level="warn")
     return(character(0))
   }
-  idxFields <- self$results$modelIndex[self$selection,c("Scenario","Group","Table","Name")]
-  return(sort(paste(idxFields$Group,idxFields$Table,idxFields$Name,sep="/"))) # Group/Table/Name
+  idxFields <- self$resultsList$resultsIndex[self$selection,c("Scenario","Group","Table","Name")]
+  return(sort(paste(idxFields$Scenario,idxFields$Group,idxFields$Table,idxFields$Name,sep="/"))) # Scenario/Group/Table/Name
 }
 
-# TODO: Here's how to select if we keep the selection as Scenario/Group/Table/Name:
+# Here's how to select if we keep the selection as Scenario/Group/Table/Name:
 # 
 #   Here is a generic solution for this type of problem which is very efficient:
 # 
-# data.1.ID <- paste(data.1[,1],data.1[,2],data.1[,3])
-# keep.these.ID <- paste(keep.these[,1],keep.these[,2],keep.these[,3])
+# data.1.ID <- paste(data.1[,1],data.1[,2],data.1[,3],data.1[,4])
+# keep.these.ID <- paste(keep.these[,1],keep.these[,2],keep.these[,3],keep.these[,4])
 # desired.result <- data.1[data.1.ID %in% keep.these.ID,]
 
 # Internal helper function to make a selection vector out of various other types of objects
-# TODO: Note that parsing gets simpler if we're just keeping the list of selected Scenario/Group/Table/Name
 
 ve.select.parse <- function(select) {
   # Though select can be a vector of field names, they need to be the full Scenario/Group/Table/Name field names,
@@ -964,9 +990,11 @@ ve.select.parse <- function(select) {
   # select can be another VESelection
   #   if it is the same model, just copy its selection
   #   if not the same model, get other selection's VEResults object and parse that
-  browser()
   if ( "VESelection" %in% class(select) ) {
-    if ( select$results$resultsPath != self$results$resultsPath ) {
+    if ( select$resultsList$Model$modelResults != self$resultsList$Model$modelResults ) {
+      # Selection came from a different set of results, so equate them via the fields list
+      # Presumes the scenario names are the same.
+      # In practice, this will probably never happen
       select <- select$fields()
       # fall through to parse the character strings
     } else {
@@ -978,7 +1006,7 @@ ve.select.parse <- function(select) {
   #   then parse as a character vector
   #   if it is the same model, just copy its selection
   if ( "VEResults" %in% class(select) ) {
-    if ( select$resultsPath != self$results$resultsPath ) {
+    if ( select$resultsPath != self$resultsList$resultsPath ) {
       select <- select$selection$fields()
     } else {
       return( select$selection$selection )
@@ -1007,11 +1035,9 @@ ve.select.parse <- function(select) {
   if ( is.numeric(select) ) {
     if ( length(select)>0 ) {
       if ( any(is.na(select)) ) return( as.integer(NA) )
-      message("Parse select:")
-      str(select)
-      message("Parse select rows in self$results$modelIndex")
-      str(self$results$resultsIndex)
-      if ( ! ( min(select)>0 && max(select)<=nrow(self$results$resultsIndex) ) ) {
+      message("Parse select rows in self$resultsList$resultsIndex")
+      str(self$resultsList$resultsIndex)
+      if ( ! ( min(select)>0 && max(select)<=nrow(self$resultsList$resultsIndex) ) ) {
         message("Field selection out of range")
         return( as.integer(NA) )
       }
@@ -1031,7 +1057,7 @@ ve.select.select <- function(select) {
 
 # NOTE: Strictly speaking, the Datastore table key fields should be recoverable from the module
 # specifications, but I haven't found a way to do that comprehensively yet. That's a deficiency
-# in the table specification that may come back to bite us when exporting to SQL.
+# in the table specification that makes exporting to SQL rudimenary (no indexes or foreign keys)
 allTheKeys = c(
   "Marea","Azone","Bzone",
   "HhId","VehId","WkrId"
@@ -1047,15 +1073,16 @@ ve.select.addkeys <- function(Scenario=NULL,Group=NULL,Table=NULL,Keys=NULL) {
   # "Keys" if not specified will be all of them; if provided here,
   # will drop any that are not in the Keys list (so if you give it
   # something that is not a "key", it just ignores it).
-  if ( missing(Group) ) Group <- self$groups()
-  if ( missing(Table) ) Table <- self$tables(nameOnly=TRUE) # returns just the Table name(s)
+  if ( missing(Scenario) ) Scenario <- self$scenarios()
+  if ( missing(Group) )    Group <- self$groups()
+  if ( missing(Table) )    Table <- self$tables(nameOnly=TRUE) # returns just the Table name(s)
   theKeys <- allTheKeys
   if ( is.character(Keys) ) {
     theKeys <- setdiff(allTheKeys,Keys) # Only include the named ones
   }
   # add the Key fields for selected Group/Table if they're not
   # already there
-  theKeys <- self$find(Group=Group,Table=Table,Name=theKeys)
+  theKeys <- self$find(Scenario=Scenario,Group=Group,Table=Table,Name=theKeys)
   self$or( theKeys )
   invisible( self )
 }
@@ -1063,7 +1090,7 @@ ve.select.addkeys <- function(Scenario=NULL,Group=NULL,Table=NULL,Keys=NULL) {
 # Find does NOT alter the object it is called on unless 'select=TRUE'
 # It either produces a new VESelection from the matching elements of self$selection (as.object==TRUE)
 # OR it produces a vector of matching element indices (as.object==FALSE)
-ve.select.find <- function(pattern=NULL,Scenario=Null,Group=NULL,Table=NULL,Name=NULL,as.object=TRUE,select=FALSE) {
+ve.select.find <- function(pattern=NULL,Scenario=NULL,Group=NULL,Table=NULL,Name=NULL,as.object=TRUE,select=FALSE) {
   # if pattern (regexp) given, find names matching pattern (only within the "fields"/Name part)
   # if group or table not specified, look in any group or table
   # return vector of indices for matching rows or (as.object==TRUE) a new VESelection object
@@ -1072,13 +1099,13 @@ ve.select.find <- function(pattern=NULL,Scenario=Null,Group=NULL,Table=NULL,Name
   searchTable <- Table
   searchName  <- Name
   newSelection <- self$selection
-  newSelection <- with( self$results$modelIndex, {
+  newSelection <- with( self$resultsList$resultsIndex, {
     if ( !is.null(pattern ) ) {
       fld <- grepl(pattern,Name,ignore.case=TRUE)     # RegEx search for name
     } else if ( !is.null(searchName) ) {
       fld <- Name %in% searchName                     # Exact name match
     } else {
-      fld <- rep(TRUE,nrow(self$results$modelIndex))  # Start with all selected
+      fld <- rep(TRUE,nrow(self$resultsList$resultsIndex))  # Start with all selected
     }
     if ( !is.null(searchScenario) ) {
       fld <- fld & (Scenario %in% searchScenario)
@@ -1102,7 +1129,7 @@ ve.select.find <- function(pattern=NULL,Scenario=Null,Group=NULL,Table=NULL,Name
       self$select(newSelection)
       found <- self
     } else {
-      found <- VESelection$new(self$results, select=newSelection)
+      found <- VESelection$new(self$resultsList, select=newSelection)
     }
   } else {
     if ( select ) {
@@ -1141,7 +1168,7 @@ ve.select.and <- function(select) {
 
 # 
 ve.select.all <- function() {
-  self$selection <- 1:nrow(self$results$modelIndex)
+  self$selection <- 1:nrow(self$resultsList$resultsIndex)
   invisible(self)
 }
 
@@ -1169,14 +1196,14 @@ VESelection <- R6::R6Class(
   public = list(
     # public data
     selection = integer(0),
-    results = NULL,  # a VEResultsList object
+    resultsList = NULL,  # a VEResultsList object
 
     # methods
     initialize=ve.select.init, # Initial selection for a results list
     copy=ve.select.copy,       # Create a new selection object with the same results and indices
     print=ve.select.print,     # Print list of fields or (details=TRUE) the subset of results$modelIndex
-    show=ve.select.show,       # retrieve the selected subset of results$modelIndex (data.frame)
-    valid=ve.select.valid,     # is the selection valid against results$modelIndex
+    show=ve.select.show,       # retrieve the selected subset of resultsList$resultsIndex (data.frame)
+    valid=ve.select.valid,     # is the selection valid against resultsList$resultsIndex
     find=ve.select.find,       # general search facility for selecting group/table/name
     parse=ve.select.parse,     # interpret different ways of specifying a selection (number, field descriptor)
     select=ve.select.select,   # assign - set self to other selection value
@@ -1189,6 +1216,8 @@ VESelection <- R6::R6Class(
     none=ve.select.none,       # select no indices (empty selection) - usually as the basis for adding in certain ones
 
     # Field lists (read-only)
+    scenarios=ve.select.scenarios,
+    stages=ve.select.scenarios,
     groups=ve.select.groups,
     tables=ve.select.tables,
     fields=ve.select.fields

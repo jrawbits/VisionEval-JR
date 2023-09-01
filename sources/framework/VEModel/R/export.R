@@ -71,8 +71,9 @@ ve.partition.init <- function(partition=character(0)) {
     badPartitions <- ! self$Partition %in% c("name","folder") # eventually allow "database"
     if ( any(badPartitions) ) {
       writeLog(paste("Ignoring bad partitions:",paste(self$Partitions[badPartitions],collapse=",")),Level="warn")
-      self$Partition <- self$Partition[ ! badPartitions]
+      self$Partition <- self$Partition[ ! badPartitions ]
     }
+    if ( ! "Global" %in% names(self$Partition) ) self$Partition <- c( c(Global="path"),self$Partition )
   }
 }
 
@@ -301,13 +302,14 @@ ve.exporter.init <- function(Model,load=NULL,tag="default",connection=NULL,parti
   # We may be able to live without subclassed Exporters
   # connection is a VEConnection object; if NULL, create a default one
   # partition is a VEPartition object; if NULL, use the default one for tag
-  #   To force no partition, pass c() or character(0) - Table name will just get written/appended as is
+  #   To force no partition, pass c() or character(0) - Table name will just get written/appended
+  #   as is
   self$Model <- Model
   if ( is.character(load) ) {
     # Presumes load is an existing file
     # Usually we'll get here via VEModel$exporter
     if ( ! file.exists(load) ) stop("Could not find saved exporter to load: ",load,call.=FALSE)
-    self$load(Model,load)
+    self$load(load)
     return()
   }
   if ( inherits(tag,"VEExporter") ) {
@@ -346,7 +348,10 @@ ve.exporter.init <- function(Model,load=NULL,tag="default",connection=NULL,parti
     }
 
     # Stash the partition for this exporter
-    self$Configuration$Partition <- if ( is.character(partition) ) {
+    self$Configuration$Partition <- if ( is.list(partition) || is.character(partition) ) {
+      pnames <- names(partition)
+      partition <- as.character(partition) # it may be a list if it came from visioneval.cnf
+      names(partition) <- pnames
       partition
     } else if ( is.character(modelConfig$Partition) ) {
       modelConfig$Partition
@@ -374,7 +379,7 @@ ve.exporter.init <- function(Model,load=NULL,tag="default",connection=NULL,parti
       self$TableSuffix <- adjustConnection$TableSuffix
       adjustConnection$TableSuffix <- NULL
       self$TableSuffix <- as.character(self$TableSuffix)[[1]] # make sure it is characters!
-    } else self$TableSuffix <- character(0)
+    } else self$TableSuffix <- NULL
 
     if ( "Timestamp" %in% names(adjustConnection) && adjustConnection$Timestamp %in% c("prefix","suffix") ) {
       adjustConnection$startTime <- format(Sys.time(),"%Y%m%d%H%M") # 202308240937
@@ -384,7 +389,11 @@ ve.exporter.init <- function(Model,load=NULL,tag="default",connection=NULL,parti
       if ( adjustConnection$Timestamp == "prefix" ) {
         self$TablePrefix <- paste0(adjustConnection$startTime,adjustConnection$TimeSeparator,self$TablePrefix)
       } else if ( adjustConnection$Timestamp == "suffix" ) {
-        self$TableSuffix <- paste0(self$TableSuffix,adjustConnection$TimeSeparator,adjustConnection$startTime)
+        if ( isTRUE(nzchar(self$TableSuffix)) ) {
+          self$TableSuffix <- paste(self$TableSuffix,adjustConnection$startTime,sep=adjustConnection$TimeSeparator)
+        } else {
+          self$TableSuffix <- adjustConnection$startTime
+        }
       } # else adjustConnection$Timestamp might be "database"
     }
     
@@ -499,6 +508,8 @@ ve.exporter.data <- function(tables=NULL,format="data.frame") { # tables: a list
   # Generate a list of requested table data in the requested format (which will be
   # interpreted by self$Connection as it reads out the data).
   tables <- self$list(tables,namesOnly=TRUE)
+  message("DEBUG: inspect dbListTables(self$Connection$DBIConnection) and self$list()")
+  browser()
   exportedData <- if ( missing(format) || !is.character(format) || format=="data.frame" ) {
     lapply( tables, function(t) self$Connection$readTable(t) )
   } else {
@@ -533,25 +544,29 @@ ve.exporter.load <- function(filename) { # .VEexport file (.Rdata format)
   # Filename should already be normalized to the model's output location or wherever
   # This function will usually be called via VEModel$exporter(file=...), which will build a good path
   otherExporter <- new.env()
+  # force .VEexport extension
+  if ( ! any(grepl("\\.VEexport$",filename)) ) filename <- paste0(filename,".VEexport")
   if ( ! file.exists(filename) ) {
-    checkFilename <- file.path(self$Model$exportPath,filename)
+    checkFilename <- file.path(self$Model$exportPath(),filename)
     if ( ! file.exists(checkFilename) ) stop("Could not find file: ",filename,call.=FALSE)
     filename <- checkFilename
   }
   load(filename,envir=otherExporter)
-  self$Configuration <- otherExporter$Configuration
+
   self$TableList     <- otherExporter$TableList
+  self$Configuration <- otherExporter$Configuration
 
   if ( ! is.null(self$Connection) ) self$Connection <- NULL # queue it for garbage collection
 
-  self$Connection <- makeVEConnection(self$Model,self$Configuration$Connection)
+  self$Connection <- makeVEConnection(self$Model,self$Configuration$Connection,reopen=TRUE)
   self$Partition  <- VEPartition$new(self$Configuration$Partition)
 }
 
 ve.exporter.save <- function(filename) { # .VEexport file (.Rdata)
-  filename      <- file.path(self$Model$exportPath,paste0(basename(filename),".VEexport"))
-  Configuration <- self$Configuration
-  TableList     <- self$TableList
+  filename <- file.path(self$Model$exportPath(),basename(filename))
+  if ( ! any(grepl("\\.VEexport$",filename)) ) filename <- paste0(filename,".VEexport")
+  Configuration <- self$Configuration # turn these into saveable objects
+  TableList <- self$TableList
   save(Configuration,TableList,file=filename)
   message("Saved Exporter to ",filename)
 }
@@ -629,17 +644,19 @@ ve.connection.missing <- function(dataFields,Table) {
 }
 
 # ve.connection.init        <- function(config) {} # initialize the connection from parameters
-ve.connection.init <- function(Model,config) {
+ve.connection.init <- function(Model,config,reopen=FALSE) {
   # Add Timestamp if it is going to be part of the database name (or the CSV/Parquet folder)
-  if ( "Timestamp" %in% names(config) && isTRUE(config[["Timestamp"]]=="database") ) {
-    self$Timestamp <- config[["startTime"]]
-    if ( is.null(self$Timestamp) ) self$Timestamp <- format(Sys.time(),"%Y%m%d%H%M") # 202308240937
-    self$TimeSeparator <- if ( "TimeSeparator" %in% names(config) ) config[["TimeSeparator"]] else "_"
-  } else {
-    self$Timestamp <- NULL
-    self$TimeSeparator <- NULL
+  if ( ! reopen ) {
+    if ( "Timestamp" %in% names(config) && isTRUE(config[["Timestamp"]]=="database") ) {
+      self$Timestamp <- config[["startTime"]]
+      if ( is.null(self$Timestamp) ) self$Timestamp <- format(Sys.time(),"%Y%m%d%H%M") # 202308240937
+      self$TimeSeparator <- if ( "TimeSeparator" %in% names(config) ) config[["TimeSeparator"]] else "_"
+    } else {
+      self$Timestamp <- NULL
+      self$TimeSeparator <- NULL
+    }
+    # derived classes may then use Timestamp and TimeSeparator to create the Database/Folder name
   }
-  # derived classes may then use Timestamp and TimeSeparator to create the Database/Folder name
 }
 
 # Generic implementation uses derived class functions to do the work
@@ -790,32 +807,40 @@ VEConnection.Dataframe <- R6::R6Class(
 #################################
 
 #' @import data.table
-ve.connection.csv.init      <- function(Model,config) {
+ve.connection.csv.init      <- function(Model,config,reopen=FALSE) {
   # CSV provides a default name for Directory
   super$initialize(Model,config)
-  if ( ! "Directory" %in% names(config) ) config[["Directory"]] <- config[["Database"]]
-  rootDirectory <- file.path(Model$modelPath,Model$setting("ResultsDir"),Model$setting("OutputDir"))
-  if ( ! dir.exists( rootDirectory ) ) {
-    dir.create(rootDirectory,showWarnings=FALSE) # don't yet have OutputDir
-    if ( ! dir.exists( rootDirectory ) ) { # don't have ResultsDir either, which is pathological
-      stop("Could not create output directory: ",rootDirectory)
+  if ( ! reopen ) {
+    if ( ! "Directory" %in% names(config) ) {
+      if ( "Database" %in% names(config) ) {
+        config[["Directory"]] <- config[["Database"]]
+      } else {
+        config[["Directory"]] <- "CSV"
+      }
     }
-  }
-  if ( "Directory" %in% names(config) && is.character(config[["Directory"]]) ) {
-    private$Directory <- file.path(rootDirectory,config$Directory)
-    defaultDirectory <- private$Directory == rootDirectory # Directory present but empty
-    # Force a sub-directory; may want to change that behavior later...
-  } else {
-    defaultDirectory <- TRUE # default name
-  }
-  if ( defaultDirectory ) config$Directory <- "CSV"
+    rootDirectory <- file.path(Model$modelPath,Model$setting("ResultsDir"),Model$setting("OutputDir"))
+    if ( ! dir.exists( rootDirectory ) ) {
+      dir.create(rootDirectory,showWarnings=FALSE) # don't yet have OutputDir
+      if ( ! dir.exists( rootDirectory ) ) { # don't have ResultsDir either, which is pathological
+        stop("Could not create output directory: ",rootDirectory)
+      }
+    }
+    if ( "Directory" %in% names(config) && is.character(config[["Directory"]]) ) {
+      private$Directory <- file.path(rootDirectory,config$Directory)
+      defaultDirectory <- private$Directory == rootDirectory # Directory present but empty
+      # Force a sub-directory; may want to change that behavior later...
+    } else {
+      defaultDirectory <- TRUE # default name
+    }
+    if ( defaultDirectory ) config$Directory <- "CSV"
 
-  config$Directory <- paste(Model$modelName,config$Directory,sep="_")
-  config$Directory <- paste0(config$Directory,self$TimeSeparator,self$Timestamp) # Add Timestamp if present
-  private$Directory <- normalizePath(file.path(rootDirectory,config$Directory),"/",mustWork=FALSE)
-  dir.create(private$Directory,showWarnings=FALSE) # don't do recursive
-  if ( ! dir.exists(private$Directory) ) {
-    stop("Could not create CSV directory: ",private$Directory)
+    config$Directory <- paste(Model$modelName,config$Directory,sep="_")
+    config$Directory <- paste0(config$Directory,self$TimeSeparator,self$Timestamp) # Add Timestamp if present
+    private$Directory <- normalizePath(file.path(rootDirectory,config$Directory),"/",mustWork=FALSE)
+    dir.create(private$Directory,showWarnings=FALSE) # don't do recursive
+    if ( ! dir.exists(private$Directory) ) {
+      stop("Could not create CSV directory: ",private$Directory)
+    }
   }
 }
 
@@ -887,7 +912,7 @@ VEConnection.CSV <- R6::R6Class(
 #' @import DBI
 #' @import RSQLite
 #' @importFrom methods new
-ve.connection.dbi.init <- function(Model,config) {
+ve.connection.dbi.init <- function(Model,config,reopen=FALSE) {
   super$initialize(Model,config)
   # Two avenues here:
   # If we're missing a full DBI configuration, presume SQLite
@@ -1123,14 +1148,16 @@ connectionList <- list(
 #'   model-specific visioneval.cnf and those will be used by default.
 #'
 #' @param Model a VEmodel object, used by the interior connection to get model-specific settings like the
-#    output directory.
+#'    output directory.
 #' @param config a named list of parameters used to build a VEConnection. Default config builds CSV
-#    files in the model output directory. At a minimum, config should contain a "driver" element, which
-#    is the name of the connection specification block (either a built-in default or defined in the model
-#    or global visioneval.cnf).
+#'    files in the model output directory. At a minimum, config should contain a "driver" element, which
+#'    is the name of the connection specification block (either a built-in default or defined in the model
+#'    or global visioneval.cnf).
+#' @param reopen if TRUE will not create a new database name (using saved configuration), otherwise
+#''   build a new name (not all connection types will care - mostly to avoid Timestamp problems)
 #' @return A VEConnection (or derived) object giving access to the VisionEval results in `path`
 #' @export
-makeVEConnection <- function(Model,config=list(driver="csv")) {
+makeVEConnection <- function(Model,config=list(driver="csv"),reopen=FALSE) {
   # Usually called from within VEExportef initialization, which will provide
   #   useful connection defaults
   # Find driver class from config (default is "csv")
@@ -1143,8 +1170,6 @@ makeVEConnection <- function(Model,config=list(driver="csv")) {
     print(names(connectionList))
     stop("Driver type '",driver,"' does not have a VEConnection associated with it",call.=FALSE)
   } else {
-    print(names(connectionList))
-    print(driver)
     message("Creating Driver for ",driverClass$classname)
   }
   # Create new driver object using "config"

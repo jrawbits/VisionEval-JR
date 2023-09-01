@@ -1,0 +1,65 @@
+mod <- openModel("VERSPM-3.0-withScenarios")
+mod$run()
+results <- mod$results() # for all scenarios
+rs$export() # sticks them in CSV files
+rs$export("sql") # or rs$export("sqlite") creates SQLite database
+rs$export(partition=c(Global="name")) # mashes all the scenarios+years into single tables (e.g. Household)
+rs$export(partition=c(Scenario="name", Year="name")) # creates more tables (e.g. Household_Scenario1_2045); Global="name" is default
+rs$export(partition=c(Scenario="path", Year="name")) # creates a sub-folder for each Scenario (e.g. Scenario1/Household_2045)
+rs$export("sql",partition=c(Scenario="path", Year="name")) # SQL doesn't do paths (Table is Scenario1_Household_2045)
+rs$export("sql",connection=list(Database="MySpecialSQLite")) # uses alternate SQLite root database name
+rs$export(connection=list(  # build connection explicitly - writes to MariaDB server on localhost
+  driver="sql",
+  package="RMariaDB",        # or RMySQL or RPostgreSQL...; requires package
+  drv = "RMariadB::MariaDB", # the function called to create a DBI Connection
+  DBIConfig = list(          # connection credentials (can also use group=visioneval to link to my.cnf)
+    dbname = "visioneval",
+    user = "visioneval",
+    password = "showme"
+  ) )
+  )
+# Can also define connections in model or global visioneval.cnf (obviously not as a comment)
+# Exporters:
+#   myfancydb:
+#     Connection:
+#       driver:  "sql"
+#       package: "RMariaDB"
+#       drv:     "RMariadB::MariaDB"
+#       DBIConfig:
+#         dbname:   "visioneval"
+#         user:     "visioneval"
+#         password: "showme"
+#     Partition:
+#       Scenario: path
+#       Year:     name
+# Then just do this:
+rs$export("myfancydb") # You can also change the default behavior for "csv","sql" or "sqlite" or whatever
+
+# Once you have an export, you can see the tables that were created
+export <- rs$export("sql") # Note that exports are Timestamped by default...
+export$list() # list of table names
+ds <- export$data() # list of data.frames with the data from all the tables re-imported as R data.frames
+
+# You can stuff the exported data into anything that knows about data.frames
+ds <- export$data(format="data.table") # all the data as R data.table
+require(tibble)
+ds <- export$data(format=tibble::tibble) # any function that takes a data.frame as its first argument
+ds <- export$data(format=tibble::tibble,.name_repair=TRUE) # plus any other arguments the conversion function may take
+
+# Nifty hack to export to Excel (once it has been exported elsewhere first):
+require(writexl)
+export$data(format=writexl::write_xlxs,path="MyExcelData.xlsx") # Each table becomes a worksheet in MyExcelData.xlsx
+
+# Or go straight to Excel with no intermediate export ("data.frame" exporter is like SQLite ":memory:" database)
+# Enabling us to go from a model setup straight to the exported results
+mod$run()$results()$export("data.frame")$data(format=writexl::write_xlxs,path="StraightToExcel.xlsx")
+
+export$save("savedExport") # Create a magic file for the exporter connection so it can be recreated
+                           # Saving works with any type of export (csv, sqlite, etc.)
+
+### Quit R and come back later:
+mod <- openModel("VERSPM-3.0-withScenarios")
+export <- mod$exporter("savedExport") # these are located in results/outputs, recreates the connection
+ds <- export$data() # loads the tables into a list of R data.frames
+ds <- export$data( export$list()[1] ) # just get the very first table in the list as a one-item list
+                                      # can provide explicit table names

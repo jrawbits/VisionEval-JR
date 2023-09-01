@@ -278,9 +278,6 @@ documentDatastoreTables <- function(SaveArchiveName, QueryPrep_ls) {
 #' @param QueryPrep_ls a list created by calling the prepareForDatastoreQuery function which
 #' identifies the datastore location(s), listing(s), and functions for listing and read the
 #' datastore(s).
-#' @param addColumn A named list of additional column data to prepend on each table returned. The
-#' list elements should be single element vectors (value will be repeated on all rows). If the
-#' additional columns vary by table content, they should be updated after this function returns.
 #' @return A named list having two components. The 'Data' component is a list containing the
 #' datasets (or list of field vectors if asList==TRUE) from the datastores where the name of each
 #' component of the list is the name of a table from which identified datasets are retrieved and the
@@ -289,7 +286,7 @@ documentDatastoreTables <- function(SaveArchiveName, QueryPrep_ls) {
 #' the name of the dataset). The 'Missing' component is a list which identifies the datasets that
 #' are entirely missing in each table.
 #' @export
-readDatastoreTables <- function(Tables_ls, Group, QueryPrep_ls, addColumn=NULL ) {
+readDatastoreTables <- function(Tables_ls, Group, QueryPrep_ls) {
   #Extract the datastore listings
   MS_ls <- QueryPrep_ls$Listing;
   #Datastore locations
@@ -336,11 +333,6 @@ readDatastoreTables <- function(Tables_ls, Group, QueryPrep_ls, addColumn=NULL )
           }
         }
       }
-    }
-    # Prepend any additional columns requested.
-    if ( !is.null(addColumn) ) {
-      # TODO: not done yet
-      startColumns <- lapply(addColumn,function(col) rep(col,max(length(sapply(Out_ls[[tb]],length)))))
     }
     # Try to convert extracted datasets to a data.frame
     # If that fails for some reason, return a list instead
