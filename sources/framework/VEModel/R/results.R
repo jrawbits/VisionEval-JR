@@ -44,10 +44,10 @@ ve.resultslist.init <- function(stages=NULL,model=NULL) {
   if ( ! missing(model) && ! is.null(model) && inherits(model,"VEModel") ) self$Model <- model
 
   # Find model stages from which to get results
-  if ( missing(stages) || ! all(inherits(stages,"VEModelStage")) ) {
+  if ( missing(stages) || is.null(stages) || ! all(inherits(stages,"VEModelStage")) ) {
     if ( ! is.null(self$Model) ) stages <- self$Model$findstages() else stages <- NULL
   } else {
-    # have stages; check model consistency and set self$Model
+    # have a list of stages; check model consistency and set self$Model if not already set
     modelNames <- unique(sapply(stages,function(s) s$Model$modelName))
     if ( length(modelNames)==1 ) {
       if ( is.null(self$Model) ) {
@@ -75,7 +75,7 @@ ve.resultslist.init <- function(stages=NULL,model=NULL) {
     names(self$Results) <- names(stages)
     # print(names(self$Results))
     # for ( r in self$Results ) print(r)
-  } else self$Results <- NULL
+  } else stop("No model stages with results.")
   
   if ( ! is.null(self$Model) && ! is.null(self$Results) ) { # found something
     # Build results index (S/G/T/N plus other metadata) for use in selecting
@@ -93,8 +93,7 @@ ve.resultslist.init <- function(stages=NULL,model=NULL) {
       msg <- paste0(
         "Could not create result list for ",
         "model=",model,
-        "; stages=",stages,
-        "; results=",names(self$Results)[!valid]
+        "; stages=",stages
       )
     }
     writeLog(
@@ -105,13 +104,15 @@ ve.resultslist.init <- function(stages=NULL,model=NULL) {
     self$isValid <- FALSE
   } else self$isValid <- TRUE
 
-  # Initialize selection
-  self$selection <- VESelection$new(self)
+  if ( self$isValid ) {
+    # Initialize selection
+    self$selection <- VESelection$new(self)
 
-  # Finally, pull the RunParam_ls and loadedParam_ls out of the model
-  # Provides interface for environment.R/getSetup
-  self$RunParam_ls <- self$Model$RunParam_ls
-  self$loadedParam_ls <- self$Model$loadedParam_ls
+    # Finally, pull the RunParam_ls and loadedParam_ls out of the model
+    # Provides interface for environment.R/getSetup
+    self$RunParam_ls <- self$Model$RunParam_ls
+    self$loadedParam_ls <- self$Model$loadedParam_ls
+  }
 }
 
 # export results using the data.frame exporter by default
@@ -119,12 +120,12 @@ ve.resultslist.init <- function(stages=NULL,model=NULL) {
 #   from other packages:  e.g. format=tibble::tibble if you have that library; ... can provide
 #   extra parameters to such a function.
 ve.resultslist.extract <-  function(
-  exporter="data.frame",connection=NULL,partition=NULL,
+  exporter="data.frame",connection=NULL,partition=NULL,selection=NULL,
   wantMetadata=FALSE,convertUnits=TRUE,
   format="data.frame",...
 ) {
   export <- self$export(exporter=exporter,
-    connection=connection,partition=partition,
+    connection=connection,partition=partition,selection=selection,
     wantMetadata=wantMetadata,convertUnits=convertUnits)
   return(invisible(structure(export$data(format=format,...),Exporter=export)))
 } # shortcut to generate a list of data.frames via the export function
@@ -156,9 +157,10 @@ ve.resultslist.export <- function(
   # Reduces the resultsIndex to a subset then figures out S/G/T/N from whatever is left
   # Default is everything available in the VEResultsList
   # TODO: make sure list produces the full list...
-  selection <- if ( ! is.null(selection) ) {
-    self$select(selection)$list(details=TRUE)
-  } else self$list(details=TRUE) # different from self$select, self$list does not deep-copy the selection
+  if ( ! is.null(selection) ) {
+    self$select(selection) # just apply the selection, copying it
+  }
+  selection <- self$list(details=TRUE) # different from self$select, self$list does not deep-copy the selection
 
   # partition the selection into stages/scenarios and iterate across just those results
   # Note that the export partitioning is controlled by the partition parameter (or the default
@@ -168,8 +170,9 @@ ve.resultslist.export <- function(
   # to the exporter Household output.
   selected.stages <- unique(selection$Scenario) # names of scenario
 
+  writeLog(paste("Exporting results for model",self$Model$modelName),Level="warn")
   for ( stage in selected.stages ) {
-    writeLog(paste("Exporting scenario ",stage),Level="warn")
+    writeLog(paste("Exporting scenario",stage),Level="warn")
     stage.selection <- selection[selection$Scenario==stage,]
     # Just the elements selected for this stage
     stageResults <- self$Results[[stage]]
@@ -941,7 +944,8 @@ ve.select.scenarios <- function() {
     return(character(0))
   }
   idxScenarios <- unique(self$resultsList$resultsIndex[self$selection,c("Scenario"),drop=FALSE])
-  return(idxScenarios[order(idxScenarios$Scenario),]) # Scenario
+  scenarios <- sort(idxScenarios$Scenario) # Scenario
+  return(scenarios)
 }
 
 ve.select.groups <- function() {
@@ -1045,8 +1049,6 @@ ve.select.parse <- function(select) {
   if ( is.numeric(select) ) {
     if ( length(select)>0 ) {
       if ( any(is.na(select)) ) return( as.integer(NA) )
-      message("Parse select rows in self$resultsList$resultsIndex")
-      str(self$resultsList$resultsIndex)
       if ( ! ( min(select)>0 && max(select)<=nrow(self$resultsList$resultsIndex) ) ) {
         message("Field selection out of range")
         return( as.integer(NA) )

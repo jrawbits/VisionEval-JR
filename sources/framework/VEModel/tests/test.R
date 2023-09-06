@@ -2090,9 +2090,9 @@ test_06_scenarios <- function(
 
 test_06_scenario_results <- function(
   install=FALSE,
-  extract = TRUE,
+  full.extract = TRUE,
   multicore=TRUE, # or set to number of workers (default is 3)
-  log="info"
+  log="warn"
 ) {
   logLevel(log)
 
@@ -2106,54 +2106,52 @@ test_06_scenario_results <- function(
   testStep("Printing scenario model results")
   print(rs)
 
-  if ( extract ) {
-    testStep("Extracting model Results")
+  if ( full.extract ) {
+    testStep("Extracting model Results for All Scenarios")
     rs.extract <- rs$extract()
-    print(class(rs.extract))
+    cat("Names of resulting tables:\n")
     print(names(rs.extract))
-
-    testStep("Exporting model Results (show directory)")
-    rs$export()
-    mod$dir(outputs=TRUE)
   }
 
-  # TODO: do some model selections (individual scenarios, etc.)
-  # TODO: exercise differt table consolidations
+  testStep("Selecting Scenarios Design-1 and Design-2 with find")
+  select <- rs$select()
+  cat("Printing sample of selected fields...\n")
+  flds <- select$find(Scenario=c("Design-1","Design-2"),select=TRUE)$fields()
+  print(flds[sample(length(flds),20)])
 
-  invisible(list(Model=mod,Reslts=rs))
-}
+  testStep("Does the selection propagate to the results?")
+  print(rs$select()$scenarios())
 
-test_06_scenario_selection <- function(
-  install=FALSE,
-  extract = TRUE,
-  multicore=TRUE, # or set to number of workers (default is 3)
-  log="info"
-) {
-  logLevel(log)
-  testStep("Set up scenario model")
-  pre.run <- test_06_scenario_results(install=install,extract=FALSE,multicore=multicore,log="warn")
-  mod <- pre.run$Model
-  rs  <- pre.run$Results
+  testStep("Selecting Scenarios Design-1 and Design-2 indirectly")
+  select2 <- rs$select()$find(Scenario=c("Pricing-1","Pricing-2"))
+  print(select2$scenarios())
 
-  testStep("List available scenarios")
-  testStep("Select one scenario")
-  testStep("Extract all tables for that scenario")
-  testStep("Select only Households table in that scenario")
-  testStep("Export to CSV")
+  testStep("Does the selection propagate to the results? NO")
+  print(rs$select()$scenarios())
 
-  testStep("Test idiom of subsetting results after generation")
-  # TODO: many need to update for new results architecture
-  rs.subset <- VEResultsList$new(rs$results()["stage-pop-future"])
-  rs.subset$export() # TODO: separate tables per scenario (to code the name)
+  testStep("Select pricing again, this time with select=TRUE")
+  select2 <- rs$select()$find(Scenario=c("Pricing-1","Pricing-2"),select=TRUE)
+  print(select2$scenarios())
+
+  testStep("Does the selection propagate to the results? YES")
+  print(rs$select()$scenarios())
+
+  partition <- c(Global="path",Scenario="name",year="name")
   
-  testStep("Revert Selection to all Scenarios")
-  # TODO: testStep("Export to Parquet in CSV with tables split by Scenario and Year")
-  testStep("Export to SQLite (single tables for all scenarios and years)")
-  testStep("Export to SQLite (one set of tables for each scenario, only global for base year)")
-  testStep("Export to SQLite (one set of table for each year - all scenarios in each year table, include Global)")
+  testStep("Exporting model Results with implicit selection")
+  rs$export(partition=partition,connection=list(Database="Pricing_Implicit"))
 
-  testStep("Return model and results")
-  return(pre.run)
+  testStep("Exporting model Results from explicit selection")
+  rs$export(selection=select,partition=partition,connection=list(Database="Design_Explicit"))
+
+  testStep("Exporting model Results just for the Year groups") # implicit selection
+  select$find(Scenario=c("Design-1","Design-2"),Group="Year",select=TRUE)
+  rs$export(selection=select,partition=partition,connection=list(Database="Design_Years_Only"))
+  
+  testStep("Directory after export")
+  print(mod$dir(outputs=TRUE,all.files=TRUE))
+
+  invisible(list(Model=mod,Results=rs))
 }
 
 test_07_extrafields <- function(reset=FALSE,installSQL=TRUE,log="info") {
@@ -2208,10 +2206,10 @@ test_07_extrafields <- function(reset=FALSE,installSQL=TRUE,log="info") {
     install.packages("RSQLite",lib=install.into)
     require(RSQLite)
   }
-  testStep("Extract the Bzone table and review")
-  df <- sl$extract() # df is actually a list of data.frames, one for each table
+  testStep("Extract the Bzone tables and review")
+  df.list <- rs$extract() # df.list is a list of data.frames, one for each table
   print(names(df))
-  print(df[["Global.Bzone"]][sample(nrow(df[["Global.Bzone"]]),10),])
+  print(df.list[[1]][sample(nrow(df.list[[1]]),10),])
 
   testStep("Construct a query that does multi-level breakpoints on Azone + Field Tags")
 

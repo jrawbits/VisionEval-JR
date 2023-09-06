@@ -1,6 +1,5 @@
 # Author: Jeremy Raw
-
-# VEModel Package Code
+# VEModel Package
 
 #' @include environment.R
 #' @import visioneval
@@ -798,13 +797,13 @@ ve.model.dir <- function( stage=NULL,shorten=TRUE, showRootDir=TRUE, all.files=F
     resultPaths <- c(baseResults,stagePaths)
     outputPath <- dir(resultPaths,pattern=self$setting("OutputDir"),full.names=TRUE)
     outputFiles <- dir(outputPath,full.names=TRUE,recursive=all.files)
-    outputFiles <- unique(c(outputPath,outputFiles))
     outputDirs <- dir.exists(outputFiles)
     if ( all.files ) {
       outputFiles <- outputFiles[ ! outputDirs ]
     } else {
       outputFiles <- outputFiles[ outputDirs ]
     }
+    if ( length(outputFiles)==0 ) outputFiles <- outputPath # Show OutputDir as stub
   } else outputFiles <- character(0)
 
   # Find archiveDirs (and if asked for, archiveFiles)
@@ -884,7 +883,7 @@ ve.model.dir <- function( stage=NULL,shorten=TRUE, showRootDir=TRUE, all.files=F
 ve.model.clear <- function(force=FALSE,outputOnly=NULL,archives=FALSE,stage=NULL,show=10) {
   # Remove outputs and/or results, either interactively or in batch
   # 'show' controls maximum number of outputs to display for selection
-  # Can limit just to outputs or results in a certain 'stage'
+  # Can limit just to outputs or to results in a certain 'stage'
   # outputOnly=FALSE will show/clear results as well as outputs for deletion;
   #   if outputs exist, and outputOnly is NULL, we only show/clear those by default
   # "archives" TRUE will offer to delete results archives
@@ -905,7 +904,8 @@ ve.model.clear <- function(force=FALSE,outputOnly=NULL,archives=FALSE,stage=NULL
     return( invisible(FALSE) )
   }
   
-  to.delete <- self$dir(outputs=TRUE,all.files=TRUE,stage=stage,showRootDir=FALSE)
+#  to.delete <- self$dir(outputs=TRUE,all.files=TRUE,stage=stage,showRootDir=FALSE)
+  to.delete <- self$dir(outputs=TRUE,stage=stage,showRootDir=FALSE)
   if ( is.null( outputOnly ) ) {
     # Can't force delete of results without explicit outputOnly=FALSE
     outputOnly <- ( length(to.delete)>0 || force )
@@ -923,10 +923,10 @@ ve.model.clear <- function(force=FALSE,outputOnly=NULL,archives=FALSE,stage=NULL
     on.exit(setwd(owd))
   }
 
-  # "stage" could be any vector of intermediate sub-directory names
-  if ( is.character(stage) && ! isTRUE(archives) ) {
-    # keep only files in subdirectories matching stage$Dir
-    stageDirs <- sapply(self$modelStages,function(s) s$Dir)
+  if ( ! isTRUE(outputOnly) && ! isTRUE(archives) && is.character(stage) ) {
+    # keep only files in subdirectories matching stage$Dir in results
+    # TODO: make this work so stages passed by name will have their results selected (only)
+    stageDirs <- sapply(self$modelStages[stage],function(s) s$Dir)
     stage <- stage[ stage!="." & stage %in% stageDirs ]
     if ( any(stages) ) {
       stages <- paste("/",stages,"/")
@@ -943,7 +943,7 @@ ve.model.clear <- function(force=FALSE,outputOnly=NULL,archives=FALSE,stage=NULL
     } else if ( ! force && length(to.delete)>0 ) {
       action = "h"
       start = 1
-      stop <- min(start+show-1,length(to.delete))
+      stop <- if (show>0) min(start+show-1,length(to.delete)) else length(to.delete)
       while ( action != "q" ) {
         print(to.delete[start:stop])
         cat("Enter an item number to delete it, or a selection (2,3,7) or range (1:5)\n")
@@ -959,7 +959,7 @@ ve.model.clear <- function(force=FALSE,outputOnly=NULL,archives=FALSE,stage=NULL
           response <- paste0(start,":",stop)
         } else {
           if ( grepl("[^hnpq0-9:, ]",response) ) { # if any illegal character, loop back to help
-            action = "h"
+            action <- "h"
             next
           }
           response <- sub("^ *","",response)
@@ -972,15 +972,15 @@ ve.model.clear <- function(force=FALSE,outputOnly=NULL,archives=FALSE,stage=NULL
             unlink(candidates[response],recursive=TRUE)
             cat("Deleted:\n",paste(candidates[response],collapse="\n"),"\n")
           }
-          to.delete <- self$dir(outputs=TRUE,all.files=TRUE,showRootDir=FALSE)
+          to.delete <- self$dir(outputs=TRUE,showRootDir=FALSE)
           if ( ! isTRUE(outputOnly) ) to.delete <- c(to.delete,self$dir(results=TRUE,showRootDir=FALSE))
           if ( length(to.delete) > 0 ) {
-            start = 1
-            stop <- min(start+show-1,length(to.delete))
-            action = "h"
+            start <- 1
+            stop <- if (show>0) min(start+show-1,length(to.delete)) else length(to.delete)
+            action <- "h"
           } else {
             cat("No files remaining to delete.\n")
-            action = "q"
+            action <- "q"
           }
         } else {
           action <- substr(response[1],1,1)
@@ -988,14 +988,14 @@ ve.model.clear <- function(force=FALSE,outputOnly=NULL,archives=FALSE,stage=NULL
             if ( action == "n" ) {
               start <- min(start + show,length(to.delete))
               if ( start == length(to.delete) ) start <- max(length(to.delete),1)
-              stop <- min(start+show-1,length(to.delete))
+              stop <- if (show>0) min(start+show-1,length(to.delete)) else length(to.delete)
             } else if ( action == "p" ) {
               start <- max(start - show,1)
               stop <- min(start+show-1,length(to.delete))
             }
           } else if ( action %in% c("h","q") ) {
             next
-          } else action = "h"
+          } else action <- "h"
         }
       }
     }

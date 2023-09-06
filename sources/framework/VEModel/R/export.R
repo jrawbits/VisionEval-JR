@@ -1201,7 +1201,7 @@ makeVEConnection <- function(Model,config=list(driver="csv"),reopen=FALSE) {
     print(names(connectionList))
     stop("Driver type '",driver,"' does not have a VEConnection associated with it",call.=FALSE)
   } else {
-    message("Creating Driver for ",driverClass$classname)
+    writeLog(paste("Creating Driver for ",driverClass$classname),Level="info")
   }
   # Create new driver object using "config"
   return ( driverClass$new(Model,config) )
