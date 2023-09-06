@@ -1884,7 +1884,7 @@ evaluateFunctionSpec <- function(measureName, measureSpec, measureEnv=NULL) {
   # Create a data.frame that just has the common denominator By fields for eventual return
   nameFrames <- lapply(Names, function(n) measureEnv[[n,exact=TRUE]]) # don't allow partial matches
   names(nameFrames) <- Names
-  byFields <- sapply(nameFrames, function(n) { meNames <- names(n); return(meNames[ meNames != "Measure" ]) })
+  byFields <- lapply(nameFrames, function(n) { meNames <- names(n); return(meNames[ meNames != "Measure" ]) })
   commonGeoFields <- c("Bzone","Azone","Marea","Region")
   for ( measureBy in byFields ) {
     smallest <- which( commonGeoFields %in% measureBy )[1] # smallest available geography
@@ -1893,21 +1893,35 @@ evaluateFunctionSpec <- function(measureName, measureSpec, measureEnv=NULL) {
     } else {
       commonGeoFields <- "Region"
       if ( ! "Region" %in% byFields ) byFields <- c(byFields,"Region")
-      break
     }
   }
-  # TODO: if byFields are not the same for each non-scalar operand, it's an error
   if ( length(commonGeoFields) > 1 ) stop("Error in VEModel::query.R line 1815; invalid common GeoFields")
+  byFields <- byFields[[1]]
   nameFrames <- lapply(Names,function(Name) {
     frame <- nameFrames[[Name]]
     # So veto above if byFields are not the same
     names(frame) <- sub("^Measure$",Name,names(frame))
     frame
   })
+  names(nameFrames) <- Names # reinstall names
   measureSet <- nameFrames[[1]]
-  if ( length(nameFrames) > 1 ) for ( frame in nameFrames[2:length(nameFrames)] ) {
-    measureSet <- merge(measureSet,frame,by=byFields) # Measure Values have been given names
-  } # might have only one frame in measureSet if we're doing (e.g.) an average or sum for all Mareas
+  if ( length(nameFrames) > 1 ) {
+    if ( length(byFields)>1 ) {
+      bad <- FALSE
+      for ( nm in Names ) {
+        missing <- byFields[ ! byFields %in% names(nameFrames[[nm]]) ]
+        if ( length(missing) > 1 ) {
+          message("Missing byField ",paste(missing,collapse=",")," in ",nm)
+          print(names(nameFrames[[nm]]))
+          bad <- TRUE
+        }
+      }
+      if ( bad ) stop("Wrong fields")
+    }
+    for ( frame in nameFrames[2:length(nameFrames)] ) {
+      measureSet <- merge(measureSet,frame,by=byFields) # Measure Values have been given names
+    } # might have only one frame in measureSet if we're doing (e.g.) an average or sum for all Mareas
+  }
 
   # Now we can evaluate the expression
   measure <- try(

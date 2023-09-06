@@ -1,5 +1,27 @@
 The Partitioning plan in brief:
 
+TODO: 9/5/2023
+
+Finish remaining tests.
+
+Change return from mod$run() to be a VEResultsList (like $results()). Have the
+VEResultsList print function show summary of stages. Can just do the old model
+print code, but provide more details on what's in the Datastore.
+
+Problem with formatter = write_xlxs: it takes a list of data.frames, which is great.
+
+So let's two format functions (formatTable and formatList). Need a way to write
+individual elements, or to do them all at once. Perhaps root it in writing a list,
+then provide a wrapper for the things that process data frames one at a time).
+
+Do the one-liner (needs to add writexl to packages).
+mod$run()$results()$export("data.frame")$data(formatwritexl::write_xlxs,path="StraightToExcel.xlsx")
+
+With altered return, it looks like this:
+mod$run()$extract(format=writexl::write_xlxs,path="StraightToExcel.xlsx")
+
+That's delicious!
+
 TODO: 9/1/2023
 
 Get the selection working with scenarios/stages, groups, tables and fields.

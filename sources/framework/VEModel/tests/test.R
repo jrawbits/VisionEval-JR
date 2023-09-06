@@ -58,6 +58,10 @@ getModelDirectory <- function() { # hack to support pkgload which won't see the 
   )
 }
 
+listTests <- function() {
+  ls(envir=parent.env(environment()),pattern="^test_") # list defined tests
+}
+
 # Basic installer test - also used later to wrap model installations for other tests
 test_00_install <- function(
   modelName="VERSPM",variant="base",installAs="",
@@ -1193,9 +1197,9 @@ test_03_select <- function( log="info" ) {
   print(names(locators))
   message("names of extracted data.frames")
   print(names(df))
-  message("class and first ten rows of first data.frame: ",names(df)[1])
+  message("class and first ten rows of first data.frame: ",names(df)[1]," with ",nrow(df[[1]])," rows")
   print(class(df[[1]]))  # Should be a data.frame
-  print(df[[1]][1:10,])
+  print(df[[1]][1:min(10,nrow(df[[1]])),])
 
   return(rs)
 }
@@ -1686,10 +1690,10 @@ test_06_fullquery <- function(Force=TRUE,runModel=FALSE,queryName="Full-Query",l
   invisible(qry)
 }
 
-test_06_quickquery <- function(model=NULL,log="info",multicore=3) {
+test_06_quickquery <- function(model=NULL,log="info",multicore=3,reset=FALSE) {
   testStep("Set up scenarios-ms model for testing")
   if ( is.null(model) ) {
-    model <- test_01_run(baseModel="VERSPM",variant="scenarios-ms",multicore=multicore,log="warn")
+    model <- test_01_run(baseModel="VERSPM",variant="scenarios-ms",reset=reset,multicore=multicore,log="warn")
   }
   # Make quick queries following VDOT / NVTA model test
   # Marea queries
@@ -2099,7 +2103,7 @@ test_06_scenario_results <- function(
 
   testStep("Printing scenario model")
   print(mod)
-  testSTep("Printing scenario model results")
+  testStep("Printing scenario model results")
   print(rs)
 
   if ( extract ) {

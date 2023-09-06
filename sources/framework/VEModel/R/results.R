@@ -118,7 +118,11 @@ ve.resultslist.init <- function(stages=NULL,model=NULL) {
 # "format" parameter follows the rules of VEExporter and you can pass in conversion functions
 #   from other packages:  e.g. format=tibble::tibble if you have that library; ... can provide
 #   extra parameters to such a function.
-ve.resultslist.extract <-  function(exporter="data.frame",connection=NULL,partition=NULL,wantMetadata=FALSE,convertUnits=TRUE,format=NULL,...) {
+ve.resultslist.extract <-  function(
+  exporter="data.frame",connection=NULL,partition=NULL,
+  wantMetadata=FALSE,convertUnits=TRUE,
+  format="data.frame",...
+) {
   export <- self$export(exporter=exporter,
     connection=connection,partition=partition,
     wantMetadata=wantMetadata,convertUnits=convertUnits)
@@ -224,9 +228,11 @@ ve.resultslist.results <- function(stages=NULL) {
 
 # Print summary of results in the list
 ve.resultslist.print <- function(...) {
-  cat("VEResults List object with these results:\n")
-  for ( nm in names(self$Results)) {
-    print(self$Results[[nm]],name=nm,...) # Call VEResults$print
+  cat("Results for Model '",self$Model$modelName,"':\n",sep="")
+  cat("Model Status:", self$Model$printStatus(),"\n")
+  modelStages <- self$Model$modelStages
+  for ( nm in names(self$Results)) { # stage names
+    modelStages[[nm]]$print(...)
   }
 }
 
@@ -829,11 +835,15 @@ ve.results.queryprep <- function() {
 }
 
 # Print the VEResults summary (called recurively when printing VEResultsList)
-ve.results.print <- function(name="",...) {
+ve.results.print <- function(name="",details=FALSE,...) {
   # Update for output
-  cat("VEResults object for",if(nzchar(name)) name else self$Name,":\n")
-  print(self$resultsPath,...)
-  cat("Output is valid:",self$valid(),"\n")
+  if ( details ) {
+    cat("VEResults object for",if(nzchar(name)) name else self$Name,":\n")
+    print(self$resultsPath,...)
+    cat("Output is valid:",self$valid(),"\n")
+  } else {
+    cat(name,": Results ",if(self$valid()) "NOT ","Available\n",sep="")
+  }
 }
 
 # Definition of VEResults R6 class

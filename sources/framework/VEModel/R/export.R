@@ -486,13 +486,26 @@ ve.exporter.print <- function(names=NULL,...) {
 
 #' @import data.table
 ve.exporter.formatter <- function(Data,format="data.frame",...) {
-  if ( ! is.data.frame(Data) ) stop("Can't format Data (expecting data.frame):",class(Data))
-  if ( is.function(format) ) return( format(Data,...) )
+  if ( ! is.data.frame(Data) || ! is.list(Data) ) {
+    message("Data must be data.frame or list of data.frames:",class(Data))
+    stop("Invalid Data output")
+  }
+  if ( is.list(Data) ) {
+    isList <- all(sapply(Data,function(d)inherits(d,"data.frame")))
+    if ( ! isList ) stop("Data must be a data.frame or list of data.frames:",str(Data))
+  }
+   
+  if ( is.function(format) ) {
+    return( format(Data,...) ) # Passing either List or data.frame depending on Data
+  }
   else if ( ! is.character(format) ) {
     message("Unrecognized data format. Choose default or one of 'data.frame' or 'data.table'")
     message("format may also be a function object that takes a data.frame as its first parameter")
     message("... here will be passed to that function")
     format <- "data.frame"
+  } else if ( isList ) {
+    # List has to be passed to a format function, not processed here
+    stop("List of data.frames must be passed to a format function, not built-in format")
   }
   if ( format == "data.frame" ) {
     return( as.data.frame(Data) ) # probably already is...
@@ -504,16 +517,36 @@ ve.exporter.formatter <- function(Data,format="data.frame",...) {
   }
 }
 
-ve.exporter.data <- function(tables=NULL,format="data.frame") { # tables: a list of table strings
+ve.exporter.data <- function(tables=NULL,format="data.frame",formatList=FALSE,...) { # tables: a list of table strings
   # Generate a list of requested table data in the requested format (which will be
   # interpreted by self$Connection as it reads out the data).
-  tables <- self$list(tables,namesOnly=TRUE)
-  exportedData <- if ( missing(format) || !is.character(format) || format=="data.frame" ) {
-    lapply( tables, function(t) self$Connection$readTable(t) )
-  } else {
-    lapply( tables, function(t) self$formatter(self$Connection$readTable(t),format=format) )
+  # 'tables' is a subset of table names (a character vector) or 
+  # ... is passed to self$formatter, and then on to the formatting function
+  # formatList if TRUE will pass the data.frame list to the formatter, and if FALSE will pass each
+  # data.frame individually.
+  soughtTables <- tables
+  if ( ! is.null(tables) ) {
+    if ( ! is.character(tables) ) tables <- names(tables)
+    if ( ! is.character(tables) || length(tables)<1 ) stop("No tables found matching ",soughtTables)
   }
-  if ( length(exportedData)>0 ) names(exportedData) <- tables
+  tables <- self$list(tables,namesOnly=TRUE) # if is.null(tables), generate all of them
+  if ( missing(format) || format=="data.frame" || formatList ) {
+    exportedData <- lapply( tables, function(t) self$Connection$readTable(t) )
+    if ( formatList ) {
+      if ( is.function(format) ) {
+        # send entire list of data.frames to formatter at once
+        exportedData <- self$formatter(Data=exportedData,format=format,...)
+      } else {
+        message("'formatList' requires 'format' to be a function to process a list of data.frames")
+        message("For example, write_xl will write a list of data.frames")
+        stop("Invalid output format")
+      }
+    }
+  } else {
+    # formatter will process individual data.frames and produce a list of results
+    exportedData <- lapply( tables, function(t) self$formatter(self$Connection$readTable(t),format=format,...) )
+  }
+  if ( length(exportedData) == length(tables) ) names(exportedData) <- tables # write_xl returns workbook name
   return(exportedData)
 }
 

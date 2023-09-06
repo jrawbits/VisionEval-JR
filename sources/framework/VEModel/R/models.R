@@ -1822,7 +1822,7 @@ ve.model.list <- function(inputs=FALSE,outputs=FALSE,details=NULL,stage=characte
 ve.model.print <- function(details=FALSE,configs=FALSE,scenarios=FALSE) {
   if ( ! private$p.valid ) {
     cat("Model object is not valid\n")
-    return()
+    return(private$p.valid)
   }
   cat("Model:",self$modelName,"\n")
   if ( details ) {
@@ -1832,28 +1832,26 @@ ve.model.print <- function(details=FALSE,configs=FALSE,scenarios=FALSE) {
     cat(paste("  ",uniqueSources(self$RunParam_ls,shorten=self$modelPath)),sep="\n") # Generates one row for each unique source
   }
   cat("Status:", self$printStatus(),"\n")
-  if ( private$p.valid ) {
-    scenarios <- self$modelScenarios
-    scenarioStages <- sapply( self$modelStages, function(s) s$IsScenario )
-    cat("Model Stages:\n")
-    for ( s in self$modelStages[ ! scenarioStages ] ) {
-      s$print(details,configs)
-    }
-    scenarioCount <- length(which(scenarioStages))
-    if ( scenarioCount > 0 || ! is.null(self$modelScenarios) ) {
-      if ( ! details ) {
-        cat(scenarioCount,"Scenario stages defined in",sub(self$modelPath,"",self$modelScenarios$scenarioPath),"\n")
-      } else {
-        cat("Scenario Stages from",sub(self$modelPath,"",self$modelScenarios$scenarioPath),"\n")
-        for ( s in self$modelStages[ scenarioStages ] ) {
-          s$print(details,configs=FALSE) # don't show configs for scenarios...
-        }
-      }
-    } else if (scenarioCount > 0 && is.null(self$modelScenarios) ) {
-      cat("Program error: scenarioCount",scenarioCount,"but modelScenarios is NULL\n")
-    } else cat("No scenarios defined.\n")
+  scenarios <- self$modelScenarios
+  scenarioStages <- sapply( self$modelStages, function(s) s$IsScenario )
+  cat("Model Stages:\n")
+  for ( s in self$modelStages[ ! scenarioStages ] ) {
+    s$print(details,configs)
   }
-  private$p.valid
+  scenarioCount <- length(which(scenarioStages))
+  if ( scenarioCount > 0 || ! is.null(self$modelScenarios) ) {
+    if ( ! details ) {
+      cat(scenarioCount,"Scenario stages defined in",sub(self$modelPath,"",self$modelScenarios$scenarioPath),"\n")
+    } else {
+      cat("Scenario Stages from",sub(self$modelPath,"",self$modelScenarios$scenarioPath),"\n")
+      for ( s in self$modelStages[ scenarioStages ] ) {
+        s$print(details,configs=FALSE) # don't show configs for scenarios...
+      }
+    }
+  } else if (scenarioCount > 0 && is.null(self$modelScenarios) ) {
+    cat("Program error: scenarioCount",scenarioCount,"but modelScenarios is NULL\n")
+  } else cat("No scenarios defined.\n")
+  return(private$p.valid)
 }
 
 # Return the log file location (shorten=FALSE appends full model path)
@@ -2416,7 +2414,8 @@ ve.model.run <- function(run="continue",stage=character(0),watch=TRUE,dryrun=FAL
   if ( ! dryrun ) {
     self$load(onlyExisting=TRUE,updateCheck=FALSE) # revisit all the run results and update the statuses
   }
-  return(invisible(self$overallStatus))
+  # return(invisible(self$overallStatus))
+  return(self$results())
 }
 
 ve.stage.watchlog <- function(stop=FALSE,delay=2) {
