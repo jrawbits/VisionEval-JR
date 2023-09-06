@@ -1106,6 +1106,10 @@ ve.select.find <- function(pattern=NULL,Scenario=NULL,Group=NULL,Table=NULL,Name
   # if pattern (regexp) given, find names matching pattern (only within the "fields"/Name part)
   # if group or table not specified, look in any group or table
   # return vector of indices for matching rows or (as.object==TRUE) a new VESelection object
+  if ( is.character(Group) ) Group <- basename(Group)  # because $groups returns Scenario/Group
+  if ( is.character(Table) ) Table <- basename(Table)
+  if ( is.character(Name)  ) Name  <- basename(Name)
+
   searchScenario <- Scenario
   searchGroup <- Group
   searchTable <- Table

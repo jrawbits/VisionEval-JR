@@ -1,5 +1,13 @@
 The Partitioning plan in brief:
 
+TODO: 9/7/2023
+
+Tests are working. Finish the walkthrough (especially queries and exporting them).
+
+Then rebase/compress the history and push the branch (with carefull tagging).
+
+Create a release with documentation of the export function.
+
 TODO: 9/5/2023
 
 Finish remaining tests.

@@ -223,6 +223,7 @@ ve.locator.string <- function(
 }
 
 # Printing a VETableLocator happens in various places for debugging purposes...
+#' @importFrom utils str
 ve.locator.print <- function(...) {
   cat("Range: "    ,str(self$range),"\n",sep="")
   cat("Partition: ",self$tableString(),"\n",sep="")
@@ -485,22 +486,23 @@ ve.exporter.print <- function(names=NULL,...) {
 }
 
 #' @import data.table
+#' @importFrom utils str
 ve.exporter.formatter <- function(Data,format="data.frame",...) {
-  if ( ! is.data.frame(Data) || ! is.list(Data) ) {
-    message("Data must be data.frame or list of data.frames:",class(Data))
+  if ( ! is.data.frame(Data) && ! is.list(Data) ) {
+    message("Data must be data.frame or list of data.frames: ",class(Data))
     stop("Invalid Data output")
   }
-  if ( is.list(Data) ) {
+  if ( is.list(Data) && ! is.data.frame(Data) ) {
     isList <- all(sapply(Data,function(d)inherits(d,"data.frame")))
     if ( ! isList ) stop("Data must be a data.frame or list of data.frames:",str(Data))
-  }
+  } else isList <- FALSE
    
   if ( is.function(format) ) {
     return( format(Data,...) ) # Passing either List or data.frame depending on Data
   }
   else if ( ! is.character(format) ) {
     message("Unrecognized data format. Choose default or one of 'data.frame' or 'data.table'")
-    message("format may also be a function object that takes a data.frame as its first parameter")
+    message("format may also be a function object that takes a data.frame (or list thereof) as its first parameter")
     message("... here will be passed to that function")
     format <- "data.frame"
   } else if ( isList ) {
@@ -517,6 +519,7 @@ ve.exporter.formatter <- function(Data,format="data.frame",...) {
   }
 }
 
+#' @import stringr
 ve.exporter.data <- function(tables=NULL,format="data.frame",formatList=FALSE,...) { # tables: a list of table strings
   # Generate a list of requested table data in the requested format (which will be
   # interpreted by self$Connection as it reads out the data).
@@ -530,8 +533,11 @@ ve.exporter.data <- function(tables=NULL,format="data.frame",formatList=FALSE,..
     if ( ! is.character(tables) || length(tables)<1 ) stop("No tables found matching ",soughtTables)
   }
   tables <- self$list(tables,namesOnly=TRUE) # if is.null(tables), generate all of them
-  if ( missing(format) || format=="data.frame" || formatList ) {
+  if ( missing(format) || (is.character(format) && format=="data.frame") || formatList ) {
     exportedData <- lapply( tables, function(t) self$Connection$readTable(t) )
+    # NOTE: The gsub is a hack for write_xlsx which has limits on legal characters and won't take
+    # care of them itself...
+    names(exportedData) <- stringr::str_sub(gsub("[^-_[:alnum:]]","",tables),end=31)
     if ( formatList ) {
       if ( is.function(format) ) {
         # send entire list of data.frames to formatter at once
@@ -975,7 +981,7 @@ ve.connection.dbi.init <- function(Model,config,reopen=FALSE) {
     private$DBIConfig <- config[["DBIConfig"]]
   } else {
     # SQLite will pre-package more stuff
-    if ( "Database" %in% config ) {
+    if ( "Database" %in% names(config) ) {
       dbname <- config[["Database"]]
     } else {
       dbname <- "SQLite"

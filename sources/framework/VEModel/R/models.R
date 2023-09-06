@@ -800,9 +800,9 @@ ve.model.dir <- function( stage=NULL,shorten=TRUE, showRootDir=TRUE, all.files=F
     outputDirs <- dir.exists(outputFiles)
     if ( all.files ) {
       outputFiles <- outputFiles[ ! outputDirs ]
-    } else {
-      outputFiles <- outputFiles[ outputDirs ]
-    }
+    }# else {
+     # outputFiles <- outputFiles[ outputDirs ]
+     # }
     if ( length(outputFiles)==0 ) outputFiles <- outputPath # Show OutputDir as stub
   } else outputFiles <- character(0)
 
@@ -2162,7 +2162,7 @@ ve.model.run <- function(run="continue",stage=character(0),watch=TRUE,dryrun=FAL
     if ( all(alreadyRun) ) {
       self$overallStatus <- completeStatus
       writeLog("Model Run Complete",Level="warn")
-      return(invisible(self$printStatus()))
+      return(invisible(self$results()))
     }
 
     needToRun <- which( ! alreadyRun ) # numeric indices of stages needing to run
@@ -2414,7 +2414,6 @@ ve.model.run <- function(run="continue",stage=character(0),watch=TRUE,dryrun=FAL
   if ( ! dryrun ) {
     self$load(onlyExisting=TRUE,updateCheck=FALSE) # revisit all the run results and update the statuses
   }
-  # return(invisible(self$overallStatus))
   return(self$results())
 }
 
