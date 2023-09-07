@@ -1,4 +1,4 @@
-### extract.R
+### 03-extract.R
 #   Examples of retrieving raw data from a finished model run
 
 require(VEModel) # just in case it's not already out there...
@@ -44,7 +44,7 @@ datastore.list <- results$list(namesOnly=FALSE)
 print(datastore.list[sample(length(datastore.list),10)])
 
 # Here is all the information available to describe each field
-# (see how to use it below in DisplayUnits example)
+# (see how to use it below in DisplayUnits example in 03A-advanced-export.R)
 datastore.full.list <- results$list(details=TRUE)
 print(names(datastore.full.list))
 print(datastore.full.list[sample(nrow(datastore.full.list),10),])
@@ -137,7 +137,7 @@ results <- mwr$results() # or mwr$run()
 results$export("sql") # goes into an SQLite database in the "outputs" folder
 # Note that using "sql" export format puts a Timestamp on each table name
 
-exporter <- results$export("sqlite",connection=list(Database="My-SQLite-Database")
+exporter <- results$export("sqlite",connection=list(Database="My-SQLite-Database"))
 # Using the "sqlite" export format puts a Timestamp on the database filename
 
 # See the databases
@@ -149,11 +149,11 @@ print(mwr$dir(outputs=TRUE))
 # before opening it from the outside.
 
 # You can save the exporter configuration:
-exporter.save("My-SQLite-Database") # makes a .VEexport file
+exporter$save("My-SQLite-Database") # makes a .VEexport file
 
 # in another session, you can reopen the exporter like this:
 mwr <- openModel("VERSPM-run")
-exporter <- mwr$exporter(load="MySQLite-Database")
+exporter <- mwr$exporter(file="My-SQLite-Database")
 
 # and you can bring the exported data back into R (organized in the
 # same tables as the database):

@@ -1,4 +1,4 @@
-### extract.R
+### 03A-advanced-extract.R
 #   Examples of retrieving raw data from a finished model run
 
 ####################
@@ -98,7 +98,7 @@ exporter <- openModel("VERSPM-run")$run()$export("sqlite") # into SQLite
 exporter$data(
   formatList=TRUE,
   format=writexl::write_xlsx,
-  path=path=file.path(mwr$exportPath(),"Back-from-SQLite.xlsx")
+  path=file.path(mwr$exportPath(),"Back-from-SQLite.xlsx")
 )
 
 rm(exporter) # will close, eventually, the SQLite databaase

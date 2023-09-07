@@ -18,8 +18,10 @@ mod.scenarios <- if ( "VERSPM-scenarios" %in% dir("models") ) {
 } else {
   installModel("VERSPM",var="scenarios-ms",modelPath="VERSPM-scenarios",confirm=FALSE)
 }
-mod.scenarios$run()       # will do nothing if you just ran the model
+mod.scenarios$plan(workers=3)     # Adjust how many based on CPUs and RAM available
+mod.scenarios$run()               # will do nothing if you already ran the model
 print(mod.scenarios,details=TRUE) # without 'details' just says how many scenarios...
+mod.scenarios$clear(outputOnly=TRUE,force=TRUE)
 
 #######################
 # BASIC QUERY OPERATION
@@ -32,7 +34,7 @@ print(mod.scenarios$query())
 # and to read some basic documentation.
 
 # A query is just an R script that defines a list of query specifications.
-# Each specification describes one resulting metric to evaluate for each scenario (model stage).
+# Each specification describes one metric to evaluate for each scenario (model stage).
 
 # Open the query and run it on the scenario results
 qry <- mod.scenarios$query("VERSPM-scenarios") # open the query

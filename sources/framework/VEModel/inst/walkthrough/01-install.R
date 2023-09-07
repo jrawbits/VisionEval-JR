@@ -1,4 +1,4 @@
-### install.R
+### 01-install.R
 #   Walk through model installation
 
 # Load VEModel package (in effect, the visioneval environment)
@@ -67,7 +67,7 @@ rpat <- installModel("VERPAT",modelPath="MYRPAT",confirm=FALSE) # VERPAT base va
 
 # See what we've got
 message('\nExpect to see: "MYRPAT", "VERSPM-base", "VERSPM-pop", and "VERSPM-run"')
-print(dir("models"))
+openModel()
 
 # Installed these models:
 # Once a model is loaded you can 'print' it to get information about it

@@ -593,6 +593,11 @@ ve.exporter.load <- function(filename) { # .VEexport file (.Rdata format)
   self$TableList     <- otherExporter$TableList
   self$Configuration <- otherExporter$Configuration
 
+  # TODO: the Configuration must include the constructed SQLite Database (and this may be
+  # a problem for CSV as well): if there is a Timestamp in the target of the connection.
+  # We need the VEConnection to have an interface function for saving and loading (that
+  # digs deeper into what was actually configured internally). Use that for CSV and DBI.
+
   if ( ! is.null(self$Connection) ) self$Connection <- NULL # queue it for garbage collection
 
   self$Connection <- makeVEConnection(self$Model,self$Configuration$Connection,reopen=TRUE)
@@ -603,6 +608,7 @@ ve.exporter.save <- function(filename) { # .VEexport file (.Rdata)
   filename <- file.path(self$Model$exportPath(),basename(filename))
   if ( ! any(grepl("\\.VEexport$",filename)) ) filename <- paste0(filename,".VEexport")
   Configuration <- self$Configuration # turn these into saveable objects
+  Configuration$Connection[["ReopenData"]] <- self$Connection$save() # may be nothing
   TableList <- self$TableList
   save(Configuration,TableList,file=filename)
   message("Saved Exporter to ",filename)
@@ -777,6 +783,7 @@ VEConnection <- R6::R6Class(
     createTable = function(Data,Table) NULL,    # Create or re-create a Table from scratch (includes append)
     appendTable = function(Data,Table) NULL,    # perform low-level append data operation
     readTable   = function(Table) NULL,         # Read named table into a data.frame
+    save        = function() return(list()),    # Return private data for saving/reopening connnection
     open        = function() NULL,              # Reopen the connection (optional for DBI)
     close       = function() NULL               # Close connection (needed for DBI)
     # 'Table' should be a TableLocator string built with nameTable for the Connection
@@ -818,7 +825,7 @@ VEConnection.Dataframe <- R6::R6Class(
   inherit = VEConnection,
   public = list(
     # methods
-    initialize  = function(Model,config) { super$initialize(Model,config) },  # No initialization needed locally
+    initialize  = function(Model,config,reopen) { super$initialize(Model,config,reopen) },  # No initialization needed locally
     summary     = function() {
       paste( c("Tables:",
         if ( length(private$exportedData)>0 ) names(private$exportedData) else "None written yet"
@@ -878,6 +885,8 @@ ve.connection.csv.init      <- function(Model,config,reopen=FALSE) {
     if ( ! dir.exists(private$Directory) ) {
       stop("Could not create CSV directory: ",private$Directory)
     }
+  } else {
+    private$Directory <- config$ReopenData
   }
 }
 
@@ -931,9 +940,10 @@ VEConnection.CSV <- R6::R6Class(
     getWriteTable = ve.connection.csv.getWriteTable,
     createTable   = ve.connection.csv.createTable,
     appendTable   = ve.connection.csv.appendTable,
-    readTable     = ve.connection.csv.readTable
+    readTable     = ve.connection.csv.readTable,
 
     # methods
+    save          = function() return(private$Directory)
   ),
   private = list(
     Directory = NULL    # Default to "OutputDir/Export_CSV<TimeSeparator><Timestamp>" in initializer
@@ -955,61 +965,67 @@ ve.connection.dbi.init <- function(Model,config,reopen=FALSE) {
   # If we're missing a full DBI configuration, presume SQLite
   # If there is a full DBI configuration, fill in blanks like dbname from outside Database
   # NOTE: the following evades build-time checks on available packages
-  if ( "package" %in% names(config) ) {
-    package <- config[["package"]]
-    loadError <- try( library(package,character.only=TRUE) )
-    if ( inherits(loadError,"try-error") ) {
-      stop("Package requested for DBI connection is not installed: ",config[["package"]])
+  if ( ! reopen ) {
+    if ( "package" %in% names(config) ) {
+      package <- config[["package"]]
+      loadError <- try( library(package,character.only=TRUE) )
+      if ( inherits(loadError,"try-error") ) {
+        stop("Package requested for DBI connection is not installed: ",config[["package"]])
+      }
     }
-  }
-  if ( "drv" %in% names(config) ) {
-    if ( is.character(config[["drv"]]) ) {
-      # it should be text that can be parsed and executed to create a DBI Driver
-      private$DBIDriver <- eval(parse(text=config[["drv"]]))
-    } else if ( ! inherits(config[["drv"]],"DBIDriver") ) {
-      stop("Could not interpret DBIConfig$drv parameter:",config[["drv"]])
+    if ( "drv" %in% names(config) ) {
+      if ( is.character(config[["drv"]]) ) {
+        # it should be text that can be parsed and executed to create a DBI Driver
+        private$DBIDriver <- eval(parse(text=config[["drv"]]))
+      } else if ( ! inherits(config[["drv"]],"DBIDriver") ) {
+        stop("Could not interpret DBIConfig$drv parameter:",config[["drv"]])
+      } else {
+        private$DBIDriver <- config[["drv"]]
+      }
     } else {
-      private$DBIDriver <- config[["drv"]]
+      private$DBIDriver <- RSQLite::SQLite()
+    }
+    if ( "DBIConfig" %in% names(config) ) {
+      # presume DBIConfig has the full and correct set of parameters to call dbConnect
+      # We're not going attempt to do anything else to it here, except adjust dbname
+      #   if it exists for Timestamp (if it is present, which it probably shouldn't be)
+      private$DBIConfig <- config[["DBIConfig"]]
+    } else {
+      # SQLite will pre-package more stuff
+      if ( "Database" %in% names(config) ) {
+        dbname <- config[["Database"]]
+      } else {
+        dbname <- "SQLite"
+      }
+
+      # Force default extension if no explicit extension
+      # Also inject model name (and timestamp if set up) in appropriate places
+      dbname <- strsplit(dbname, "\\.")[[1]] # now a vector with the extension
+      if ( length(dbname) == 1 ) dbname <- append(dbname,"sqlite")
+      dbname[1] <- paste(Model$modelName,dbname[1],sep="_") # prepend model name
+      dbname <- c(paste(dbname[-length(dbname)],collapse="."),dbname[length(dbname)])
+      if ( ! is.null(self$Timestamp) ) {
+        if ( is.null(self$TimeSeparator) ) self$TimeSeparator="_"
+        dbname[1] <- paste(dbname[1],self$Timestamp,sep=self$TimeSeparator)
+      }
+      dbname <- paste(dbname,collapse=".")
+
+      # Finally, prepend the directories
+      # Force the file into ResultsDir/OutputDir
+      dbname <- file.path(Model$modelPath,Model$setting("ResultsDir"),Model$setting("OutputDir"),basename(dbname))
+
+      private$DBIConfig <- list(dbname=dbname)
+
+      private$DBIConnector <- new("DBIConnector",
+        .drv = private$DBIDriver,
+        .conn_args = private$DBIConfig
+      )
     }
   } else {
-    private$DBIDriver <- RSQLite::SQLite()
-  }
-  if ( "DBIConfig" %in% names(config) ) {
-    # presume DBIConfig has the full and correct set of parameters to call dbConnect
-    # We're not going attempt to do anything else to it here, except adjust dbname
-    #   if it exists for Timestamp (if it is present, which it probably shouldn't be)
-    private$DBIConfig <- config[["DBIConfig"]]
-  } else {
-    # SQLite will pre-package more stuff
-    if ( "Database" %in% names(config) ) {
-      dbname <- config[["Database"]]
-    } else {
-      dbname <- "SQLite"
-    }
-
-    # Force default extension if no explicit extension
-    # Also inject model name (and timestamp if set up) in appropriate places
-    dbname <- strsplit(dbname, "\\.")[[1]] # now a vector with the extension
-    if ( length(dbname) == 1 ) dbname <- append(dbname,"sqlite")
-    dbname[1] <- paste(Model$modelName,dbname[1],sep="_") # prepend model name
-    dbname <- c(paste(dbname[-length(dbname)],collapse="."),dbname[length(dbname)])
-    if ( ! is.null(self$Timestamp) ) {
-      if ( is.null(self$TimeSeparator) ) self$TimeSeparator="_"
-      dbname[1] <- paste(dbname[1],self$Timestamp,sep=self$TimeSeparator)
-    }
-    dbname <- paste(dbname,collapse=".")
-
-    # Finally, prepend the directories
-    # Force the file into ResultsDir/OutputDir
-    dbname <- file.path(Model$modelPath,Model$setting("ResultsDir"),Model$setting("OutputDir"),basename(dbname))
-
-    private$DBIConfig <- list(dbname=dbname)
+    # rehydrate private$DBIConnector
+    private$DBIConnector <- config$ReopenData
   }
 
-  private$DBIConnector <- new("DBIConnector",
-    .drv = private$DBIDriver,
-    .conn_args = private$DBIConfig
-  )
   self$open()
 }
 
@@ -1058,6 +1074,8 @@ VEConnection.DBI <- R6::R6Class(
         DBI::dbListTables(private$DBIConnection)
       ), collapse="\n")
     },
+    save        = function() return(private$DBIConnector),
+    
     # implementing methods
     nameTable = function(TableLoc) TableLoc$tableString(pathSep="_", tableSep="_"),
     createTable = ve.connection.dbi.createTable,
@@ -1210,5 +1228,5 @@ makeVEConnection <- function(Model,config=list(driver="csv"),reopen=FALSE) {
     writeLog(paste("Creating Driver for ",driverClass$classname),Level="info")
   }
   # Create new driver object using "config"
-  return ( driverClass$new(Model,config) )
+  return ( driverClass$new(Model,config,reopen) )
 }
