@@ -425,6 +425,7 @@ ve.results.extract <- function(
   }
   extractTables <- unique(selection[,c("Group","Table")])
   extractGroups <- unique(extractTables$Group)
+  browser()
 
   QueryPrep_ls <- self$queryprep()
   results <- list()
