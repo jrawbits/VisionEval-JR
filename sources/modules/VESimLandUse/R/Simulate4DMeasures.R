@@ -276,7 +276,6 @@ Simulate4DMeasuresSpecifications <- list(
     ),
     item(
       NAME = "D3bpo4",
-      FILE = "bzone_network_design.csv",
       TABLE = "Bzone",
       GROUP = "Year",
       TYPE = "double",

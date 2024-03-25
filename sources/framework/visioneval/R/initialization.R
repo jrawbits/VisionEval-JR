@@ -645,10 +645,18 @@ parseModuleCalls <- function( ModuleCalls_df, AlreadyInitialized=character(0), R
   # Results of Initialization in that case will already be in the Datastore
   for (Pkg in unique(setdiff(ModuleCalls_df$PackageName,AlreadyInitialized))) {
     PkgData <- data(package = Pkg)$results[,"Item"]
-    if ("InitializeSpecifications" %in% PkgData) {
+    # TODO: Make "Initialize" be named after its Package
+
+    initializeName <- "Initialize"
+    hasInitialize <- paste0(initializeName,"Specifications") %in% PkgData
+    if ( ! hasInitialize ) {
+      initializeName <- paste0(initializeName,ModuleCalls_df$PackageName)
+      hasInitialize <- paste0(initializeName,"Specifications" %in% PkgData
+    }
+    if ( hasInitialize ) { # add the Initialize (+ Pkg) module
       Add_df <-
       data.frame(
-        ModuleName = "Initialize",
+        ModuleName = initializeName,
         PackageName = Pkg,
         RunFor = "AllYears",
         RunYear = "Year",
