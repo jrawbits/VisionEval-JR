@@ -1,0 +1,17 @@
+Package: VEBase
+Type: Package
+Title: Bootstrap VisionEval with online load
+Version: 4.0.0
+Date: 2024-10-30
+Author: Jeremy Raw [aut, cre]
+Maintainer: Jeremy Raw <jeremy.raw@dot.gov>
+Copyright: None
+Description: Launch (installing as needed) the VisionEval environment
+License: file LICENSE
+Depends: R (>= 4.0.0)
+Suggests: VEModel
+Encoding: UTF-8
+VignetteBuilder: knitr
+Collate: 
+    'VisionEval.R'
+    'zzz.R'

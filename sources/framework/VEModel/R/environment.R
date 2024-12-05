@@ -93,7 +93,15 @@ ve.env$RunParam_ls <- list()
 #' @return an R environment "ve.env"
 #' @import visioneval
 #' @export
-runtimeEnvironment <- function() { ve.env }
+runtimeEnvironment <- function(ve.new.env=NULL) {
+  if ( ! is.null(ve.new.env) && is.environment(ve.new.env) ) {
+    if ( ! "RunParam_ls" %in% names(ve.new.env) ) {
+      ve.new.env$RunParam_ls <- get(ve.env$RunParam_ls,list())
+    }
+    ve.env <- ve.new.env # Intended to relay ve.env from VEBase which is loaded first in VE 4.0
+  }
+  ve.env
+}
 
 # Package defaults for VisionEval getRunParameter
 # Some of these are different from the framework defaults (e.g. ResultsDir).
@@ -154,8 +162,6 @@ loadRuntimeConfig <- function() {
   # ParamDir defaults to ve.runtime
   ve.env <- runtimeEnvironment()
   if ( is.null(ve.env$ve.runtime) ) setRuntimeDirectory() # VE_RUNTIME or getwd()
-  # TODO: load/build VE package manifest (for installModel, plus list of modules).
-  # buildPackageManifest() # file called .VE-packages.lst (hidden attribute like .REnviron).
   return( visioneval::loadConfiguration(ParamDir=ve.env$ve.runtime) )
 }
 
@@ -164,8 +170,9 @@ loadRuntimeConfig <- function() {
 
 #' Return runtime base RunParam_ls (loading it if not present)
 #'
-#' \code{getSetup} gets a subset of the current runParameters by name. It does NOT
-#' supply default values. It returns only the ones that are defined.
+#' \code{getSetup} gets a subset of the current runParameters by name. It does NOT supply default
+#' values. It returns only the ones that are defined. As a side effect, will create the package
+#' ve.env via loadRuntimeConfig.
 #'
 #' @param paramNames is a character vector of parameter names identifying a subset of runParameters
 #'   to retrieve. If not provided, return all defined parameters (but not any that are defaulted).

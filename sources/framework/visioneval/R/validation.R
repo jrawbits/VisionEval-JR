@@ -286,7 +286,7 @@ checkDataConsistency <- function(DatasetName, Data_, DstoreAttr_) {
   }
   #Check if character and SIZE is adequate
   if (typeof(Data_) == "character") {
-    MaxSize <- max(nchar(Data_))
+    MaxSize <- max(nchar(Data_),na.rm=TRUE)
     if (MaxSize > DstoreAttr_$SIZE) {
       Message <-
         paste0("Attempting to write character data of length (",

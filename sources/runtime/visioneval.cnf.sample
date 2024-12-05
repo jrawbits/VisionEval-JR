@@ -1,5 +1,5 @@
 // Default VisionEval run parameters file
-// This file is in JSON format
+// This file is in JSON format - change to (or also include) a YAML formatted file
 // Wrap everything in curly braces to create a single JSON object
 // The object has a series of attributes (names) which are are the configuration values
 //
@@ -7,7 +7,7 @@
 // Each parameter is described and listed with its default value
 // Alternate values are suggested in comments
 //
-// For you "old school VisionEvaluators", the only parameters currently nailed to initializeModel
+// For you "old school VisionEvaluators", the only parameter currently nailed to initializeModel
 //   is the DatastoreName parameter, which triggers loading a Datastore (the LoadDatastore flag
 //   is optional; it will be set TRUE if DatastoreName is empty).
 // Also, configuration files are "cascading", and parameters will be sought in the following

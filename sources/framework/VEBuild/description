@@ -1,0 +1,16 @@
+Package: VEBuild
+Type: Package
+Title: Build VisionEval Modules
+Version: 4.0.0
+Date: 2024-10-30
+Author: Jeremy Raw [aut, cre]
+Maintainer: Jeremy Raw <jeremy.raw@dot.gov>
+Copyright: None
+Description: Construct and manage VisionEval packages from source code
+License: file LICENSE
+Depends: R (>= 4.0.0)
+Suggests: VEModel
+Encoding: UTF-8
+VignetteBuilder: knitr
+Collate: 
+    'BuildModule.R'
