@@ -1,0 +1,18 @@
+# Set up and run VisionEval
+
+# Unload VEBase if already present
+if ( "package:VEBase" %in% search() ) detach("package:VEBase")
+unloadNamespace("VEBase")
+
+if ( file.exists("setup.R") {
+  source("setup.R")
+} else {
+  # Load the installation driver
+  if ( ! require(VEBase,quietly=TRUE) ) {
+    message("VisionEval loader VEBase is not available")
+    message("Please run:")
+    message("install.packages('VEBase',repos=c('https://visioneval.org/packages','https://cloud.r-project.org'))")
+  } else {
+    VEBase::startVisionEval()
+  }
+}

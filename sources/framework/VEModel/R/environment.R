@@ -8,8 +8,8 @@
 
 # The ve.env environment is accessed via VEModel::runtimeEnvironment.
 
-ve.env <- new.env()
-ve.env$RunParam_ls <- list()
+ve.env <- new.env()             # Supports standalone use of VEModel; in VE 4.0 it is replaced by VEBase:::ve.env
+ve.env$RunParam_ls <- list()    # In VE 4.0, this is copied into the VEBase environment (see runtimeEnvironment below)
 
 #ACCESS R ENVIRONMENT FOR MODEL RUN
 #==================================
@@ -90,15 +90,17 @@ ve.env$RunParam_ls <- list()
 #'   OutputDir/query_\%datetime\% (default "Measures_\%scenario\%_\%years\%_\%geography\%.csv")}
 #' }
 #'
+#' @param ve.new.env an environment to use in place of package built-in (default use VEModel:::ve.env)
 #' @return an R environment "ve.env"
 #' @import visioneval
 #' @export
 runtimeEnvironment <- function(ve.new.env=NULL) {
+  # Operates on VEModel:::ve.env
   if ( ! is.null(ve.new.env) && is.environment(ve.new.env) ) {
-    if ( ! "RunParam_ls" %in% names(ve.new.env) ) {
-      ve.new.env$RunParam_ls <- get(ve.env$RunParam_ls,list())
-    }
-    ve.env <- ve.new.env # Intended to relay ve.env from VEBase which is loaded first in VE 4.0
+    for (n in ls(ve.new.env, all.names=TRUE)) assign(n, get(n, ve.new.env),ve.env)
+  }
+  if ( ! "RunParam_ls" %in% ls(ve.env) ) {
+    assign("RunParam_ls",list(),envir=ve.env)
   }
   ve.env
 }

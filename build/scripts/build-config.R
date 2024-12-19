@@ -370,9 +370,9 @@ evalq(
     loc <- ve.cfg$Locations[[x]]
     subdir <- switch(
       loc$augment,
-      root    = "",
-      branch  = file.path(ve.branch),
-      version = file.path(ve.branch,this.R),
+      root    = loc$path,                             # external packages
+      branch  = file.path(ve.branch,loc$path),        # package source and documentation
+      version = file.path(ve.branch,loc$path,this.R), # version-specific sub-folders (ve-lib, runtime)
       ve.branch
     )
     assign(
@@ -380,17 +380,21 @@ evalq(
       normalizePath(
         file.path(
           get(loc$root),
-          subdir,
-          loc$path
+          subdir
         ),
         winslash="/",
         mustWork=FALSE
       ),
       pos=venv
     )
+    get(x,pos=venv)
   }
   invisible(sapply(locs.lst,FUN=makepath,venv=as.environment("ve.builder")))
 
+  if ( ! exists("ve.lib") ) {
+    stop("ve.lib must be defined in VE-config.yml")
+  }
+  
   # Create the locations
   # Packages and libraries are distinguished by R versions since the
   # R versions are sometimes hidden and we may want to use the same
@@ -398,10 +402,6 @@ evalq(
 
   for ( loc in locs.lst ) dir.create( get(loc), recursive=TRUE, showWarnings=FALSE )
   ve.zipout <- dirname(ve.runtime) # Installer zip files always go next to ve.runtime
-
-  if ( ! exists("ve.lib") ) {
-    stop("ve.lib must be defined in VE-config.yml")
-  }
 
   # Convey key file locations to the 'make' environment
   ve.runtime.config <- file.path(ve.logs,"dependencies.RData")

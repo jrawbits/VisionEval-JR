@@ -61,6 +61,15 @@ Components:
       - DBI
       - RSQLite
       - data.table
+  VEBase:
+    Type: framework
+    Path: sources/framework
+    Test:
+      Group: 0
+      Script: test.R
+    CRAN:
+      - knitr
+
 #    Github:
 #      - anders-biostat/jrc
 #    To build properly, need to do externals after creating ve.lib!

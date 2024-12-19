@@ -18,18 +18,19 @@ env.loc <- if ( ! "ve.env" %in% search() ) {
   as.environment("ve.env")
 }
 
-# Set up the load directory
-
+# Set up the load directory (where we started from)
+# Used to re-start VE if se shift to a new directory
 if ( ! exists("ve.load.dir",envir=env.loc,inherits=FALSE ) ) {
   assign("ve.load.dir",getwd(),envir=env.loc)
 }
+# Unclear if the following was ever used in practice
 if ( env.loc$ve.load.dir != getwd() ) {
   message("Loading from other directory: ",ve.load.dir)
 }
 
 # Check the R version (redundant on Windows, but saves having to
 # have a separate VisionEval.R for Linux/Mac)
-
+# VE 4.0: this test is irrelevant. We'll use whatever R loaded and ran VEBase
 local({
   ve.incomplete <- "VisionEval environment is unavailable; please re-install."
   r.version = file.path(ve.load.dir,"r.version")
