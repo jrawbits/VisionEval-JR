@@ -29,7 +29,7 @@ Locations: # "Root" elements are variables defined in "Roots" section
     ve.repository:    # Required
         root: ve.output
         augment: version
-        path: pkg-ve-repo
+        path: ve-pkg-repo
         description: src/binary repo built from VE packages
     ve.runtime:       # Required
         root: ve.output
