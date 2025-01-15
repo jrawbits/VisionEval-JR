@@ -14,7 +14,6 @@ message("========== BUILD INSTALLER BASE (.zip files) ==========")
 # Need the ".zip" extension?
 build.date <- Sys.Date()
 
-ve.zipout <- dirname(ve.runtime)
 installer.base   <- paste0(file.path(ve.zipout,paste0("VE-",ve.version,"-Runtime-R",this.R,"_",build.date)),".zip")
 cat("Building base installer...")
 

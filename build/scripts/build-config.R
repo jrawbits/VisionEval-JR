@@ -401,7 +401,6 @@ evalq(
   # VE-config.yml with different versions of R (e.g. 3.5.1 and 3.5.2)
 
   for ( loc in locs.lst ) dir.create( get(loc), recursive=TRUE, showWarnings=FALSE )
-  ve.zipout <- dirname(ve.runtime) # Installer zip files always go next to ve.runtime
 
   # Convey key file locations to the 'make' environment
   ve.runtime.config <- file.path(ve.logs,"dependencies.RData")

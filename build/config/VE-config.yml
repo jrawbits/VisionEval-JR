@@ -52,6 +52,11 @@ Locations: # "Root" elements are variables defined in "Roots" section
         augment: branch  # Previously "version"
         path: src
         description: build source packages here (plus tests, if requested)
+    ve.zipout:        # Required
+        root: ve.output
+        augment: branch
+        path: installers
+        description: location for installers for various R versions
     ve.docs:          # Required
         root: ve.output
         augment: branch
