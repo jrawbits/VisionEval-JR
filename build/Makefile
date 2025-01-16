@@ -189,6 +189,10 @@ $(VE_MAKEVARS) $(VE_RUNTIME_CONFIG): scripts/build-config.R $(VE_CONFIG) R-versi
 	: Build directory = $(VE_BUILD)
 	$(RSCRIPT) scripts/build-config.R
 
+# Test function for dependencies
+tester:
+	$(RSCRIPT) scripts/build-tester.R
+
 # This rule and the following one rebuild the repository of dependencies for VE_R_VERSION
 # Will skip if repository.built is up to date with VE_Config and the scripts themselves
 repository: repository-reset repository-build
