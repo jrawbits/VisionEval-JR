@@ -465,6 +465,7 @@ evalq(
   # ve.repository hosts the built VE packages
   ve.deps.url <- paste("file:", ve.dependencies, sep="")
   ve.repo.url <- paste("file:", ve.repository, sep="")
+  ve.publish.url <- paste("file:", ve.publish, sep="")
 
   # Load the Components
   cat("Loading Components...\n")
@@ -673,6 +674,7 @@ evalq(
     , "BioC.mirror"
     , "ve.deps.url"
     , "ve.repo.url"
+    , "ve.publish.url"
     , "pkgs.db"
     , "pkgs.CRAN"
     , "pkgs.BioC"

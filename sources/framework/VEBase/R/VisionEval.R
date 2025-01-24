@@ -5,7 +5,8 @@
 ve.env <- new.env()
 
 #' Called from VEModel to link to VEBase environment
-#' Items set in the VEBase environment such as ve.home are propagated to VEModel after everything is installed
+#' Items set in the VEBase environment such as ve.home are propagated to VEModel after everything
+#' is installed. This function is used by VEModel.
 #' @return Returns the VEBase environment
 #' @export
 getRuntimeEnvironment <- function() ve.env
@@ -32,7 +33,8 @@ getRuntimeEnvironment <- function() ve.env
 #' @param repos Character vector of additional non-standard repository URLs from which to initialize VE packages
 #' @param update If TRUE, update ve-lib from repository locations (default); otherwise use existing ve-lib as-is
 #' @param overwrite If TRUE, force rewrite of startup files in VE_RUNTIME, otherwise continue if they exist
-#' @param ve.lib.name Character string with name of ve-lib to placed in VE_HOME (default "ve-lib")
+#' @param ve.lib.name Character string with name of ve-lib within VE_HOME (default "ve-lib")
+#' @param ve.pkg.name Character vector with names of optional local package repositories that may exist in VE_HOME
 #' @param ve.repos.list.name Character string with name of file in which to seek additional package repository URLs (CRAN-like)
 #' @return location of VE_RUNTIME, invisibly
 #' @import utils tcltk
@@ -40,25 +42,26 @@ getRuntimeEnvironment <- function() ve.env
 startVisionEval <- function(
   ve.home=NULL,ve.runtime=NULL,
   repos=NULL,update=TRUE,overwrite=FALSE,
-  ve.lib.name="ve-lib",ve.repos.list.name="ve-repos.cnf"
+  ve.lib.name="ve-lib",
+  ve.pkg.name=c("ve-pkg","ve-dependencies"),
+  ve.repos.list.name="ve-repos.cnf"
 ) {
 
-  # Uncomment and rebuild to enable more detailed messages during startup (was used during development)
-  ve.env$Debug <- TRUE
+  # Set VE_DEBUG from the environment (enables more detailed error messages)
+  ve.env$Debug <- "TRUE" == toupper(Sys.getenv("VE_DEBUG","FALSE"))
 
-  # Identify location for VE_HOME (contains ve-lib, and optionally ve-pkg-repo for local repository installation)
+  # Identify location for VE_HOME (contains ve-lib, and optionally ve-pkg for local repository installation)
   if ( missing(ve.home) || is.null(ve.home) ) {
     ve.home <- Sys.getenv("VE_HOME",getwd())
   }
   if ( missing(ve.runtime) ) ve.runtime <- NULL
 
-  # Set up VE_HOME
-  # Check if VE_HOME is already set up
+  # Check if VE_HOME is already set up (contains ve-lib)
   ve.home.contents <- dir(ve.home)
-    valid.ve.home <- length(ve.home.contents) == 0 || any( c(ve.lib.name,ve.repos.list.name) %in% ve.home.contents )
+  valid.ve.home <- length(ve.home.contents) == 0 || any( c(ve.lib.name,ve.pkg.name,ve.repos.list.name) %in% ve.home.contents )
 
   # If not set up
-  if ( length(ve.home.contents) > 0 && ! ve.lib.name %in% ve.home.contents ) { # Can only use current directory as VE_HOME if it is entirely empty
+  if ( ! valid.ve.home ) { # Cannot use directory as VE_HOME by default if it 
     message("VE_HOME directory is not available: ",ve.home)
     message("VE_HOME must be empty or have 've-lib' folder present.")
     # NOTE: ve.home will be offered in the following directory browse dialogs and if the user just re-selects that

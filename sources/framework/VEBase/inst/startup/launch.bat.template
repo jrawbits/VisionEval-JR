@@ -1,3 +1,5 @@
 @echo off
-if "%R_HOME%" == "" set R_HOME=R_HOME_DEFAULT
+set R_HOME_BASE=R_HOME_DEFAULT
+rem Detect R version change by comparing R_HOME_DEFAULT to R.home()
+if "%R_HOME%" == "" set R_HOME=%R_HOME_BASE%
 start %R_HOME%\bin\x64\RGui.exe --no-save

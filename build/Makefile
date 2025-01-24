@@ -59,7 +59,7 @@ export VE_RUNTIME_CONFIG
 	configure-clean repository-clean lib-clean modules-clean runtime-clean docs-clean\
 	clean build-clean all-clean dev-clean clean-clean\
 	installer-clean installer-bin-clean installer-full-clean\
-	configure-reset repository-reset lib-reset modules-reset runtime-reset docs-reset\
+	configure-reset repository-reset lib-reset modules-reset publish-reset runtime-reset docs-reset\
 	reset build-reset all-reset dev-reset clean-reset docs-reset\
 	installer-reset installer-bin-reset installer-full-reset
 
@@ -121,6 +121,9 @@ lib-reset:
 
 modules-reset:
 	[[ -n "$(VE_LOGS)" ]] && rm -f "$(VE_LOGS)"/modules.built
+
+publish-reset:
+	[[ -n "$(VE_LOGS)" ]] && rm -f "$(VE_LOGS)"/publish.built
 
 runtime-reset:
 	[[ -n "$(VE_LOGS)" ]] && rm -f "$(VE_LOGS)"/runtime.built
@@ -225,6 +228,16 @@ modules-build: $(VE_LOGS)/modules.built
 $(VE_LOGS)/modules.built: $(VE_LOGS)/repository.built $(VE_LOGS)/velib.built scripts/build-modules.R
 	$(RSCRIPT) scripts/build-modules.R
 	@touch $(VE_LOGS)/modules.built
+
+# This rule will publish built modules to the ve.publish online repository clone
+# It won't happen unless explicitly called as 'make publish'
+publish: $(VE_LOGS)/modules.built publish-build
+
+publish-build: $(VE_LOGS)/publish.built
+
+$(VE_LOGS)/publish.built: $(VE_LOGS)/modules.built scripts/build-online-packages.R
+	$(RSCRIPT) scripts/build-online-packages.R
+	@touch $(VE_LOGS)/publish.built
 
 # This rule and the following one will (re-)copy out of date scripts and models to the runtime
 # We'll almost always "build" the runtime, but only out-of-date stuff gets built

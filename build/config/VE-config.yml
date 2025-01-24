@@ -4,6 +4,7 @@ Description: Include a parallel draw-down of the wiki (and use VE-wiki-component
 Roots:                              # Require ve.root and ve.output at a minimum
     ve.root: ..                     # relative to "build" folder (should be git root for VisionEval-dev)
     ve.docbook: ../../VisionEval-docs  # path to clone of VisionEval-docs repository
+    ve.pkg.online: ../../VisionEval-Packages # local clone of drat repository for deployment
 Components:                         # Where to find component configurations
     ve.root:
         Root: ve.installer          # refers to ve.root/build
@@ -27,21 +28,21 @@ Locations: # "Root" elements are variables defined in "Roots" section
                           # "version" uses "root + branch + (R)version + path"
         path: dependencies-repo
         description: repo for downloaded and built external dependencies
-    ve.runtime:       # Required
-        root: ve.output
-        augment: version
-        path: runtime
-        description: local runtime environment + base for installers
-    ve.pkgs:          # Required
-        root: ve.output
-        augment: branch
-        path: ve-pkg
-        description: copy src tree here from ve.dependencies + ve.repository for full installer for particular R version
     ve.repository:    # Required
         root: ve.output
         augment: branch
         path: ve-pkg-repo
         description: src/binary repo built from VE packages
+    ve.publish:       # Required for publishing to drat/github
+        root: ve.pkg.online
+        augment: root
+        path: docs
+        description: location to copy VE packages for online deployment
+    ve.pkgs:          # Required
+        root: ve.output
+        augment: branch
+        path: ve-pkg
+        description: copy src tree here from ve.dependencies + ve.repository for full installer for particular R version
     ve.lib:           # Required
         root: ve.output
         augment: version
@@ -52,6 +53,11 @@ Locations: # "Root" elements are variables defined in "Roots" section
         augment: branch  # Previously "version"
         path: src
         description: build source packages here (plus tests, if requested)
+    ve.runtime:       # Required
+        root: ve.output
+        augment: version
+        path: runtime
+        description: local runtime environment + base for installers
     ve.zipout:        # Required
         root: ve.output
         augment: branch
