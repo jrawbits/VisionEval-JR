@@ -35,7 +35,9 @@ getRuntimeEnvironment <- function() ve.env
 #' @param overwrite If TRUE, force rewrite of startup files in VE_RUNTIME, otherwise continue if they exist
 #' @param ve.lib.name Character string with name of ve-lib within VE_HOME (default "ve-lib")
 #' @param ve.pkg.name Character vector with names of optional local package repositories that may exist in VE_HOME
-#' @param ve.repos.list.name Character string with name of file in which to seek additional package repository URLs (CRAN-like)
+#' @param ve.repos.list.name Character string with name of file inwhich to seek additional package repository URLs (CRAN-like)
+#' @param ve.setup Character string with name of R library for simple bootstrap setup (option to
+#'   delete after installation is complete)
 #' @return location of VE_RUNTIME, invisibly
 #' @import utils tcltk
 #' @export
@@ -44,8 +46,12 @@ startVisionEval <- function(
   repos=NULL,update=TRUE,overwrite=FALSE,
   ve.lib.name="ve-lib",
   ve.pkg.name=c("ve-pkg","ve-dependencies"),
-  ve.repos.list.name="ve-repos.cnf"
+  ve.repos.list.name="ve-repos.cnf",
+  ve.setup.lib="ve-setup"
 ) {
+  ve.setup.script <- file.path(getwd(),"VE-Setup.R")   # for cleaning up startup files later
+  ve.setup.lib.path <- file.path(getwd(),ve.setup.lib)
+  ve.pkg.repo <- "pkg-ve-repo" # from VEBuild makeInstaller - local set of packages
 
   # Set VE_DEBUG from the environment (enables more detailed error messages)
   ve.env$Debug <- "TRUE" == toupper(Sys.getenv("VE_DEBUG","FALSE"))
@@ -57,48 +63,58 @@ startVisionEval <- function(
   if ( missing(ve.runtime) ) ve.runtime <- NULL
 
   # Check if VE_HOME is already set up (contains ve-lib)
-  ve.home.contents <- dir(ve.home)
-  valid.ve.home <- length(ve.home.contents) == 0 || any( c(ve.lib.name,ve.pkg.name,ve.repos.list.name) %in% ve.home.contents )
+  existing.libs <- character(0) # Check below for existence of VE_LIB or VE_SETUP_LIB
+  repeat {
+    ve.home.contents <- dir(ve.home)
+    valid.ve.home <- (
+      ( empty.home <- length(ve.home.contents) == 0 ) ||
+      any( existing.libs <- c(VE_LIB=ve.lib.name,VE_SETUP_LIB=ve.setup.lib) %in% ve.home.contents )
+    )
 
-  # If not set up
-  if ( ! valid.ve.home ) { # Cannot use directory as VE_HOME by default if it 
-    message("VE_HOME directory is not available: ",ve.home)
-    message("VE_HOME must be empty or have 've-lib' folder present.")
-    # NOTE: ve.home will be offered in the following directory browse dialogs and if the user just re-selects that
-    # directory, it will be used anyway, creating ve-lib at that location.
-    caption <- "Select directory for VisionEval code installation (VE_HOME)"
-    ve.home <- if (exists('utils::choose.dir')) { # Won't exist on non-Windows platforms
-      utils::choose.dir(caption = caption)
-    } else {
-      tcltk::tk_choose.dir(getwd(),caption = caption)
+    # If not set up
+    if ( valid.ve.home && ! empty.ve.home ) {
+      valid.ve.home <- askYesNo(paste("Install VisionEval in",ve.home,"?"))
+      if ( is.na(valid.ve.home) ) {
+        message("VisionEval installation was cancelled.")
+        message("Please select a suitable VisionEval home directory")
+        break # with valid.ve.home set to NA
+      }
     }
-    if ( ! is.na(ve.home) && dir.exists(ve.home) ) {
-      message("Setting up VE_HOME as ",ve.home)
-    } else {
-      stop("No usable location for VE_HOME: ",ve.home)
+    if ( ! valid.ve.home ) {
+      # NOTE: ve.home will be offered in the following directory browse dialogs and if the user just re-selects that
+      # directory, it will be used anyway, creating ve-lib at that location.
+      caption <- "Select directory for VisionEval code installation (VE_HOME)"
+      ve.home <- if (exists('utils::choose.dir')) { # Won't exist on non-Windows platforms
+        utils::choose.dir(caption = caption)
+      } else {
+        tcltk::tk_choose.dir(getwd(),caption = caption)
+      }
+      if ( ! is.na(ve.home) && dir.exists(ve.home) ) { # NA if dialog was cancelled
+        message("Setting up VE_HOME as ",ve.home)
+      } else {
+        message("No location selected for VE_HOME:")
+        valid.ve.home <- NA
+        break # with valid.ve.home set to NA
+      }
     }
   }
+  if ( is.na(valid.ve.home) ) stop("Installation unsuccesful; Re-run startVisionEval()")
 
   # Set up VE_RUNTIME
   if ( is.null(ve.runtime) ) {
     ve.runtime <- Sys.getenv("VE_RUNTIME",as.character(NA))
   }
-  if ( runtime.missing <- ! dir.exists(ve.runtime) ) {
-    message("Specified VE_RUNTIME directory does not exist: ",ve.runtime)
-    caption <- "Select directory for VisionEval models installation (VE_RUNTIME)"
+  if ( runtime.missing <- ( is.na(ve.runtime) || ! dir.exists(ve.runtime) ) ) {
+    caption <- "Select directory for VisionEval 'models' folder (VE_RUNTIME)"
     ve.runtime <- if (exists('utils::choose.dir')) { # Won't exist on non-Windows platforms
-      utils::choose.dir(caption = caption)
+      utils::choose.dir(default=ve.home,caption = caption)
     } else {
-      tcltk::tk_choose.dir(getwd(),caption = caption)
+      tcltk::tk_choose.dir(default=ve.home,caption = caption)
     }
-    if ( ! is.na(ve.runtime) && dir.exists(ve.runtime) ) {
-      message("Setting up VE_RUNTIME as ",ve.runtime)
-    } else {
-      ve.runtime <- as.character(NA) # fall through to set ve.runtime to be ve.home
+    if ( is.na(ve.runtime) || ! dir.exists(ve.runtime) ) {
+      ve.runtime <- ve.home
     }
-  }
-  if ( is.na(ve.runtime) ) { # user cancelled the dialog
-    ve.runtime <- ve.home
+    message("Setting up VE_RUNTIME as ",ve.runtime)
   }
 
   # Put important parameters into VEBase:::ve.env for use in later functions, and relayed to VEModel
@@ -106,9 +122,7 @@ startVisionEval <- function(
   ve.env$ve.home <- ve.home
   ve.env$ve.repos.list.name = ve.repos.list.name # See VEBase::getRepositories function 
   Sys.setenv(VE_HOME=ve.home,VE_RUNTIME=ve.runtime) # Somewhat redundantly, also save to operating system environment
-  # NOTE: ve.setup below will install VE_HOME and VE_RUNTIME into the .Renviron startup file
-
-  # Prepare to possibly reinstall or update VEModel and visioneval
+  # NOTE: ve.setup below will also save VE_HOME and VE_RUNTIME into the .Renviron startup file
 
   # Clear VEModel if already present
   if ( "package:VEModel" %in% search() ) detach("package:VEModel")
@@ -120,10 +134,12 @@ startVisionEval <- function(
 
   # Set up ve-lib (R library location for installed VE packages and dependencies)
   # The same library location will hold sub-directories for the major/minor R version that is
-  # running this installation.x
-  ve.env$this.R <- paste(R.version[c("major","minor")],collapse=".")
+  # running this installation.
+  venv$ve.pkg.repo <- file.path(ve.home,ve.pkg.repo) # in case of local package installation
+  ve.env$this.R <- paste(c(R.version["major"],tools::file_path_sans_ext(R.version["minor"])),collapse=".")
   ve.env$ve.lib <- file.path(ve.home,ve.lib.name,ve.env$this.R)
   if ( ! dir.exists(ve.env$ve.lib) ) dir.create(ve.env$ve.lib,recursive=TRUE)
+  .libPaths(ve.env$ve.lib) # will add ve-lib if it's not present; ve.setup.lib may remain there harmlessly
 
   # Set the installation type based on the OS
   # Not using the default of "both" simplifies online install so we can just supply the relevant contriburl rather than
@@ -132,15 +148,15 @@ startVisionEval <- function(
     "binary"
   } else {
     # Used for Mac or Linux installations (or any OS for which R and RTools are available)
-    # Probably we could compile Mac binaries, but that would eventually require doing a package build with repository
-    # push for each supported Mac binary version. We don't currently have enough Mac users to justify doing that.
+    # Probably we could compile Mac binaries, but we're currently not building and pushing those
+    # We don't currently have enough Mac users to justify doing that.
     "source"
   }
 
   # Initialize the VE installed package library
   # Installs missing packages or updates them from the provided CRAN-like repositories
+  # Note that VEBase won't update until we re-run the standard .Rprofile that ve.setup installs
   ve.init(lib.loc=ve.env$ve.lib,repos=repos,update=update)
-  .libPaths(ve.env$ve.lib) # Update .libPaths
 
   # check and construct startup files in VE_RUNTIME and (optionally) VE_HOME if the latter is different from VE_RUNTIME
   # Configure ve.runtime (.Renviron etc.)
@@ -148,15 +164,28 @@ startVisionEval <- function(
 
   # Attempt to reload VEModel and fail if it can't be loaded
 
-  # NOTE: Loading VEModel like this will generate a "Note" when building the package, but we still need to do this since
+  # NOTE: Loading VEModel like this will generate a "Note" when building VEBase itself, but we still need to do this since
   #   VEModel needs to be on the package search path in order use VisionEval. Because the require happens late in the
-  #   startup, there is little chance of causing problems with unepxected function calls later on (see the R manual
-  #   section suggested in the Note to understand the risk, e.g. if VEModel were to redefine a function from VEBAse)
+  #   startup, there is little chance of causing problems with unexpected function calls later on (see the R manual
+  #   section suggested in the Note to understand the risk, e.g. if VEModel were to redefine a function from VEBase)
   if ( !require("VEModel") ) {
     stop("VEModel is still missing; re-run ve.init()")
   }
 
+  # Offer to clean up VE-Setup.R and ve.setup.lib
+  seek.setup <- ve.setup.script
+  seek.setup <- if ( ! ve.setup.lib.path %in% .libPaths() ) c(seek.setup,ve.setup.lib.path)
+  if ( 0 < length( setup.files <- seek.setup[file.exists(seek.setup)] ) ) {
+    message("Unnecessary bootstrap setup files are present:")
+    print(as.character(setup.files))
+    remove.setup <- readline("Remove these setup files? (Y/n)")
+    if ( grepl("(^[Yy])|(^$)",remove.setup) ) {
+      unlink( setup.files, recursive=TRUE)
+    }
+  }
+
   # Complete VEModel setup (using parameters like ve.home and ve.runtime defined in ve.env)
+  .libPaths(ve.env$ve.lib) # Update .libPaths
   if ( "package:VEModel" %in% search() ) {
     message("Welcome to VisionEval 4.0!")
     VEModel::runtimeEnvironment(ve.env)             # point VEModel to the VEBase environment
@@ -191,7 +220,7 @@ checkVE <- function(lib.loc=NULL) {
 #' must have names that start with "VE", and they must be available for the current R version (or as source).
 #' @param repos A character vector of additional CRAN-like repository URLs for VE packages
 #' @param use.default If TRUE (default), Look for "built-in" VE repositories (including
-#'   in VE_HOME/ve-pkg-repos for offline installation)
+#'   in pkg-ve-repo for offline installation)
 #' @param offline If TRUE, only look for the local VE_HOME/ve-pkg-repos
 #' @param ve.home path to VE_HOME; if not provided or NULL, look in VEBase::getRuntimeEnvironment()
 #' @return character vector of CRAN-like repositories from which to install or update VE packages
@@ -203,13 +232,8 @@ getRepositories <- function(repos=NULL, use.default=TRUE, offline=TRUE, ve.home=
   # Set up default repositories (local or online)
   search.repos <- character(0)
   if ( isTRUE(use.default) ) {
-    if ( file.exists( offline.repos <- file.path(ve.home,"/ve-pkg-repos") ) ) {
-      search.repos <- c(search.repos,paste0("file:",offline.repos))
-    }
-    if ( isFALSE(offline) ) {
-      # NOTE: this repository doesn't yet exist (January 2025), pending resolution of storage location
-      # search.repos <- c(search.repos,"https://packages.visioneval.org")
-      stop("Online installation is not supported yet, pending creation of https://packages.visioneval.org")
+    if ( file.exists( venv$ve.pkg.repo ) ) {
+      search.repos <- c(search.repos,paste0("file:",venv$ve.pkg.repo))
     }
   }
 
@@ -217,16 +241,20 @@ getRepositories <- function(repos=NULL, use.default=TRUE, offline=TRUE, ve.home=
   # Should be a text file with one CRAN-like URL per line
   userfile.repos.file <- file.path(ve.home,ve.env$ve.repos.list.name)
   if ( file.exists(userfile.repos.file) ) {
-    userfile.repos <- readLines(userfile.repos.file)
+    userfile.repos <- c(grep("^\\s*#\\s*",readLines(userfile.repos.file),invert=TRUE,value=TRUE),search.repos)
+    # the contents of ve-repos.cnf is one url per line suitable for use with install.packages or update.packages
+    # lines can be commented out if their first non-blank character is a # (hash or pound) symbol
     if ( length(userfile.repos) > 0 ) {
       search.repos <- c( userfile.repos, search.repos )
     }
   }
 
   # Add any repos provided as arguments to this function (ahead of all the others)
+  # Repos is a character vector of fully-formed CRAN-like repository URLs from which to install VE package
   if ( is.character(repos) ) {
     search.repos <- c( repos, search.repos )
   }
+  search.repos <- grep("^\\s*$",search.repos,invert=TRUE,value=TRUE) # Keep only non- blank lines
   if ( length(search.repos) == 0 ) {
     message("No VisionEval repositories available.")
     stop("Minimally need either local VE_HOME/ve-pkg-repos or online https://packages.visioneval.org")
@@ -249,7 +277,7 @@ packageNames <- function(available.matrix) available.matrix[,"Package"] # also w
 # It returns an avaialble.package matrix
 installed.packages.VE <- function(lib.loc) {
   installed <- installed.packages(lib.loc=lib.loc)
-  if ( !is.null(installed) ) {
+  if ( ! is.null(installed) ) {
     inst.names <- grepl("^VE",packageNames(installed))
     installed <- installed[grepl("^VE",packageNames(installed)),]
   }
@@ -258,7 +286,7 @@ installed.packages.VE <- function(lib.loc) {
 
 # Returns an available.packages matrix that filters the packages available at
 # repos.list looking for packages that are named "VE..."
-# Eventually, look for VEModels or VEModules entries in each Package DESCRIPTION
+# Eventually, could also or instead look for VEModels or VEModules entries in each Package DESCRIPTION
 available.packages.VE <- function(repos.list) {
   available.list <- NULL
   for ( repo in repos.list ) {
@@ -409,6 +437,7 @@ startup.files <- c(
   ".Renviron",
   ".Rprofile",
   "launch.bat",
+  "visioneval.cnf.sample",
   "VisionEval.Rproj",
   "r.version"
 )
@@ -530,6 +559,7 @@ ve.setup <- function(ve.home,ve.runtime,setupHome=FALSE,overwrite=FALSE) {
       file.copy(system.file("startup/Rprofile.default",package="VEBase",mustWork=TRUE),file.path(location,".Rprofile"))
     }
     file.copy(system.file("startup/VisionEval.Rproj",package="VEBase",mustWork=TRUE),location)
+    file.copy(system.file("startup/visioneval.cnf.sample",package="VEBase",mustWork=TRUE),location)
   }
     
   invisible(ve.runtime)

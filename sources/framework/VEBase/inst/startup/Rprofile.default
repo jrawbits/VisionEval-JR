@@ -1,20 +1,29 @@
 # Set up and run VisionEval
 
-# Unload VEBase if already present
-if ( "package:VEBase" %in% search() ) detach("package:VEBase")
-unloadNamespace("VEBase")
+# Unload VE framework if already present to allow update
+for ( ve.package in c("VEBase","VEModel","visioneval") ) {
+  unloadNamespace(ve.package) # no error if package namespace not loaded; will detach if package is attached (on search path)
+}
 
 if ( file.exists("setup.R") {
-  source("setup.R")       # 4.x setup from VEBuild
-} else if file.exists("VisionEval.R") {
-  source("VisionEval.R")  # 3.x setup from installer runtime
+  source("setup.R")       # 4.x bootstrap setup from VEBuild makeInstaller
 } else {
+  # Update visioneval
+  # Find usable repositories
+  ve.repos <- "https://packages.visioneval.org"
+  if ( file.exists("ve-repos.cnf") ) {
+    ve.repos <- c(grep("^\\s*#\\s*",readLines("ve-repos.cnf"),invert=TRUE,value=TRUE),ve.repos)
+  } # the contents of ve-repos.cnf is one url per line suitable for use with install.packages or update.packages
+  ve.repos <- c(ve.repos,"https://cloud.r-project.org')
+  update.packages(lib.loc=.libPaths()[1],repos=ve.repos) # Will prompt user to update all out of date packages, includng VEBase itself
+  # .libPaths()[1] will be first library from R_LIBS_USER
+
   # Load the installation driver (bare) into whatever user-writable R library exists
   if ( ! require(VEBase,quietly=TRUE) ) {
     message("VisionEval loader VEBase is not available")
     message("Please run:")
     message("install.packages('VEBase',repos=c('https://packages.visioneval.org','https://cloud.r-project.org'))")
   } else {
-    VEBase::startVisionEval()
+    "VEBase::startVisionEval()"
   }
 }
