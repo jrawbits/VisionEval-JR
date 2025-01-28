@@ -1,3 +1,12 @@
 # Add alternate package installation repositories
-# jrawbits at github is the test repository
-https://jrawbits.github.io/VisionEval-Packages
+https://visioneval.github.io/VisionEval-Packages
+https://packages.visioneval.org
+# jrawbits at github is the test online repository
+# https://jrawbits.github.io/VisionEval-Packages
+# You can also set VE_REPOS environment variable to an alternate config fle to use a locally built repo
+# Put the following uncommented line in ve-repos-dev.cnf
+# file:N:/Git-Repos/VisionEval-Built-4.0/built/VE-4.0/ve-pkg-repo
+# Then add this line to .Renviron:
+# VE_REPOS=ve-repos-dev.cnf
+# The startup will ten use ve-repos-dev.cnf rather than ve-repos.cnf
+

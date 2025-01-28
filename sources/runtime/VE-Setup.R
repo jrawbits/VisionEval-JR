@@ -9,14 +9,15 @@ if ( dir.exists(lib.loc ) ) unlink(lib.loc,recursive=TRUE)
 dir.create(lib.loc,recursive=TRUE) # recursive won't give error if directory still exists...
 
 # Default repository list
-ve.repos <- "https://packages.visioneval.org"
+ve.repos <- c("https://packages.visioneval.org","https://cloud.r-project.org")
+local.repos <- Sys.getenv("VE_REPOS","ve-repos.cnf") # Override for development
 if ( file.exists("ve-repos.cnf") ) {
   ve.repos <- c(grep("^\\s*#\\s*",readLines("ve-repos.cnf"),invert=TRUE,value=TRUE),ve.repos)
 } # the contents of ve-repos.cnf is one url per line suitable for use with install.packages or update.packages
 # The first URL in ve-repos.cnf will be checked first, then the rest
 # in order, followed finally by the online default URL
 
-# Check default packages
+# Check that VEBase is up to date
 inst.pkgs <- utils::installed.packages(lib.loc=lib.loc)
 if ( "VEBase" %in% inst.pkgs[,"Package"] ) {
   if ( "VEBase" %in% old.packages(lib.loc=lib.loc,repos=ve,repos)[,"Package"] ) {
@@ -26,8 +27,5 @@ if ( "VEBase" %in% inst.pkgs[,"Package"] ) {
   utils::install.packages("VEBase",lib=lib.loc,repos=ve.repos) # "file:N:/Git-Repos/VisionEval-built-4.0/built/VE-4.0/ve-pkg-repo"
 }
 
-.libPaths(lib.loc)
-# if ( require(VEBase,quietly=TRUE) ) VEBase::startVisionEval() else stop("VEBase is still unavailable")
-if ( require(VEBase,quietly=TRUE) ) {
-  message("Would run VEBase::startVisionEval()\n")
-} else stop("VEBase is still unavailable")
+# Load and run VisionEval
+if ( require(VEBase,lib.loc=lib.loc,quietly=TRUE) ) VEBase::startVisionEval() else stop("VEBase is still unavailable")
