@@ -131,27 +131,28 @@ if ( length(copy.paths) > 0 ) {
   }
 }
 
-cat("Model sources...\n")
-# NOTE: as of "Next Gen" 2022, probably only copies a Readme.md telling the user
-# to use VEModel::installModel to populate the "models" directory.
-# We don't need the readme: the standard runtime script (sources/runtime/VisionEval.R) will create
-# the "models" directory if it does not exists.
-copy.models <- pkgs.db[pkgs.model,c("Root","Path","Package")]
-copy.paths <- file.path(copy.models$Root, copy.models$Path, copy.models$Package)
-model.path <- file.path(ve.runtime,"models")
-if ( length(copy.paths) > 0 ) {
-  any.newer <- FALSE
-  for ( f in seq_along(copy.paths) ) {
-    target <- file.path(model.path,copy.models$Package[f])
-    newer <- newerThan(copy.paths[f], target)
-    any.newer <- any( any.newer, newer )
-  }
-  if ( any.newer ) {
-    cat(paste("Copying Model: ", copy.paths),sep="\n")
-    dir.create( model.path, recursive=TRUE, showWarnings=FALSE )
-    invisible(file.copy(copy.paths, model.path, recursive=TRUE))
-  } else {
-    cat("Model files are up to date.\n")
-  }
-}
+# Removed models copyint from VE 4.0. VEModel will create the models directory in VE_RUNTIME as it starts
+# cat("Model sources...\n")
+# # NOTE: as of "Next Gen" 2022, probably only copies a Readme.md telling the user
+# # to use VEModel::installModel to populate the "models" directory.
+# # We don't need the readme: the standard runtime script (sources/runtime/VisionEval.R) will create
+# # the "models" directory if it does not exists.
+# copy.models <- pkgs.db[pkgs.model,c("Root","Path","Package")]
+# copy.paths <- file.path(copy.models$Root, copy.models$Path, copy.models$Package)
+# model.path <- file.path(ve.runtime,"models")
+# if ( length(copy.paths) > 0 ) {
+#   any.newer <- FALSE
+#   for ( f in seq_along(copy.paths) ) {
+#     target <- file.path(model.path,copy.models$Package[f])
+#     newer <- newerThan(copy.paths[f], target)
+#     any.newer <- any( any.newer, newer )
+#   }
+#   if ( any.newer ) {
+#     cat(paste("Copying Model: ", copy.paths),sep="\n")
+#     dir.create( model.path, recursive=TRUE, showWarnings=FALSE )
+#     invisible(file.copy(copy.paths, model.path, recursive=TRUE))
+#   } else {
+#     cat("Model files are up to date.\n")
+#   }
+# }
 cat("Runtime setup is complete.\n")

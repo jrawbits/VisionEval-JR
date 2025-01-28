@@ -298,19 +298,21 @@ Components:
   LICENSE:
     Type: script
     Path: "."
-  tools:
-    Type: script
-    Path: sources
-    CRAN:
-      - import
-      - jsonlite
-  walkthrough/[01]*.R: # Walkthrough script files
-    Type: script
-    Path: sources/framework/VEModel/inst
-  Readme.md: # Walkthrough detailed instructions
-    Type: script
-    Path: sources/framework/VEModel/inst/walkthrough
-    Target: walkthrough              # output path relative to "ve.runtime" for scripts
+# No longer distributing the archaic tools folder
+#   tools:
+#     Type: script
+#     Path: sources
+#     CRAN:
+#       - import
+#       - jsonlite
+# Walkthrough will set itself up from within VEModel
+#   walkthrough/[01]*.R: # Walkthrough script files
+#     Type: script
+#     Path: sources/framework/VEModel/inst
+#   Readme.md: # Walkthrough detailed instructions
+#     Type: script
+#     Path: sources/framework/VEModel/inst/walkthrough
+#     Target: walkthrough              # output path relative to "ve.runtime" for scripts
   api:                               # "package" for 'docs' type is the last element (can be file name)
     Type: docs
     Path: "."                        # base directory below root to gather docs
