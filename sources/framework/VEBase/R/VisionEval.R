@@ -36,7 +36,7 @@ getRuntimeEnvironment <- function() ve.env
 #' @param ve.lib.name Character string with name of ve-lib within VE_HOME (default "ve-lib")
 #' @param ve.pkg.name Character vector with names of optional local package repositories that may exist in VE_HOME
 #' @param ve.repos.list.name Character string with name of file inwhich to seek additional package repository URLs (CRAN-like)
-#' @param ve.setup Character string with name of R library for simple bootstrap setup (option to
+#' @param ve.setup.lib Character string with name of R library for simple bootstrap setup (option to
 #'   delete after installation is complete)
 #' @return location of VE_RUNTIME, invisibly
 #' @import utils tcltk
@@ -67,7 +67,7 @@ startVisionEval <- function(
   repeat {
     ve.home.contents <- dir(ve.home)
     valid.ve.home <- (
-      ( empty.home <- length(ve.home.contents) == 0 ) ||
+      ( empty.ve.home <- length(ve.home.contents) == 0 ) ||
       any( existing.libs <- c(VE_LIB=ve.lib.name,VE_SETUP_LIB=ve.setup.lib) %in% ve.home.contents )
     )
 
@@ -80,7 +80,7 @@ startVisionEval <- function(
         break # with valid.ve.home set to NA
       }
     }
-    if ( ! valid.ve.home ) {
+    if ( ! isTRUE(valid.ve.home) ) {
       # NOTE: ve.home will be offered in the following directory browse dialogs and if the user just re-selects that
       # directory, it will be used anyway, creating ve-lib at that location.
       caption <- "Select directory for VisionEval code installation (VE_HOME)"
@@ -91,12 +91,13 @@ startVisionEval <- function(
       }
       if ( ! is.na(ve.home) && dir.exists(ve.home) ) { # NA if dialog was cancelled
         message("Setting up VE_HOME as ",ve.home)
+        break
       } else {
-        message("No location selected for VE_HOME:")
+        message("No valid location selected for VE_HOME:")
         valid.ve.home <- NA
         break # with valid.ve.home set to NA
       }
-    }
+    } else break
   }
   if ( is.na(valid.ve.home) ) stop("Installation unsuccesful; Re-run startVisionEval()")
 
@@ -135,9 +136,9 @@ startVisionEval <- function(
   # Set up ve-lib (R library location for installed VE packages and dependencies)
   # The same library location will hold sub-directories for the major/minor R version that is
   # running this installation.
-  venv$ve.pkg.repo <- file.path(ve.home,ve.pkg.repo) # in case of local package installation
-  ve.env$this.R <- paste(c(R.version["major"],tools::file_path_sans_ext(R.version["minor"])),collapse=".")
-  ve.env$ve.lib <- file.path(ve.home,ve.lib.name,ve.env$this.R)
+  ve.env$ve.pkg.repo <- file.path(ve.home,ve.pkg.repo) # in case of local package installation
+  ve.env$this.R <- paste(c(R.version["major"],R.version["minor"]),collapse=".")
+  ve.env$ve.lib <- file.path(ve.home,ve.lib.name,tools::file_path_sans_ext(ve.env$this.R))
   if ( ! dir.exists(ve.env$ve.lib) ) dir.create(ve.env$ve.lib,recursive=TRUE)
   .libPaths(ve.env$ve.lib) # will add ve-lib if it's not present; ve.setup.lib may remain there harmlessly
 
@@ -196,6 +197,13 @@ startVisionEval <- function(
       message("Creating runtime ",basename(ModelRoot)," directory")
       dir.create(ModelRoot,recursive=TRUE,showWarnings=FALSE)
     }
+    message("Running in ",ve.env$ve.runtime)
+    # Make sure there is a "Models" directory in the actual runtime folder
+    ve.env$ModelRoot <- VEModel::getModelDirectory() # Uses runtime configuration or default value "models"
+    if ( ! dir.exists(ve.env$ModelRoot) ) {
+      message("Creating runtime ",basename(ve.env$ModelRoot)," directory")
+      dir.create(ve.env$ModelRoot,recursive=TRUE,showWarnings=FALSE)
+    }
   } else {
     message("Uh-oh! VEModel should be on the search path but it is not.")
     stop("Please retry the installation")
@@ -232,8 +240,8 @@ getRepositories <- function(repos=NULL, use.default=TRUE, offline=TRUE, ve.home=
   # Set up default repositories (local or online)
   search.repos <- character(0)
   if ( isTRUE(use.default) ) {
-    if ( file.exists( venv$ve.pkg.repo ) ) {
-      search.repos <- c(search.repos,paste0("file:",venv$ve.pkg.repo))
+    if ( file.exists( ve.env$ve.pkg.repo ) ) {
+      search.repos <- c(search.repos,paste0("file:",ve.env$ve.pkg.repo))
     }
   }
 
@@ -452,7 +460,7 @@ checkSetup <- function(ve.home,ve.runtime,overwrite=FALSE) {
   # Check that R version identified in VE_RUNTIME is the same as the one that is running
   # Won't change anything in VE_RUNTIME unless isTRUE(overwrite)
   good.r.version <- FALSE
-  if ( ! "this.R" %in% ve.env ) ve.env$this.R <- paste(R.version[c("major","minor")],collapse=".")
+  if ( ! "this.R" %in% ls(ve.env) ) ve.env$this.R <- paste(R.version[c("major","minor")],collapse=".")
   r.version = runtime.files["r.version"]
   if ( file.exists(r.version) && ! overwrite ) {
     # As written, this allows multiple "variable:value" pairs in r.version
@@ -527,6 +535,8 @@ ve.setup <- function(ve.home,ve.runtime,setupHome=FALSE,overwrite=FALSE) {
   )
   if ( length(setup.locations) == 0 ) return(invisible(ve.runtime)) # Not an error - just means setup files are already up to date
 
+  message("Setup locations:")
+  print(setup.locations)
   for ( location in setup.locations ) {
     message("Adding startup files to ",location)
 
@@ -542,7 +552,7 @@ ve.setup <- function(ve.home,ve.runtime,setupHome=FALSE,overwrite=FALSE) {
       paste0("VE_RUNTIME=",normalizePath(ve.runtime,winslash="/",mustWork=TRUE))
     )
     if ( file.exists(renv.file) ) file.copy(renv.file,file.path(location,"Previous.Renviron"))
-    if ( ! file.exists(renv.file) ) writeLines(renv.txt,renv.file)
+    writeLines(renv.txt,renv.file)
 
     # Write launch.bat, providing default R_HOME
     launch.bat.template <- system.file("startup/launch.bat.template",package="VEBase",mustWork=TRUE)
@@ -553,13 +563,13 @@ ve.setup <- function(ve.home,ve.runtime,setupHome=FALSE,overwrite=FALSE) {
 
     # Directly copy over .Rprofile and VisionEval.Rproj (no template modifications needed)
     if ( isTRUE(ve.env$Debug) ) {
-      message("Copying Rprofile.default to ",location)
-      file.copy(system.file("startup/Rprofile.default",package="VEBase",mustWork=TRUE),file.path(location,"Rprofile.runtime"))
+      message("Copying Rprofile.default to ",location," as Rprofile.runtime")
+      file.copy(system.file("startup/Rprofile.default",package="VEBase",mustWork=TRUE, overwrite=TRUE),file.path(location,"Rprofile.runtime"),overwrite=TRUE)
     } else {
-      file.copy(system.file("startup/Rprofile.default",package="VEBase",mustWork=TRUE),file.path(location,".Rprofile"))
+      file.copy(system.file("startup/Rprofile.default",package="VEBase",mustWork=TRUE),file.path(location,".Rprofile"),overwrite=TRUE)
     }
-    file.copy(system.file("startup/VisionEval.Rproj",package="VEBase",mustWork=TRUE),location)
-    file.copy(system.file("startup/visioneval.cnf.sample",package="VEBase",mustWork=TRUE),location)
+    file.copy(system.file("startup/VisionEval.Rproj",package="VEBase",mustWork=TRUE),location,overwrite=TRUE)
+    file.copy(system.file("startup/visioneval.cnf.sample",package="VEBase",mustWork=TRUE),location,overwrite=TRUE)
   }
     
   invisible(ve.runtime)

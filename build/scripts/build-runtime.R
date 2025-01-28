@@ -32,10 +32,11 @@ if ( length(copy.paths) > 0 ) {
   }
 }
 
-# Create the R version tag in the runtime folder
-cat("that.R:",this.R,"\n",sep="",file=file.path(ve.runtime,"r.version"))
-cat("ve.lib.name:",basename(ve.lib),"\n",sep="",file=file.path(ve.runtime,"r.version"),append=TRUE)
-cat("ve.pkgs.name:",basename(ve.pkgs),"\n",sep="",file=file.path(ve.runtime,"r.version"),append=TRUE)
+# VEBase now does this
+# # Create the R version tag in the runtime folder
+# cat("that.R:",this.R,"\n",sep="",file=file.path(ve.runtime,"r.version"))
+# cat("ve.lib.name:",basename(ve.lib),"\n",sep="",file=file.path(ve.runtime,"r.version"),append=TRUE)
+# cat("ve.pkgs.name:",basename(ve.pkgs),"\n",sep="",file=file.path(ve.runtime,"r.version"),append=TRUE)
 
 # Process any framework or module package tests (locate them in the "tools/tests/<Package>" folder
 # Runtime ve.test("<Package>") will attach those scripts  contents into "test:<Package>"
