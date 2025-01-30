@@ -49,12 +49,10 @@ startVisionEval <- function(
   ve.repos.list.name="ve-repos.cnf",
   ve.setup.lib="ve-setup"
 ) {
-  ve.setup.script <- file.path(getwd(),"VE-Setup.R")   # for cleaning up startup files later
   ve.setup.lib.path <- file.path(getwd(),ve.setup.lib)
   ve.pkg.repo <- "pkg-ve-repo" # from VEBuild makeInstaller - local set of packages
 
-  # Set VE_DEBUG from the environment (enables more detailed error messages)
-  ve.env$Debug <- "TRUE" == toupper(Sys.getenv("VE_DEBUG","FALSE"))
+  # TOOD: Associate VE_HOME setup with ve.init
 
   # Identify location for VE_HOME (contains ve-lib, and optionally ve-pkg for local repository installation)
   if ( missing(ve.home) || is.null(ve.home) ) {
@@ -101,11 +99,21 @@ startVisionEval <- function(
   }
   if ( is.na(valid.ve.home) ) stop("Installation unsuccesful; Re-run startVisionEval()")
 
+  # TODO: Associate VE_RUNTIME setup with ve.seti[
+
   # Set up VE_RUNTIME
   if ( is.null(ve.runtime) ) {
     ve.runtime <- Sys.getenv("VE_RUNTIME",as.character(NA))
   }
-  if ( runtime.missing <- ( is.na(ve.runtime) || ! dir.exists(ve.runtime) ) ) {
+  if ( is.na(ve.runtime) ) {
+    home.as.runtime <- askYesNo(paste("Install VisionEval 'models' folder in",ve.home,"?"))
+    if ( is.na(home.as.runtime) ) {
+      message("Please select a suitable VisionEval home directory")
+      stop("Installation cancelled.")
+    }
+  }
+
+  if ( ! home.as.runtime  ) {
     caption <- "Select directory for VisionEval 'models' folder (VE_RUNTIME)"
     ve.runtime <- if (exists('utils::choose.dir')) { # Won't exist on non-Windows platforms
       utils::choose.dir(default=ve.home,caption = caption)
@@ -113,10 +121,12 @@ startVisionEval <- function(
       tcltk::tk_choose.dir(default=ve.home,caption = caption)
     }
     if ( is.na(ve.runtime) || ! dir.exists(ve.runtime) ) {
-      ve.runtime <- ve.home
+      message("Please select a suitable VisionEval directory for 'models'")
+      stop("Installation cancelled.")
     }
-    message("Setting up VE_RUNTIME as ",ve.runtime)
-  }
+  } else ve.runtime <- ve.home
+
+  message("Setting up VE_RUNTIME as ",ve.runtime)
 
   # Put important parameters into VEBase:::ve.env for use in later functions, and relayed to VEModel
   ve.env$ve.runtime <- ve.runtime
@@ -163,51 +173,23 @@ startVisionEval <- function(
   # Configure ve.runtime (.Renviron etc.)
   ve.setup(ve.home,ve.runtime,overwrite=overwrite)
 
-  # Attempt to reload VEModel and fail if it can't be loaded
-
-  # NOTE: Loading VEModel like this will generate a "Note" when building VEBase itself, but we still need to do this since
-  #   VEModel needs to be on the package search path in order use VisionEval. Because the require happens late in the
-  #   startup, there is little chance of causing problems with unexpected function calls later on (see the R manual
-  #   section suggested in the Note to understand the risk, e.g. if VEModel were to redefine a function from VEBase)
-  if ( !require("VEModel") ) {
-    stop("VEModel is still missing; re-run ve.init()")
-  }
-
   # Offer to clean up VE-Setup.R and ve.setup.lib
-  seek.setup <- ve.setup.script
-  seek.setup <- if ( ! ve.setup.lib.path %in% .libPaths() ) c(seek.setup,ve.setup.lib.path)
-  if ( 0 < length( setup.files <- seek.setup[file.exists(seek.setup)] ) ) {
-    message("Unnecessary bootstrap setup files are present:")
-    print(as.character(setup.files))
-    remove.setup <- readline("Remove these setup files? (Y/n)")
-    if ( grepl("(^[Yy])|(^$)",remove.setup) ) {
-      unlink( setup.files, recursive=TRUE)
+  # This should not happen until after we've bootstrapped
+  # Move it to .Rprofile?
+  if ( ! ve.setup.lib.path %in% .libPaths() ) {
+    seek.setup <- ve.setup.lib.path
+    if ( 0 < length( setup.files <- seek.setup[file.exists(seek.setup)] ) ) {
+      message("Unnecessary bootstrap setup files are present:")
+      print(as.character(setup.files))
+      remove.setup <- readline("Remove these setup files? (Y/n)")
+      if ( grepl("(^[Yy])|(^$)",remove.setup) ) {
+        unlink( setup.files, recursive=TRUE)
+      }
     }
   }
 
-  # Complete VEModel setup (using parameters like ve.home and ve.runtime defined in ve.env)
+  # Make installed library path active (set VE_HOME, with ve.env$ve.lib in .Renviron
   .libPaths(ve.env$ve.lib) # Update .libPaths
-  if ( "package:VEModel" %in% search() ) {
-    message("Welcome to VisionEval 4.0!")
-    VEModel::runtimeEnvironment(ve.env)             # point VEModel to the VEBase environment
-    VEModel::getSetup(reload=TRUE)                  # reload global RunParam_ls; also will align with ve.env$ve.runtime
-    VEModel::setRuntimeDirectory(ve.env$ve.runtime) # TODO: Probably don't need this (redundant)
-    ModelRoot <- VEModel::getModelDirectory()       # Full path built from ve.runtime and global visioneval.cnf model directory name
-    if ( ! dir.exists(ModelRoot) ) {
-      message("Creating runtime ",basename(ModelRoot)," directory")
-      dir.create(ModelRoot,recursive=TRUE,showWarnings=FALSE)
-    }
-    message("Running in ",ve.env$ve.runtime)
-    # Make sure there is a "Models" directory in the actual runtime folder
-    ve.env$ModelRoot <- VEModel::getModelDirectory() # Uses runtime configuration or default value "models"
-    if ( ! dir.exists(ve.env$ModelRoot) ) {
-      message("Creating runtime ",basename(ve.env$ModelRoot)," directory")
-      dir.create(ve.env$ModelRoot,recursive=TRUE,showWarnings=FALSE)
-    }
-  } else {
-    message("Uh-oh! VEModel should be on the search path but it is not.")
-    stop("Please retry the installation")
-  }
 
   # Return runtime location, invisibly
   invisible(ve.env$ve.runtime)
@@ -243,25 +225,27 @@ getRepositories <- function(repos=NULL, use.default=TRUE, offline=TRUE, ve.home=
     if ( file.exists( ve.env$ve.pkg.repo ) ) {
       search.repos <- c(search.repos,paste0("file:",ve.env$ve.pkg.repo))
     }
-  }
+  }   
 
   # Add manually defined locations in VE_HOME/ve.repos.list.name (ahead of defaults)
   # Should be a text file with one CRAN-like URL per line
-  userfile.repos.file <- file.path(ve.home,ve.env$ve.repos.list.name)
+  userfile.name <- Sys.getenv("VE_REPOS",ve.env$ve.repos.list.name) # Override for development
+  userfile.repos.file <- file.path(ve.home,userfile.name)
   if ( file.exists(userfile.repos.file) ) {
-    userfile.repos <- c(grep("^\\s*#\\s*",readLines(userfile.repos.file),invert=TRUE,value=TRUE),search.repos)
+    userfile.repos <- c(grep("(^\\s*#\\s*)|(^\\s*$)",readLines(userfile.repos.file),invert=TRUE,value=TRUE),search.repos)
     # the contents of ve-repos.cnf is one url per line suitable for use with install.packages or update.packages
     # lines can be commented out if their first non-blank character is a # (hash or pound) symbol
     if ( length(userfile.repos) > 0 ) {
       search.repos <- c( userfile.repos, search.repos )
     }
-  }
+  } else message("Could not find local repository list: ",userfile.repos.file)
 
   # Add any repos provided as arguments to this function (ahead of all the others)
   # Repos is a character vector of fully-formed CRAN-like repository URLs from which to install VE package
   if ( is.character(repos) ) {
     search.repos <- c( repos, search.repos )
   }
+  # Backstop removal of empty lines
   search.repos <- grep("^\\s*$",search.repos,invert=TRUE,value=TRUE) # Keep only non- blank lines
   if ( length(search.repos) == 0 ) {
     message("No VisionEval repositories available.")
@@ -402,9 +386,10 @@ ve.init <- function(
     install.repos <- if ( ! "yaml" %in% packageNames( suppressWarnings(
         available.packages(type=ve.env$installType,repos=repos.list)
       ) ) ) {
-      message("Adding CRAN respository for dependencies as https://cloud.r-project.org")
+      message("Adding CRAN repository for dependencies as https://cloud.r-project.org")
       c( repos.list ,"https://cloud.r-project.org")
     } else repos.list # if we find yaml, we'll assume all the dependencies have been installed
+    print(install.repos)
 
     # Do the actual installation
     suppressWarnings(
@@ -424,13 +409,14 @@ ve.init <- function(
   if ( isTRUE(update) ) {
     # always check online for dependency updates on one of the CRAN mirrors
     message("Checking for VisionEval and dependency updates")
-    need.update <- old.packages.VE(lib.loc,unique(c(repos.list,"https://cloud.r-project.org")))
+    update.repos <- unique(c(repos.list,"https://cloud.r-project.org"))
+    need.update <- old.packages.VE(lib.loc,repos.list=update.repos) # uses installType
     if ( !is.null(need.update) ) {
       message("Updating:")
       print(packageNames(need.update))
       # NOTE: the need.update structure is expected to include the repository location for the newer packages
       suppressWarnings(
-        update.packages(need.update,type=ve.env$installType)
+        update.packages(need.update,repos=update.repos,type=ve.env$installType,ask=FALSE)
       )
     } else {
       message("VisionEval installation is up to date")
@@ -562,14 +548,11 @@ ve.setup <- function(ve.home,ve.runtime,setupHome=FALSE,overwrite=FALSE) {
     writeLines(launch.txt, con = launch.bat)
 
     # Directly copy over .Rprofile and VisionEval.Rproj (no template modifications needed)
-    if ( isTRUE(ve.env$Debug) ) {
-      message("Copying Rprofile.default to ",location," as Rprofile.runtime")
-      file.copy(system.file("startup/Rprofile.default",package="VEBase",mustWork=TRUE, overwrite=TRUE),file.path(location,"Rprofile.runtime"),overwrite=TRUE)
-    } else {
-      file.copy(system.file("startup/Rprofile.default",package="VEBase",mustWork=TRUE),file.path(location,".Rprofile"),overwrite=TRUE)
-    }
+    file.copy(system.file("startup/Rprofile.default.R",package="VEBase",mustWork=TRUE),file.path(location,".Rprofile"),overwrite=TRUE)
     file.copy(system.file("startup/VisionEval.Rproj",package="VEBase",mustWork=TRUE),location,overwrite=TRUE)
     file.copy(system.file("startup/visioneval.cnf.sample",package="VEBase",mustWork=TRUE),location,overwrite=TRUE)
+    if ( file.exists( has.Rdata <- file.path(location,".Rdata")) ) file.copy(has.Rdata,file.path(location,"previous.Rdata"))
+    save(list=character(0),file=file.path(location,".Rdata")) # double click .Rdata to run fully-installed RGUI
   }
     
   invisible(ve.runtime)

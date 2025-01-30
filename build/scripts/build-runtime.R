@@ -9,6 +9,14 @@
 if ( ! exists("ve.installer" ) ) ve.installer <- getwd()
 source(file.path(ve.installer,"scripts","get-runtime-config.R"))
 
+# TODO: for VE 4.0, this won't copy a pre-built runtime. Rather, it will regenerate a
+# quick runtime from pieces in VEBase, including a launch.bat, a .Rprofile, and especially
+# a ve-repos-dev.cnf and .Renviron with VE_REPOS that point back to the installed
+# locations. There will be version specific runtimes created (using this.R) because
+# launch.bat is version-specific. VE_BUILT, VE_HOME and R_LIBS_USER should be set up in
+# .Renviron as well, pointing to the built ve-lib so it won't need to be installed.
+# VE_HOME will be within VE_BUILT (directory containing ve-lib).
+
 message("========== BUILD RUNTIME ENVIRONMENT (scripts, models) ==========")
 
 # Get the VisionEval runtime files

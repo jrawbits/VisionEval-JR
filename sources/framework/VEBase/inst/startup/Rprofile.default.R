@@ -1,4 +1,3 @@
-# NOTE: identical (except for this first line) to sources/framework/VEBase/inst/Rprofile.default.R
 # Set up and run VisionEval
 
 # Change the bootstrap.lib name if you like (don't use "ve-lib"!)

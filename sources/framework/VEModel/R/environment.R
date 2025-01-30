@@ -105,6 +105,25 @@ runtimeEnvironment <- function(ve.new.env=NULL) {
   ve.env
 }
 
+# Initialize VEModel from external environment (probrably VEBase)
+#' Set up initial VEModel environment from VEBase
+#'
+#' @param ve.env An encironment containing ve.home, ve.runtime and other setup variables
+#' @return None
+#' @export
+initVisionEval <- function(ve.env) {
+  message("Loading VisionEval 4.0!")
+  runtimeEnvironment(ve.env)             # point VEModel to the VEBase environment
+  getSetup(reload=TRUE)                  # reload global RunParam_ls; also will align with ve.env$ve.runtime
+  ModelRoot <- getModelDirectory()       # Full path built from ve.runtime and global visioneval.cnf model directory name
+  if ( ! dir.exists(ModelRoot) ) {
+    message("Creating runtime '",basename(ModelRoot),"' directory")
+    dir.create(ModelRoot,recursive=TRUE,showWarnings=FALSE)
+  }
+  message("Running in ",ve.env$ve.runtime)
+  NULL
+}
+
 # Package defaults for VisionEval getRunParameter
 # Some of these are different from the framework defaults (e.g. ResultsDir).
 # The package defaults will override.

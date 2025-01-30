@@ -32,7 +32,6 @@ Suggests:
     markdown,
     RMariaDB
 Encoding: UTF-8
-VignetteBuilder: knitr
 RoxygenNote: 7.2.3
 Collate: 
     'environment.R'

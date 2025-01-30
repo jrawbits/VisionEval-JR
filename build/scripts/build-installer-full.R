@@ -2,6 +2,19 @@
 
 # Author: Jeremy Raw
 
+# VE 4.0 build installer:
+
+# build-installer will assemble and then .zip the repos/contriburl for packages along with the
+# runtime. VEBase will be pre-installed (if Windows) and this.R vs that.R will be checked The
+# installer can be set to package type "binary" (Windows) or "source" (and forced manually to
+# "source" for testing). Packages to include can be just the bare R startups (finding VEBase online or
+# elseshere), VEBase preinstalled (online install), VisionEval (local install of VE; dependences from
+# outside), Full (local install of VE and dependencies). Use environment variables to control which
+# of those happens.
+
+# VE_INSTALLER_SOURCE = "Bare", "Online","VE-local","VE-full"
+# VE_INSTALLER_TYPE = default (also if undefined), binary (Windows only), source (Linux or Mac)
+
 # Builds .zip files for installers
 
 # Load runtime configuration
