@@ -66,7 +66,7 @@ pkgs.BaseR <- as.vector(installed.packages(lib.loc=.Library,
                                            priority=c("base", "recommended"))[,"Package"])
 root.pkgs <- setdiff(c(pkgs.db$Package[pkgs.CRAN], pkgs.db$Package[pkgs.BioC]),pkgs.BaseR)
 sought.pkgs <- miniCRAN::pkgDep(root.pkgs,
-                                repos=ve.deps.url, suggests=FALSE, type=ve.build.type)
+                                repos=c(ve.repo.url,ve.deps.url), suggests=FALSE, type=ve.build.type)
 sought.pkgs <- setdiff(sought.pkgs, pkgs.BaseR)
 
 new.pkgs <- sought.pkgs[ ! (sought.pkgs %in% installed.packages(lib.loc=ve.lib)[,"Package"]) ]
@@ -110,7 +110,7 @@ if( length(new.pkgs) > 0 ) {
   install.packages(
       new.pkgs,
       lib=ve.lib,
-      repos=ve.deps.url,
+      repos=c(ve.deps.url,ve.repo.url),
       dependencies=c("Depends", "Imports", "LinkingTo"),
       type=ve.build.type
   )

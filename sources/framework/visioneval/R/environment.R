@@ -254,9 +254,10 @@ defaultVERunParameters <- function(Param_ls=list()) {
 #' }
 #'
 #' If the file has a \code{.yml} or \code{.json} extension, it will be processed as that type.
-#' {VisionEval.cnf} or {.visioneval}, with no type extension, will be processed first as .json, and
-#' if that fails, then as .yml. If both fail, a format error is returned with error messages from
-#' each failed format type (since we can't always tell what format you were intending to use).
+#' \code{VisionEval.cnf} or \code{.visioneval}, with no type extension, will be processed first as
+#' .json, and if that fails, then as .yml. If both fail, a format error is returned with error
+#' messages from each failed format type (since we can't always tell what format you were intending
+#' to use).
 #'
 #' The returned list also has a "source" attribute, which is a dataframe with columns "Name" and
 #' "Source" and a row for each run parameter that is included in the returned list. See
