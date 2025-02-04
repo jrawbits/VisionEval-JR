@@ -6,9 +6,6 @@ disaggregate strategic planning models.
 **NOTE ON WEBSITE**:
 The VisionEval website can be found at
 [https://VisionEval.github.io](https://VisionEval.github.io)
-The previous domain name (visioneval.org) will continue to redirect to
-the new Github loacation but users and developers are encouraged to
-update their bookmarks.
 
 The `development` branch is the basis for development of new features
 and fixes to VisionEval. All new development should be based on the

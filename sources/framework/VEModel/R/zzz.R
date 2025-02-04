@@ -4,7 +4,7 @@
 # This file contains an .onAttach function that loads the VisionEval
 # runtime environment
 
-# .onAttach is called when a library attached to
+# .onAttach is called when a library is attached to the search path
 .onAttach <- function(libname, pkgname) {
   initLog(Save=FALSE,Threshold=Sys.getenv("VE_LOGLEVEL",unset="warn")) # Set default logging threshold
   if ( ! "package:VEBase" %in% search() ) { # running without VEBase

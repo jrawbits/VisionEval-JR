@@ -3,6 +3,8 @@
 # Change the bootstrap.lib name if you like (don't use "ve-lib"!)
 bootstrap.lib <- normalizePath("ve-setup-lib",winslash="/",mustWork=FALSE)
 
+# Install VEBase from likely locations if it is not available in .libPaths() (which could include
+# R_LIBS_USER)
 if ( ! require(VEBase,,quietly=TRUE ) {
   # Find usable repositories
   # Default repository list
