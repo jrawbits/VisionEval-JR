@@ -96,13 +96,14 @@ pkgs.CRAN.lst <- setdiff(pkgs.CRAN.lst, pkgs.BaseR) # don't keep base packages
 # cat("pkgs.CRAN.all\n")
 # print(sort(pkgs.CRAN.all))
 
+# Note that this scheme may fail if any of the BioConductor packages have CRAN dependencies
+# For now (2025-02-04) it's working fine.
 pkgs.BioC.lst <- pkgs.db$Package[pkgs.BioC]
 pkgs.BioC.all <- pkgs.BioC.lst <- miniCRAN::pkgDep( pkgs.BioC.lst, repos=bioc, suggests=FALSE)
 pkgs.BioC.lst <- setdiff( pkgs.BioC.lst, pkgs.CRAN.lst ) # Possible risk here: don't double-install packages
 # cat("pkgs.BioC.all\n")
 # print(sort(pkgs.BioC.all))
 
-# cat("Dependencies:\n")
 stated.dependencies <- as.character(c(pkgs.CRAN.lst, pkgs.BioC.lst))
 all.dependencies <- setdiff(as.character(c(pkgs.CRAN.all, pkgs.BioC.all)),pkgs.BaseR)
 save(stated.dependencies, all.dependencies, file=ve.all.dependencies)
@@ -122,14 +123,18 @@ if ( havePackages() ) {
     }
   }
   if ( up.to.date ) {
-    cat("VE dependency repository up to date with CRAN\n")
+    cat("VE",ve.build.type,"dependency repository up to date with CRAN\n")
   } else {
-    cat("Updating CRAN dependency packages...\n")
+    cat("Updating CRAN",ve.build.type,"dependency packages...\n")
     miniCRAN::updatePackages(path=ve.dependencies, repos=CRAN.mirror, type=ve.build.type, oldPkgs=pkgs.CRAN.lst, ask=FALSE)
   }
 }
 
-# Process BioC dependencies (stash them in VE Package repository)
+# Process BioC dependencies (stash top-level BioConductor packages in VE Package repository)
+# Note that we don't always get source for standard dependencies. We need them here in order
+# to have a complete VE package repository (VE packages are delivered in source and binary forms).
+# We put rhdf5 and helpers into that repository to avoid a dependency on BioConductor in the
+# bootstrapper. HDF5 is a bit of a pain to maintain...
 for ( repo.type in unique(c(ve.build.type,"source")) ) {
   # Make sure there's a source repository to receive BioC source packages
   src.contrib <- contrib.url(ve.repository, repo.type)
@@ -147,16 +152,16 @@ for ( repo.type in unique(c(ve.build.type,"source")) ) {
       }
     }
     if ( up.to.date ) {
-      cat("VE package repository up to date with BioConductor\n")
+      cat("VE",repo.type,"package repository up to date with BioConductor\n")
     } else {
-      cat("Updating BioConductor dependency packages...\n")
+      cat("Updating BioConductor",repo.type,"dependency packages...\n")
       ignore <- miniCRAN::updatePackages(path=ve.repository, repos=bioc, type=repo.type, oldPkgs=pkgs.BioC.lst, ask=FALSE)
     }
   } else {
-    cat("Building VE repository from scratch from CRAN packages\n")
-    miniCRAN::makeRepo(pkgs.CRAN.lst, path=ve.dependencies, repos=CRAN.mirror, type=repo.type)
+    cat("Building VE",repo.type,"repository from scratch from BioConductor packages\n")
+    miniCRAN::makeRepo(pkgs.BioC.lst, path=ve.repository, repos=bioc, type=repo.type, deps=FALSE)
 
-    cat("Adding BioConductor packages to new VE repository\n")
+    cat("Adding",repo.type,"BioConductor packages to new VE repository\n")
     # BioConductor depends on some CRAN packages - no need to download those twice, so deps=FALSE
     miniCRAN::addPackage(pkgs.BioC.lst, path=ve.repository, repos=bioc, type=repo.type, deps=FALSE)
   }
