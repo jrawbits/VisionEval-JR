@@ -18,13 +18,14 @@
   } else {
     as.environment("ve.builder")
   }
-
-  # Load available build script files
-  build.scripts <- system.file("build-scripts",package="VEBuild")
-  script.files <- file.path(build.scripts,dir(build.scripts,pattern="\\.R$"),fsep="/")
-  for ( sf in script.files ) {
-    packageStartupMessage("Loading script file: ",sf)
-    sys.source(sf,envir=env.build)
+  running <- Sys.getenv("VE_BUILD_RUNNING",NA) # Don't reload scripts if one of them might be rebuilding VEBuild
+  if ( is.na(running) ) {
+    packageStartupMessage("Bootstrapping VisionEval...")
+    build.scripts <- system.file("build-scripts",package="VEBuild")
+    script.files <- file.path(build.scripts,dir(build.scripts,pattern="\\.R$"),fsep="/")
+    for ( sf in script.files ) {
+      packageStartupMessage("Loading script file: ",sf)
+      sys.source(sf,envir=env.build)
+    }
   }
-
 }

@@ -2,27 +2,24 @@
 
 # Author: Jeremy Raw
 
-# TODO: make sure we don't reload functions into ve.builder environment if we detach
-# and re-attach VEBuild during a full build. So we need some function to determine if
-# it is complete.
-
 .build.defaults <- c(
-  "configure","external","dependencies","modules","install","runtime"
+  "configure","external","dependencies","modules","install"
 )
 
 # Build the "targets", which call functions from the named .build.functions list
 # The dots parameter is passed to each target function
 ve.build <- function(targets="all",...) {
-  # Other parameters will come later, depending on the target to build
   # "all" just steps through the .build.functions in order
+  on.exit(Sys.unsetenv("VE_BUILD_RUNNING"))
+  Sys.setenv(VE_BUILD_RUNNING="Yes")
   if ( targets=="all" ) targets <- .build.defaults
   for ( tgt in targets ) {
-    func <- .build.functions[tgt]
-    if ( is.na(func) ) {
+    if ( ! tgt %in% names(.build.functions) ) {
       message("No target: ",tgt)
       next
     }
-    message("Building '",tgt)
+    func <- .build.functions[[tgt]]
+    message("Building '",tgt,"'")
     func(...)
   }
 }
@@ -31,21 +28,68 @@ ve.build <- function(targets="all",...) {
 # before starting any fresh build.
 
 # Objects must be defined before they are added to the list of build functions
-.ve.configure     <- function(...) { message("Configure function") }
-.ve.external      <- function(...) { message("External function") }
-.ve.dependencies  <- function(...) { message("Dependencies function") }
-.ve.modules       <- function(...) { message("Modules function") }
-.ve.install       <- function(...) { message("Install function") }
-.ve.runtime       <- function(...) { message("Runtime function") }
+.ve.list.targets  <- function(...) {
+  message("Available ve.build targets:")
+  print(names(.build.functions))
+}
+
+.ve.configure     <- function(...) {
+  message("Configure function")
+  # Always precedes other targets to set build parameters
+  # Things to configure (via a YAML ve-config.yml file)
+  # - VE build locations (list of Githubs or local directories)
+  # - Construct souce packages or just binary
+  # - Install or build only (build only will make repositories, build packages, then build installer(s))
+  # - Construct end-user installer (online, CRAN-online (VE Local), Full Local; Package type)
+  # VEBase will ultimately run the installer (or just boot up from local ve-lib)
+}
+.ve.external      <- function(...) {
+  message("External function")
+  # Clones confgured Github repositories and adds their directories to the package build list
+}
+.ve.dependencies  <- function(...) {
+  message("Dependencies function")
+  # Loop over package directories, build dependency list, and then retrieve those into dependencies-repo
+  # Skip VE dependencies that will get built later
+  # Download Bioconductor dependencies into ve-pkg-repo (source and binary) to remove dependency in eventual VEBase
+  # Install all the dependencies after download into ve-lib
+}
+.ve.modules       <- function(...) {
+  message("Modules function")
+  # Loop over the package directories, identifying those that need to be built and those that are up to date
+  # Order the packages based on listed VE dependencies
+  #   1. No other VE dependencies
+  #   2. VE dependencies already in 1.
+  #   3. VE dependencies already in 1 or 2
+  #   4. etc. until all package directories are scheduled for building (or an error if still missing depedencies)
+  # Iterate over the package directories in dependency order
+  # Do the VE pre-processing (Roxygen, estimation, moduleDocs) if package is a VE package
+  # Build the packages (binary and/or source as configured)
+  # Save built packages (binary and/or source as configured) to ve-pkg-repo
+  # Install the package
+  # Rebuild the PACKAGES index in the ve-pkg-repo (source and binary)
+}
+
+.ve.install  <- function(...) {
+  message("Install function")
+  # Construct an installer (including zipping it) using ve-config.yml to decide what to put in it
+  # See configure
+}
+
+# Note that runtime functionality is performed by running VEBase, the runtime bootstrapper
+# VEBase identifies VE_INSTALL, VE_HOME and VE_RUNTIME directoreis
+# VE_INSTALL says where to look for the local CRAN repositories (default=VE_HOME)
+# VE_HOME says where to put ve-lib and related installation
+# VE_RUNTIME says where to put "models" and related materials
 
 # a list of callable functions
-.build.functions <- c(
-   "configure"    = .ve.configure    # establish what to build and where to put it
+.build.functions <- list(
+   "list"         = .ve.list.targets # list names of .build.functions
+  ,"configure"    = .ve.configure    # establish what to build and where to put it
   ,"external"     = .ve.external     # clone/pull Github repositories
   ,"dependencies" = .ve.dependencies # download and install dependencies
   ,"modules"      = .ve.modules      # build packages (including local and external)
-  ,"install"      = .ve.install      # install VE packages (could/should be part of "modules"
-  ,"runtime"      = .ve.runtime      # make a runtime for the current R version
+  ,"install"      = .ve.install      # build packages (including local and external)
 )
 
 .ve.configure <- function() {
