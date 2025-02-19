@@ -16,8 +16,6 @@ local(
     ve.build <- Sys.getenv("VE_BUILD",file.path(ve.home,"built"))
     VEBuild.package <- file.path(ve.home,"sources","framework","VEBuild")
 
-    # TODO: Try to make this work all ways
-
     # Look for trigger to initiate build (presence of VEBuild-config.yml), under these use cases:
     #   If config is found and VEBuild is available, load VEBuild instead of VEBase
     #   Configure ve.build environment from the YAML config
@@ -162,4 +160,3 @@ local(
     message("When ready, run ve.build() to build a full VisionEval installation.\n")
   }
 )
-    

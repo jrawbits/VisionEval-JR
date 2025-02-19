@@ -1,0 +1,30 @@
+# YAML configuration file for VEBuild
+
+# # Identify directory names within VE_BUILD
+#   - ve-lib
+#   - ve-src
+#   - ve-pkg-repo
+#   - dependencies-repo
+# # Identify repositories to clone / directories to visit to find VE to build
+#   - List of directories (relative to VE_HOME)
+#     - Will be searched recursively for DESCRIPTION files
+#   - Don't mess with having VE clone those
+# # Identify desired output:
+#   - Local Installation
+#   - Installer
+# # Identify installer type to build if any (using "installer" target)
+#   - Online Installer
+#   - Online Installer plus VE Packages
+#   - Offline Installer (VE Packages and Dependencies)
+
+Output : Build                # or Installer
+InstallerType: Online         # or VE-Offline or Offline (last implies dependencies are also offline)
+BuildTargets:                 # relative to Output
+  ve.lib           : ve-lib
+  ve.src           : ve-src
+  ve.repository    : ve-pkg-repo
+  ve.dependencies  : dependencies-repo
+PackageSources:               # absolute path or relative to VE_HOME
+  - sources                   # name of sub-directory of VE_HOME
+  - external                  # name of sub-directory of VE_HOME
+  # - C:/Git-Repos/VE-Another-Source
