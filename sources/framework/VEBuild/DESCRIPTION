@@ -10,6 +10,7 @@ Description: Construct and manage VisionEval packages from source code.
 License: file LICENSE
 Depends: R (>= 4.0.0)
 Imports:
+    import,
     yaml,
     BiocManager,
     miniCRAN

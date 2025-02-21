@@ -52,11 +52,14 @@ startVisionEval <- function(
   ve.setup.lib.path <- file.path(getwd(),ve.setup.lib)
   ve.pkg.repo <- "pkg-ve-repo" # from VEBuild makeInstaller - local set of packages
 
-  # TOOD: Associate VE_HOME setup with ve.init
-
   # Identify location for VE_HOME (contains ve-lib, and optionally ve-pkg for local repository installation)
   if ( missing(ve.home) || is.null(ve.home) ) {
-    ve.home <- Sys.getenv("VE_HOME",getwd())
+    ve.home <- Sys.getenv("VE_BUILD",Sys.getenv("VE_HOME",getwd())) # Just in case we're loading from a build environment
+    # VE_BUILD is the target location for VEBuild, the "home" that is constructed by running ve.build
+    # TODO: how to transition seamlessly from VEBase (end user installation) to VEBuild (source code installation)?
+    # VE_HOME will be set by VEBase. When we later load VEBuild, we need to know where the source code is, and
+    # make VE_HOME into VE_BUILD. Need some dialoguing in VEBuild if we have VE_HOME but no VE_BUILD, and if
+    # ve-build-config.yml does not exist.
   }
   if ( missing(ve.runtime) ) ve.runtime <- NULL
 

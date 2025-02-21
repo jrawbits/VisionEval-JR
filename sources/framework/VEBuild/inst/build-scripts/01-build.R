@@ -2,6 +2,80 @@
 
 # Author: Jeremy Raw
 
+# ve.build should reload .Renviron as it starts for VE_HOME and VE_BUILD
+
+# TEMPORARY: basic VEBuild process
+    # locate the VEBuild package in the source tree
+    # keep this up to date with Github repository structure
+    # Create the full package source directory from which to build packages
+    ve.src <- file.path(ve.build,ve.src.name)
+    ve.src.VEBuild <- file.path(ve.src,"VEBuild")
+    if ( dir.exists(ve.src.VEBuild) ) unlink(ve.src.VEBuild,recursive=TRUE) # blow away temp source directory
+    dir.create(ve.src.VEBuild,recursive=TRUE)
+    file.copy(from=VEBuild.package,to=ve.src,recursive=TRUE)
+
+    # Install packages required for building
+    # Note that RTools in a suitable version also needs to be installed
+    if ( ! suppressWarnings(requireNamespace("desc",quietly=TRUE)) ) {
+      utils::install.packages("desc", lib=ve.lib, repos=CRAN.mirror, type=.Platform$pkgType )
+    }
+    if ( ! suppressWarnings(requireNamespace("devtools",quietly=TRUE)) ) {
+      utils::install.packages("devtools", lib=ve.lib, repos=CRAN.mirror, type=.Platform$pkgType )
+    }
+    if ( ! suppressWarnings(requireNamespace("roxygen2",quietly=TRUE)) ) {
+      utils::install.packages("roxygen2", lib=ve.lib, repos=CRAN.mirror, type=.Platform$pkgType )
+    }
+    if ( ! suppressWarnings(requireNamespace("rcmdcheck",quietly=TRUE)) ) {
+      utils::install.packages("rcmdcheck", lib=ve.lib, repos=CRAN.mirror, type=.Platform$pkgType )
+    }
+    if ( ! suppressWarnings(requireNamespace("withr",quietly=TRUE)) ) {
+      utils::install.packages("withr", lib=ve.lib, repos=CRAN.mirror, type=.Platform$pkgType )
+    }
+
+    # Find and install dependencies specifically for VEBuild (some are not part of development
+    # environment)
+    deps <- pkgload::pkg_desc(ve.src.VEBuild)$get_deps()
+    deps <- deps[deps$package != "R", ]$package
+    for ( pkg in deps ) {
+      if ( ! requireNamespace(pkg,quietly=TRUE) ) {
+        utils::install.packages( pkg,lib=ve.lib,repos=CRAN.mirror,type=.Platform$pkgType )
+      }
+    }
+
+    # Update all existing packages in case of R Repository updates in dependencies
+    utils::update.packages(lib=ve.lib,repos=CRAN.mirror,type=.Platform$pkgType,ask=FALSE)
+
+    # Construct package supports using collate, rd and namespace
+    # Build the package not into ve-pkg but rather temp-build so we don't confuse things later
+    # VEBuild will be rebuilt in the correct final place when full VE is built
+    # NOTE: Will always rebuild, even if already present to ensure correct build process updating
+    ve.pkg.built <- file.path(ve.build,temp.build)
+    if ( ! dir.exists(ve.pkg.built) ) dir.create(ve.pkg.built,recursive=TRUE)
+    withr::with_dir(ve.src.VEBuild,roxygen2::roxygenise(roclets=c("collate","namespace","rd")))
+    ve.pkg.zip <- devtools::build(ve.src.VEBuild,path=ve.pkg.built,binary=TRUE)
+    if ( ! file.exists(ve.pkg.zip) ) stop("Failed to build VEBuild in ",ve.pkg.built)
+    if ( "package:VEBuild" %in% search() ) devtools::unload("VEBuild")
+    utils::install.packages(ve.pkg.zip,lib.loc=ve.lib,type=.Platform$pkgType)
+
+    # Load VEBuild (which creates ve.builder functions), then unload it again
+    # so we can rebuild it as part of the full installation.
+    message("Load VEBuild")
+    if ( ! require("VEBuild",quietly=TRUE) ) {
+      stop("Failed to build VEBuild")
+    }
+    if ( ! file.exists(file.path(ve.home,"ve-build-config.yml")) ) {
+      file.copy( system.file(file.path("build-scripts","ve-build-config.yml"),package="VEBuild"), ve.home )
+      # This file uses locations relative to VE_HOME (for source code) and VE_BUILD (for build destination)
+    }
+    if ( "ve.builder" %in% search() ) {
+      devtools::unload("VEBuild")
+      detach("devtools_shims") # left over from roxygenize/pkgload
+    } else {
+      stop("VEBuild failed to load ve.builder functions.")
+    }
+
+
+
 # Don't break ve.build up into elements (can have helpers)
 # Actions:
 #   - VEBuild can take a list of package patterns (RE's on package directory names)

@@ -26,5 +26,5 @@ BuildTargets:                 # relative to Output
   ve.dependencies  : dependencies-repo
 PackageSources:               # absolute path or relative to VE_HOME
   - sources                   # name of sub-directory of VE_HOME
-  - external                  # name of sub-directory of VE_HOME
+  - external                  # originally empty sub-directory (could clone other git repos here)
   # - C:/Git-Repos/VE-Another-Source

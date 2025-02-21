@@ -1,8 +1,8 @@
 # These functions will load the build scripts from VEBuild systemdata build-scripts folder
 
-# We don't just make the build functions as elements of the package namespace, because
-# rebuilding the VEBuild package itself may require detaching it so it can be rebuilt and
-# reinstalled into the VE library.
+# We don't just make the build functions elements of the package namespace, because rebuilding the
+# VEBuild package itself may require detaching it so it can be rebuilt and reinstalled into the VE
+# library.
 
 # Dependencies in the loaded files (e.g. yaml, miniCRAN) are identified for the package
 # DESCRIPTION file.
@@ -19,29 +19,26 @@
     as.environment("ve.builder")
   }
 
-  # Load VE_HOME (input locations) and VE_BUILD (output locations)
-  eval(
-    {
-      ve.home <- Sys.getenv("VE_HOME",getwd())
-      ve.build <- Sys.getenv("VE_BUILD",file.path(ve.home,"built"))
-    },
-    envir=env.build
-
   # Load the ve.builder scripts so VEBuild itself can be unloaded and rebuilt
   # TODO: go back to using the import package to make just the exposed names public
   running <- Sys.getenv("VE_BUILD_RUNNING",NA) # Don't reload scripts if one of them might be rebuilding VEBuild
   if ( is.na(running) ) {
+    # It's on the script to set and unset VE_BUILD_RUNNING
     packageStartupMessage("Bootstrapping VisionEval...")
-    build.scripts <- system.file("build-scripts",package="VEBuild")
-    script.files <- file.path(build.scripts,dir(build.scripts,pattern="\\.R$"),fsep="/")
-    for ( sf in script.files ) {
-      packageStartupMessage("Loading script file: ",sf)
-      sys.source(sf,envir=env.build)
+    VEBuild.scripts <- system.file("build-scripts",package="VEBuild")
+    build.loader <- file.path(VEBuild.scripts,"load-builder.R")
+    if ( ! file.exists(build.loader) ) {
+      message("No build.loader at ",VEBuild.scripts)
+      stop("VEBuild is missing load-builder.R.")
     }
+    source(build.loader) # Imports ve.build and related functions
+    load.builder(ve.scripts=VEBuild.scripts,CRAN.mirror=CRAN.mirror)
   }
 }
 
 # ve.build will build VisionEval from local sources
+# This function stub will probably never be called, but it is maintained here to generate
+#  function documentation.
 #' Build VisionEval from source code in local directories.
 #' The VEBuild package loads a separate searchable environment and namespace which contains the
 #'   true machinery of ve.build. The function here exists for documentation purposes and will just
