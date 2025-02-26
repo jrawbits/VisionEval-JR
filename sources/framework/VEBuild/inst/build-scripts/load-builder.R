@@ -21,28 +21,23 @@ env.build$load.builder <- function(ve.scripts,CRAN.mirror="https://cloud.r-proje
   }
 
   script.files <- file.path(ve.scripts,dir(ve.scripts,pattern="\\.R$"),fsep="/")
-  if ( length(script.files)>0 ) {
-    scripts <- character(0)
-    for ( sf in script.files ) {
-      # Add error checking for script.contents not present
-      # script.contents amounts to an export namespace for the script file
-      # those imported functions can access other objects defined in each script
-      message("Loading script file: ",sf)
-      try(
-        silent=TRUE,
-        eval(parse(text=paste0("import::here(script.contents,.from='",sf,"')")))
-      )
-      message("Loaded.")
-      if ( ! exists("script.contents") ) {
-        message("No 'script.contents' in script file: ",sf)
-        next
-      } else {
-        print(ls)
-      }
-      eval(parse(text=paste0("import::into(.into='ve.builder',",paste(script.contents,collapse=","),",.from='",sf,"')")))
-      rm(script.contents)
+  for ( sf in script.files ) {
+    # Add error checking for script.contents not present
+    # script.contents amounts to an export namespace for the script file
+    # those imported functions can access other objects defined in each script
+    try(
+      silent=TRUE,
+      eval(parse(text=paste0("import::here(script.contents,.from='",sf,"')")))
+    )
+    if ( ! exists("script.contents") ) {
+      message("No 'script.contents' in script file: ",sf)
+      next
+    } else {
+      message("Scripts loading from ",sf)
+      print(ls(env.build))
     }
-    rm(sf,scripts)
+    eval(parse(text=paste0("import::into(.into='ve.builder',",paste(script.contents,collapse=","),",.from='",sf,"')")))
+    rm(script.contents)
   }
-  rm(script.files,ve.scripts)
+  rm(sf,script.files)
 }

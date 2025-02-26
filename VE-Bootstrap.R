@@ -105,7 +105,7 @@ local(
       if ( ! file.exists(build.loader) ) {
         message("No build.loader at ",build.loader)
         stop("VisionEval source tree has unexpected structure.")
-      } else message("Sourcing build.loader")
+      }
       source(build.loader) # creates ve.builder environment and load.builder function
       load.builder(ve.scripts=VEBuild.scripts,CRAN.mirror=CRAN.mirror)
     }
