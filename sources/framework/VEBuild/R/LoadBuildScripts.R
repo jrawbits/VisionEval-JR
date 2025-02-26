@@ -12,12 +12,14 @@
 
 .onAttach <- function(libname, pkgname) {
 
-  # Create an environment on the search path to hold build functions
-  env.build <- if ( ! "ve.builder" %in% search() ) {
-    attach(NULL,name="ve.builder")
+  # Create an environment on the search path to hold ve.home, ve.build and ve.runtime
+  ve.env <- if ( ! "ve.env" %in% search() ) {
+    attach(NULL,name="ve.env")
   } else {
-    as.environment("ve.builder")
+    as.environment("ve.env")
   }
+
+  # TODO: Initialize ve.home, ve.build.dir and ve.runtime if they are not already initialized
 
   # Load the ve.builder scripts so VEBuild itself can be unloaded and rebuilt
   # TODO: go back to using the import package to make just the exposed names public

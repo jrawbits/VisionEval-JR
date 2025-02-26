@@ -10,7 +10,7 @@ env.build <- if ( ! "ve.builder" %in% search() ) {
 }
 
 # Use import package to load build functions
-#' @param ve.scripts 
+#' @param ve.scripts List of package directory patterns to search for packages to build
 #' @param CRAN.mirror URL of CRAN repository containing "import" package
 env.build$load.builder <- function(ve.scripts,CRAN.mirror="https://cloud.r-project.org") {
 
@@ -29,13 +29,7 @@ env.build$load.builder <- function(ve.scripts,CRAN.mirror="https://cloud.r-proje
       silent=TRUE,
       eval(parse(text=paste0("import::here(script.contents,.from='",sf,"')")))
     )
-    if ( ! exists("script.contents") ) {
-      message("No 'script.contents' in script file: ",sf)
-      next
-    } else {
-      message("Scripts loading from ",sf)
-      print(ls(env.build))
-    }
+    if ( ! exists("script.contents") ) next
     eval(parse(text=paste0("import::into(.into='ve.builder',",paste(script.contents,collapse=","),",.from='",sf,"')")))
     rm(script.contents)
   }

@@ -4,7 +4,7 @@
 
 # ve.build should reload .Renviron as it starts for VE_HOME and VE_BUILD
 
-tool.contents <- c(
+script.contents <- c(
   "ve.build"
 )
 
@@ -53,8 +53,12 @@ tool.contents <- c(
 #       - dependency-repo versus dependency-contrib
 #     - build directory, then zip it
 
-# TODO: keep this documentation up to date with the stub in the package R functions
+# IMPORTANT:
+#   Also maintain this documentation on the stub in the package R functions.
+#   This file is not visited by Roxygen during the build processlk
+
 # Build the "targets", which call functions from the named .build.functions list
+# Expects that getwd() == VE_BUILD and ve.home is defined on the search path
 # @param packages a character vector of regular expressions naming VE packages to build; default
 #   is an empty character string, which will match all packages; see description above
 # @param reset a logical; if TRUE, then remove any package artifacts before rebuilding matched
@@ -65,11 +69,55 @@ tool.contents <- c(
 #   documentation for that file elsewhere)
 # @return data.frame of packages and status (unchanged, built, failed)
 ve.build <- function(targets="",reset=FALSE,confirm=interactive(),config=list()) {
-  # Load ve-config.yml and update from config parameter
+
+  # Load ve-build-config.yml and update from config parameter
+
+  if ( ! suppressWarnings(requireNamespace("yaml",quietly=TRUE)) ) {
+    utils::install.packages("yaml", lib=ve.lib, repos=CRAN.mirror, type=.Platform$pkgType )
+  }
+  build.config.file <- "ve-build-config.yml"
+  if ( exists("ve.home") ) { # look here for build configuration
+    message("ve.home is ",ve.home)
+    print(dir(ve.home))
+    build.config.file <- file.path(ve.home,build.config.file)
+  }
+  if ( file.exists(build.config.file) ) {
+    message("Config from config file: ",build.config.file)
+    build.config <- yaml::yaml.load_file(build.config.file)
+  } else {
+    message("No usable ve.home; Config from built-in default")
+    build.config <- list(
+      # bare defaults
+      Output = "Build",
+      InstallerType = "Online",
+      BuildTargets = c(
+        ve.lib = "ve-lib",
+        ve.src = "ve-src",
+        ve.repository = "ve-pkg-repo",
+        ve.dependencies = "dependencies-repo"
+      ),
+      PackageSources = c( "sources", "external" )
+    )
+  }
+  if ( "BuildTargets" %in% names(build.config) && is.list(build.config$BuildTargets) ) {
+    # YAML brings BuildTargets in as a named list; make it a named character vector
+    build.config$BuildTargets <- unlist(build.config$BuildTargets)
+  }
+
+  if ( is.list(config) ) {
+    # TODO: better handle degenerate config (e.g. not named)
+    build.config[names(config)] <- config
+  }
+
+  # DEBUG
+  print(build.config)
+
+
   # Find PackageSources and expand to normalized directories
   # - subdirectory in ve.home
   # - absolute path anywhere
-  # Find all DESCRIPTION files and identify their containing directory as a package to build.
+  # Find all DESCRIPTION files and identify their containing
+  # directory as a package to build.
 }
 
 # TEMPORARY: basic VEBuild process

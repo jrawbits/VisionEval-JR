@@ -3,6 +3,13 @@
 
 # Run this entire block in a local environment so variables are not saved
 
+# Create an environment to hold ve.home, ve.env$ve.build.dir and ve.runtime
+ve.env <- if ( ! "ve.env" %in% search() ) {
+  attach(NULL,name="ve.env")
+} else {
+  as.environment("ve.env")
+}
+
 local(
   {
     # Set up file locations and R version
@@ -11,17 +18,17 @@ local(
     # User-adjustable names and defauls
     build.config <- "ve-build-config.yml"
     ve.lib.name <- "ve-lib"
-    ve.home <- normalizePath(Sys.getenv("VE_HOME",getwd()),winslash="/",mustWork=FALSE)
-    ve.build <- Sys.getenv("VE_BUILD",NA)
-    if ( is.na(ve.build) ) {
-      if ( getwd() != ve.home ) {
-        # If ve.home is somewhere else than working directory, we presume it's because
+    ve.env$ve.home <- normalizePath(Sys.getenv("VE_HOME",getwd()),winslash="/",mustWork=FALSE)
+    ve.env$ve.build.dir <- Sys.getenv("VE_BUILD",NA)
+    if ( is.na(ve.env$ve.build.dir) ) {
+      if ( getwd() != ve.env$ve.home ) {
+        # If ve.env$ve.home is somewhere else than working directory, we presume it's because
         # the user previously did an end-user (VEBase) installation at that location
         # The working directory is the fresh source code location.
-        ve.build <- ve.home
-        ve.home <- getwd()
+        ve.env$ve.build.dir <- ve.env$ve.home
+        ve.env$ve.home <- getwd()
       } else {
-        ve.build <- file.path(ve.home,"built")
+        ve.env$ve.build.dir <- file.path(ve.env$ve.home,"built")
       }
     }
 
@@ -56,12 +63,12 @@ local(
     #   code - top-level estimation nonsense makes module packages "inconvenient".
 
     # Do the rest of the work reading sources etc from VE_HOME and putting build artifacts in VE_BUILD.
-    if ( ! dir.exists(ve.build) ) {
-      message("Creating VE_BUILD directory: '",ve.build,"'")
-      dir.create(ve.build,recursive=TRUE)
+    if ( ! dir.exists(ve.env$ve.build.dir) ) {
+      message("Creating VE_BUILD directory: '",ve.env$ve.build.dir,"'")
+      dir.create(ve.env$ve.build.dir,recursive=TRUE)
     }
-    Sys.setenv(VE_BUILD=ve.build)
-    setwd(ve.build)
+    Sys.setenv(VE_BUILD=ve.env$ve.build.dir)
+    setwd(ve.env$ve.home) # Bootstrap starts in ve.home
 
     # TODO: the remainder here will build VEBuild and set up for ve.build()
 
@@ -74,7 +81,7 @@ local(
 
     # Create a VE R library that might be the "live" ve-lib
     this.R <- paste(c(R.version["major"],R.version["minor"]),collapse=".")
-    ve.lib <- file.path(ve.build,ve.lib.name,tools::file_path_sans_ext(this.R))
+    ve.lib <- file.path(ve.env$ve.build.dir,ve.lib.name,tools::file_path_sans_ext(this.R))
 
     if ( ! dir.exists(ve.lib) ) {
       dir.create(ve.lib,recursive=TRUE) # no patch level on R version
@@ -90,7 +97,7 @@ local(
       message("Using installed version of VEBuild.")
       suppressWarnings(require("VEBuild",lib.loc=ve.lib,quietly=TRUE))
     } else if ( ! installed ) {
-      message("Forcing new load.")
+      message("Forcing new VEBuild load.")
       FALSE
     }
     if ( ve.build.loaded ) {
@@ -100,24 +107,27 @@ local(
     } else {
       # VEBuild is not present, so reach into the source code and load the build functions
       # This should be the same operation performed when VEBuild itself is attached.
-      VEBuild.scripts <- file.path(ve.home,"sources","framework","VEBuild","inst","build-scripts")
+      VEBuild.scripts <- file.path(ve.env$ve.home,"sources","framework","VEBuild","inst","build-scripts")
       build.loader <- file.path(VEBuild.scripts,"load-builder.R")
       if ( ! file.exists(build.loader) ) {
         message("No build.loader at ",build.loader)
         stop("VisionEval source tree has unexpected structure.")
       }
       source(build.loader) # creates ve.builder environment and load.builder function
-      load.builder(ve.scripts=VEBuild.scripts,CRAN.mirror=CRAN.mirror)
+      load.builder(
+        ve.scripts=VEBuild.scripts,
+        CRAN.mirror=CRAN.mirror
+      )
     }
 
     # Generate .Renviron with default locations
-    renv.file <- file.path(ve.home,".Renviron")
+    renv.file <- file.path(ve.env$ve.home,".Renviron")
     renv.txt <- c(
       # NOTE: use wildcard for library R version,
       # so the same .Renviron will work for future versions of R.
-      paste0("R_LIBS_USER=",file.path(ve.build,ve.lib.name,"%v")), # 2-digit R versions
-      paste0("VE_HOME=",ve.home),
-      paste0("VE_BUILD=",ve.build)
+      paste0("R_LIBS_USER=",file.path(ve.env$ve.build.dir,ve.lib.name,"%v")), # 2-digit R versions
+      paste0("VE_HOME=",ve.env$ve.home),
+      paste0("VE_BUILD=",ve.env$ve.build.dir)
     )
     if ( ! file.exists(renv.file) ) {
       writeLines(renv.txt,renv.file)
@@ -126,9 +136,9 @@ local(
 
     # Give the user instructions for optional configuration
     message("\nEdit VE_HOME in .Renviron to set root location for source code")
-    message("  (VE_HOME is currently '",ve.home,"')\n")
+    message("  (VE_HOME is currently '",ve.env$ve.home,"')\n")
     message("Edit VE_BUILD in .Renviron to set the target location for the build.")
-    message("  (VE_BUILD is currently '",ve.build,"')\n")
+    message("  (VE_BUILD is currently '",ve.env$ve.build.dir,"')\n")
     message("Edit ve-build-config.yml to set locations of package files that might reside")
     message("  outside the VE_HOME directory tree.\n")
     message("When ready, run ve.build() to build a full VisionEval installation.\n")
