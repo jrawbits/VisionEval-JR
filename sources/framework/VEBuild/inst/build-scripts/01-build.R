@@ -4,9 +4,7 @@
 
 # ve.build should reload .Renviron as it starts for VE_HOME and VE_BUILD
 
-script.contents <- c(
-  "ve.build"
-)
+script.contents <- c( "ve.build" )
 
 # Don't break ve.build up into elements (can have helpers)
 # Actions:
@@ -70,15 +68,15 @@ script.contents <- c(
 # @return data.frame of packages and status (unchanged, built, failed)
 ve.build <- function(targets="",reset=FALSE,confirm=interactive(),config=list()) {
 
-  # Load ve-build-config.yml and update from config parameter
+  # NOTE: this function expects ve.home, ve.build.dir set in searchable environment "ve.env"
+  # VE-Bootstrap.R will set that up, as will VEBase for deeper end-user builds
 
+  # Load ve-build-config.yml and update from config parameter
   if ( ! suppressWarnings(requireNamespace("yaml",quietly=TRUE)) ) {
-    utils::install.packages("yaml", lib=ve.lib, repos=CRAN.mirror, type=.Platform$pkgType )
+    utils::install.packages("yaml", lib=ve.env$ve.lib, repos=ve.env$CRAN.mirror, type=.Platform$pkgType )
   }
   build.config.file <- "ve-build-config.yml"
   if ( exists("ve.home") ) { # look here for build configuration
-    message("ve.home is ",ve.home)
-    print(dir(ve.home))
     build.config.file <- file.path(ve.home,build.config.file)
   }
   if ( file.exists(build.config.file) ) {
@@ -103,21 +101,108 @@ ve.build <- function(targets="",reset=FALSE,confirm=interactive(),config=list())
     # YAML brings BuildTargets in as a named list; make it a named character vector
     build.config$BuildTargets <- unlist(build.config$BuildTargets)
   }
+  if ( ! "CRAN.mirror" %in% names(build.config) ) {
+    build.config$CRAN.mirror <- "https://cloud.r-project.org"
+  }
 
   if ( is.list(config) ) {
-    # TODO: better handle degenerate config (e.g. not named)
+    # TODO: handle degenerate config (e.g. not named) better
     build.config[names(config)] <- config
   }
 
   # DEBUG
-  print(build.config)
+  # print(build.config)
 
+  # Construct Build-Targets
+  this.R <- paste(c(R.version["major"],R.version["minor"]),collapse=".")
 
-  # Find PackageSources and expand to normalized directories
-  # - subdirectory in ve.home
-  # - absolute path anywhere
-  # Find all DESCRIPTION files and identify their containing
-  # directory as a package to build.
+  ve.lib <- file.path(ve.env$ve.build.dir,build.config$BuildTargets["ve.lib"],tools::file_path_sans_ext(this.R))
+  if ( ! dir.exists(ve.lib) ) dir.create(ve.lib,recursive=TRUE)
+  ve.src <- file.path(ve.env$ve.build.dir,build.config$BuildTargets["ve.src"])
+
+  if ( dir.exists(ve.src) ) unlink(ve.src,recursive=TRUE) # DEBUG
+
+  if ( ! dir.exists(ve.src) ) dir.create(ve.src)
+  ve.repository <- file.path(ve.env$ve.build.dir,build.config$BuildTargets["ve.repository"])
+  if ( ! dir.exists(ve.repository) ) dir.create(ve.repository)
+  ve.dependencies <- file.path(ve.env$ve.build.dir,build.config$BuildTargets["ve.dependencies"])
+  if ( ! dir.exists(ve.dependencies) ) dir.create(ve.dependencies)
+
+  if ( ! ve.lib %in% .libPaths() ) .libPaths(c(ve.lib,.libPaths())) # add ve.lib to front of .libPaths()
+
+  # Find the packages to build from within folders named in build.config$PackageSources
+  package.paths <- normalizePath(build.config$PackageSources,winslash="/",mustWork=FALSE)
+  if ( any( missing.paths <- ! file.exists(package.paths) ) ) {
+    package.paths[missing.paths] <- file.path(ve.env$ve.home,build.config$PackageSources[missing.paths])
+  }
+  if ( any( missing.paths <- ! file.exists(package.paths) ) ) {
+    message("Can't locate these build paths:")
+    print(build.config$PackageSources[missing.paths])
+  }
+  message("\nBuilding packages:")
+  all.packages <- dir(package.paths,pattern="^DESCRIPTION$",recursive=TRUE,full.name=TRUE)
+  target.packages <- character(0)
+  for ( tgt in targets ) {
+    target.packages <- c(target.packages,grep(tgt,all.packages,value=TRUE))
+  }
+  target.packages <- dirname(unique(target.packages))
+  print(basename(target.packages)) # could just strip DESCRIPTION here...
+
+  # Load build-helper dependency packages (these will be present if VEBuild has previously been loaded)
+  support.packages = c("desc","devtools","roxygen2","rcmdcheck","withr","yaml")
+  for ( pkg in support.packages ) {
+    if ( ! suppressWarnings(requireNamespace(pkg,quietly=TRUE)) ) {
+      utils::install.packages(pkg, lib=ve.lib, repos=build.config$CRAN.mirror, type=.Platform$pkgType )
+      suppressWarnings(requireNamespace(pkg,quietly=TRUE))
+    }
+  }
+
+  # Process descriptions of the target packages...
+  #   Then build all the ones that have their dependencies fulfilled and skip the others
+  #   At the bottom of that list, return to the top of the unfulfilled and build again
+  #   Repeat until nothing more can be built, and report an error listing the missing dependencies
+  #     if there are still unfulfilled ones.
+  #   
+  # TODO: grab dependencies for the target packages
+  #       (install any that are missing; update any that are present)
+  # TODO: internal dependencies (on packages not present in ve.lib) should
+  #       induce re-sorting target.packages
+  # TODO: Reconcile inconsistencies between package folder and name in DESCRIPTION
+  # TODO: Don't allow duplicate packages (at the DESCRIPTION name level to be built).
+
+  # Perform the build on each package
+  oldwd <- getwd()
+  message("\nRunning package build")
+  Sys.setenv(VE_BUILD_RUNNING="Yes")
+  for ( pkg in target.packages ) {
+    # TODO: push this down into a function
+    # TODO: ve.pkg.built should be the binary contriburl
+    # TODO: option to do source build instead/as well, depending on pkgType and build.config
+    ve.build.package(pkg,ve.src,ve.repository=ve.repository)
+  }
+  Sys.unsetenv("VE_BUILD_RUNNING")
+  setwd(oldwd)
+}
+
+# pkg is an absolute path to a directory containing a package
+# ve.src is where to assemble the package to build
+# ve.repository is the root of the CRAN-like repository to receive the built package
+ve.build.package <- function(pkg,ve.src,ve.repository,build.type="binary") {
+  pkg.name <- basename(pkg) # Change to use name from DESCRIPTION
+  setwd(pkg)
+  # TODO: check if pkg is newer than ve.src/pkg.name
+  file.copy(from=pkg,to=ve.src,recursive=TRUE)
+  pkg.src <- file.path(ve.src,basename(pkg))
+  message("Building from ",pkg.src," ",dir.exists(pkg.src))
+  ve.pkg.built <- contrib.url(ve.repository,build.type)
+  if ( ! dir.exists(ve.pkg.built) ) dir.create(ve.pkg.built,recursive=TRUE)
+  withr::with_dir(pkg.src,roxygen2::roxygenise(roclets=c("collate","namespace","rd")))
+  ve.pkg.zip <- devtools::build(pkg.src,path=ve.pkg.built,binary=(build.type=="binary"))
+  if ( ! file.exists(ve.pkg.zip) ) stop("Failed to build ",pkg.name," in ",ve.pkg.built)
+  # TODO: reconcile package folder name with the name that is built (from DESCRIPTION)
+  # TODO: in next line, may need to check loaded namespaces as well to determine if unload is needed
+  if ( paste0("package:",pkg.name) %in% search() || pkg.name %in% loadedNamespaces() ) devtools::unload(pkg.name)
+  utils::install.packages(ve.pkg.zip,lib=ve.env$ve.lib,repos=NULL,type=.Platform$pkgType)
 }
 
 # TEMPORARY: basic VEBuild process
@@ -134,19 +219,19 @@ keep.around <- function() {
   # Install packages required for building
   # Note that RTools in a suitable version also needs to be installed
   if ( ! suppressWarnings(requireNamespace("desc",quietly=TRUE)) ) {
-    utils::install.packages("desc", lib=ve.lib, repos=CRAN.mirror, type=.Platform$pkgType )
+    utils::install.packages("desc", lib=ve.lib, repos=build.config$CRAN.mirror, type=.Platform$pkgType )
   }
   if ( ! suppressWarnings(requireNamespace("devtools",quietly=TRUE)) ) {
-    utils::install.packages("devtools", lib=ve.lib, repos=CRAN.mirror, type=.Platform$pkgType )
+    utils::install.packages("devtools", lib=ve.lib, repos=build.config$CRAN.mirror, type=.Platform$pkgType )
   }
   if ( ! suppressWarnings(requireNamespace("roxygen2",quietly=TRUE)) ) {
-    utils::install.packages("roxygen2", lib=ve.lib, repos=CRAN.mirror, type=.Platform$pkgType )
+    utils::install.packages("roxygen2", lib=ve.lib, repos=build.config$CRAN.mirror, type=.Platform$pkgType )
   }
   if ( ! suppressWarnings(requireNamespace("rcmdcheck",quietly=TRUE)) ) {
-    utils::install.packages("rcmdcheck", lib=ve.lib, repos=CRAN.mirror, type=.Platform$pkgType )
+    utils::install.packages("rcmdcheck", lib=ve.lib, repos=build.config$CRAN.mirror, type=.Platform$pkgType )
   }
   if ( ! suppressWarnings(requireNamespace("withr",quietly=TRUE)) ) {
-    utils::install.packages("withr", lib=ve.lib, repos=CRAN.mirror, type=.Platform$pkgType )
+    utils::install.packages("withr", lib=ve.lib, repos=build.config$CRAN.mirror, type=.Platform$pkgType )
   }
 
   # Find and install dependencies specifically for VEBuild (some are not part of development

@@ -1,4 +1,4 @@
-#' @include visioneval.R
+#' @include VisionEval.R
 # zzz.R - VEBase package .onLoad function
 
 # .onAttach is called when a package is attached to an R session

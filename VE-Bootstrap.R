@@ -3,7 +3,7 @@
 
 # Run this entire block in a local environment so variables are not saved
 
-# Create an environment to hold ve.home, ve.env$ve.build.dir and ve.runtime
+# Create an environment to hold ve.home, ve.env$ve.build.dir and ve.runtime, ve.lib
 ve.env <- if ( ! "ve.env" %in% search() ) {
   attach(NULL,name="ve.env")
 } else {
@@ -13,7 +13,7 @@ ve.env <- if ( ! "ve.env" %in% search() ) {
 local(
   {
     # Set up file locations and R version
-    CRAN.mirror <- "https://cloud.r-project.org"
+    ve.env$CRAN.mirror <- "https://cloud.r-project.org"
 
     # User-adjustable names and defauls
     build.config <- "ve-build-config.yml"
@@ -70,55 +70,33 @@ local(
     Sys.setenv(VE_BUILD=ve.env$ve.build.dir)
     setwd(ve.env$ve.home) # Bootstrap starts in ve.home
 
-    # TODO: the remainder here will build VEBuild and set up for ve.build()
-
-    # NOTE: the code to set up the environment in VEBuild relies on certain scripts that we could
-    # just load into "ve.builder" environment/pseudo-package using the "import" package. Then we can
-    # retain consistency on what the build process is. We'd dip down into VEBuild/inst/build-scripts
-    # and then import them from there. So at the end, we have working ve.builder, without ever
-    # having to have built VEBuild as a package (though we will later). That will simplify the
-    # dependencies.
-
-    # Create a VE R library that might be the "live" ve-lib
+    # Construct a ve-lib in ve.build.dir
+    # These can be ignored/re-done when a full build happens, based on ve-build-config.yml
+    # Generally with the default names and locations, these will end up in the right place
     this.R <- paste(c(R.version["major"],R.version["minor"]),collapse=".")
-    ve.lib <- file.path(ve.env$ve.build.dir,ve.lib.name,tools::file_path_sans_ext(this.R))
+    ve.env$ve.lib <- file.path(ve.env$ve.build.dir,ve.lib.name,tools::file_path_sans_ext(this.R))
+    if ( ! dir.exists(ve.env$ve.lib) ) {
+      dir.create(ve.env$ve.lib,recursive=TRUE)
+      # if ( ! ve.env$ve.lib %in% .libPaths() ) .libPaths(ve.env$ve.lib,.libPaths())
+    }
 
-    if ( ! dir.exists(ve.lib) ) {
-      dir.create(ve.lib,recursive=TRUE) # no patch level on R version
-    }
-    .libPaths(c(ve.lib,.libPaths())) # add ve.lib to front of .libPaths()
-
-    # Use VEBuild itself if present to install builder functons
-    installed <- FALSE
-    ve.build.loaded <- if (
-      is.na(Sys.getenv("VE_FORCE_NEW")) &&
-      (installed <- "VEBuild" %in% utils::installed.packages(lib.loc=ve.lib)[,"Package"])
-    ) {
-      message("Using installed version of VEBuild.")
-      suppressWarnings(require("VEBuild",lib.loc=ve.lib,quietly=TRUE))
-    } else if ( ! installed ) {
-      message("Forcing new VEBuild load.")
-      FALSE
-    }
-    if ( ve.build.loaded ) {
-      # build functions should now be loaded.
-      detach("package:VEBuild")
-      unloadNamespace("VEBuild")
-    } else {
-      # VEBuild is not present, so reach into the source code and load the build functions
-      # This should be the same operation performed when VEBuild itself is attached.
-      VEBuild.scripts <- file.path(ve.env$ve.home,"sources","framework","VEBuild","inst","build-scripts")
-      build.loader <- file.path(VEBuild.scripts,"load-builder.R")
-      if ( ! file.exists(build.loader) ) {
-        message("No build.loader at ",build.loader)
-        stop("VisionEval source tree has unexpected structure.")
-      }
-      source(build.loader) # creates ve.builder environment and load.builder function
-      load.builder(
-        ve.scripts=VEBuild.scripts,
-        CRAN.mirror=CRAN.mirror
-      )
-    }
+    # Load the builder environment from the source tree
+    # We won't use VEBuild itself.
+    # If we start a runtime VE and then require(VEBuild) it will re-initialize the loader
+    #   just like this file. Running ve.build will always detach VEBuild itself if it is loaded.
+    # The use case for requiring VEBuild is to rebuild a couple of local packages without having
+    #   to iterate over building the entire core VE (so e.g. for updating PUMS or PTaF).
+    VEBuild.scripts <- file.path(ve.env$ve.home,"sources","framework","VEBuild","inst","build-scripts")
+    build.loader <- file.path(VEBuild.scripts,"load-builder.R")
+    if ( ! file.exists(build.loader) ) {
+      message("No build.loader at ",build.loader)
+      stop("VisionEval source tree has unexpected structure.")
+    } else message("Loading ve.build...")
+    source(build.loader) # creates ve.builder environment and load.builder function
+    load.builder(
+      ve.scripts=VEBuild.scripts,
+      CRAN.mirror=ve.env$CRAN.mirror
+    )
 
     # Generate .Renviron with default locations
     renv.file <- file.path(ve.env$ve.home,".Renviron")
@@ -127,7 +105,8 @@ local(
       # so the same .Renviron will work for future versions of R.
       paste0("R_LIBS_USER=",file.path(ve.env$ve.build.dir,ve.lib.name,"%v")), # 2-digit R versions
       paste0("VE_HOME=",ve.env$ve.home),
-      paste0("VE_BUILD=",ve.env$ve.build.dir)
+      paste0("VE_BUILD=",ve.env$ve.build.dir),
+      paste0("VE_RUNTIME=",ve.env$ve.home)
     )
     if ( ! file.exists(renv.file) ) {
       writeLines(renv.txt,renv.file)
