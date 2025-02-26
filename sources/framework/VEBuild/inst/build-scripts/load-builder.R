@@ -32,7 +32,13 @@ env.build$load.builder <- function(ve.scripts,CRAN.mirror="https://cloud.r-proje
         silent=TRUE,
         eval(parse(text=paste0("import::here(script.contents,.from='",sf,"')")))
       )
-      if ( ! exists("script.contents") ) next
+      message("Loaded.")
+      if ( ! exists("script.contents") ) {
+        message("No 'script.contents' in script file: ",sf)
+        next
+      } else {
+        print(ls)
+      }
       eval(parse(text=paste0("import::into(.into='ve.builder',",paste(script.contents,collapse=","),",.from='",sf,"')")))
       rm(script.contents)
     }

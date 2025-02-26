@@ -82,8 +82,16 @@ local(
     .libPaths(c(ve.lib,.libPaths())) # add ve.lib to front of .libPaths()
 
     # Use VEBuild itself if present to install builder functons
-    if ( "VEBuild" %in% installed.packages(lib.loc=ve.lib),[,"Package"] ) {
-      ve.build.loaded <- suppressWarnings(require("VEBuild",lib.loc=ve.lib,quietly=TRUE))
+    installed <- FALSE
+    ve.build.loaded <- if (
+      is.na(Sys.getenv("VE_FORCE_NEW")) &&
+      (installed <- "VEBuild" %in% utils::installed.packages(lib.loc=ve.lib)[,"Package"])
+    ) {
+      message("Using installed version of VEBuild.")
+      suppressWarnings(require("VEBuild",lib.loc=ve.lib,quietly=TRUE))
+    } else if ( ! installed ) {
+      message("Forcing new load.")
+      FALSE
     }
     if ( ve.build.loaded ) {
       # build functions should now be loaded.
@@ -91,13 +99,13 @@ local(
       unloadNamespace("VEBuild")
     } else {
       # VEBuild is not present, so reach into the source code and load the build functions
-      # This is the same operation performed when VEBuild itself is attached.
+      # This should be the same operation performed when VEBuild itself is attached.
       VEBuild.scripts <- file.path(ve.home,"sources","framework","VEBuild","inst","build-scripts")
       build.loader <- file.path(VEBuild.scripts,"load-builder.R")
       if ( ! file.exists(build.loader) ) {
         message("No build.loader at ",build.loader)
         stop("VisionEval source tree has unexpected structure.")
-      }
+      } else message("Sourcing build.loader")
       source(build.loader) # creates ve.builder environment and load.builder function
       load.builder(ve.scripts=VEBuild.scripts,CRAN.mirror=CRAN.mirror)
     }
@@ -107,22 +115,22 @@ local(
     renv.txt <- c(
       # NOTE: use wildcard for library R version,
       # so the same .Renviron will work for future versions of R.
-      paste0("R_LIBS_USER=",file.path(ve.build,ve.lib.name,"%v")) # 2-digit R versions
+      paste0("R_LIBS_USER=",file.path(ve.build,ve.lib.name,"%v")), # 2-digit R versions
       paste0("VE_HOME=",ve.home),
       paste0("VE_BUILD=",ve.build)
-      message("Created default .Renviron")
     )
     if ( ! file.exists(renv.file) ) {
       writeLines(renv.txt,renv.file)
-    } else message(".Renviron exists and is unchanged.")
+      message("\nCreated default .Renviron")
+    }
 
     # Give the user instructions for optional configuration
-    message("Edit VE_HOME in .Renviron to set root location for source code")
+    message("\nEdit VE_HOME in .Renviron to set root location for source code")
     message("  (VE_HOME is currently '",ve.home,"')\n")
     message("Edit VE_BUILD in .Renviron to set the target location for the build.")
     message("  (VE_BUILD is currently '",ve.build,"')\n")
     message("Edit ve-build-config.yml to set locations of package files that might reside")
-    message("  outside the VE_HOME directory tree.")
+    message("  outside the VE_HOME directory tree.\n")
     message("When ready, run ve.build() to build a full VisionEval installation.\n")
   }
 )
