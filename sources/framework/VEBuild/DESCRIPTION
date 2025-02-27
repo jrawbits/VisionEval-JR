@@ -12,6 +12,12 @@ Depends: R (>= 4.0.0)
 Imports:
     import,
     yaml,
+    desc,
+    devtools,
+    dplyr,
+    rcmdcheck,
+    roxygen2,
+    withr,
     BiocManager,
     miniCRAN
 Encoding: UTF-8

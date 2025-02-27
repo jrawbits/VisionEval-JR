@@ -74,6 +74,7 @@ ve.build <- function(targets="",reset=FALSE,confirm=interactive(),config=list())
   # Load ve-build-config.yml and update from config parameter
   if ( ! suppressWarnings(requireNamespace("yaml",quietly=TRUE)) ) {
     utils::install.packages("yaml", lib=ve.env$ve.lib, repos=ve.env$CRAN.mirror, type=.Platform$pkgType )
+    suppressWarnings(requireNamespace("yaml",quietly=TRUE))
   }
   build.config.file <- "ve-build-config.yml"
   if ( exists("ve.home") ) { # look here for build configuration
@@ -97,6 +98,7 @@ ve.build <- function(targets="",reset=FALSE,confirm=interactive(),config=list())
       PackageSources = c( "sources", "external" )
     )
   }
+  # BuildTargets are names for things like ve-lib or ve-src (see the sample)
   if ( "BuildTargets" %in% names(build.config) && is.list(build.config$BuildTargets) ) {
     # YAML brings BuildTargets in as a named list; make it a named character vector
     build.config$BuildTargets <- unlist(build.config$BuildTargets)
@@ -106,12 +108,9 @@ ve.build <- function(targets="",reset=FALSE,confirm=interactive(),config=list())
   }
 
   if ( is.list(config) ) {
-    # TODO: handle degenerate config (e.g. not named) better
+    # TODO: handle degenerate config (e.g. not a named list) better
     build.config[names(config)] <- config
   }
-
-  # DEBUG
-  # print(build.config)
 
   # Construct Build-Targets
   this.R <- paste(c(R.version["major"],R.version["minor"]),collapse=".")
@@ -139,30 +138,145 @@ ve.build <- function(targets="",reset=FALSE,confirm=interactive(),config=list())
     message("Can't locate these build paths:")
     print(build.config$PackageSources[missing.paths])
   }
-  message("\nBuilding packages:")
+  message("\nBuilding packages in these directories:")
   all.packages <- dir(package.paths,pattern="^DESCRIPTION$",recursive=TRUE,full.name=TRUE)
   target.packages <- character(0)
   for ( tgt in targets ) {
     target.packages <- c(target.packages,grep(tgt,all.packages,value=TRUE))
   }
   target.packages <- dirname(unique(target.packages))
-  print(basename(target.packages)) # could just strip DESCRIPTION here...
+  package.names <- basename(target.packages)
+  print(package.names)
 
   # Load build-helper dependency packages (these will be present if VEBuild has previously been loaded)
-  support.packages = c("desc","devtools","roxygen2","rcmdcheck","withr","yaml")
+  message("\nLoading package dependencies...")
+  # Install helper package
+  if ( ! suppressWarnings(requireNamespace("desc",quietly=TRUE)) ) {
+    utils::install.packages("desc", lib=ve.lib, repos=ve.env$CRAN.mirror, type=.Platform$pkgType )
+    suppressWarnings(requireNamespace("desc",quietly=TRUE))
+  }
+  if ( ! suppressWarnings(requireNamespace("dplyr",quietly=TRUE)) ) {
+    utils::install.packages("dplyr", lib=ve.lib, repos=ve.env$CRAN.mirror, type=.Platform$pkgType )
+    suppressWarnings(requireNamespace("dplyr",quietly=TRUE))
+  }
+
+  # Process descriptions of the target packages...
+  pkg.desc <- lapply(
+    target.packages,
+    function(pkg) {
+      ds <- desc::description$new(pkg)
+      deps <- ds$get_deps()
+      deps <- deps[ deps$package!="R" & deps$type != "Suggests", ]
+      list(
+        Package=ds$get("Package"),
+        Description=ds,
+        Dependencies=deps,
+        Folder=pkg
+      )
+    }
+  )
+  names(pkg.desc) <- pkg.names <- as.character(sapply(pkg.desc,FUN=function(pkg) pkg$Package))
+
+  # Assemble a complete list of dependencies that are not currently being built
+  # Mark out BaseR packages
+  base.lib <- dirname(find.package("base")) # looking for recommended packages
+  pkgs.BaseR <- as.vector(installed.packages(lib.loc=base.lib, priority=c("base", "recommended"))[,"Package"])
+  message("BaseR Packages:")
+  print(pkgs.BaseR)
+
+  # Add support.packages to the list in case no one else asks for them
+  support.packages <- c("desc","devtools","dplyr","rcmdcheck","roxygen2","withr","yaml","BiocManager","miniCRAN")
+  pkg.deps <- unique(dplyr::bind_rows(lapply(pkg.desc,function(pkg) pkg$Dependencies), .id = "BuildPackage")$package)
+  pkg.deps <- unique(c(support.packages,pkg.deps))
+  pkg.deps <- pkg.deps[ ! pkg.deps %in% c(pkg.names,pkgs.BaseR) ]
+
+  # Prepare to copy dependencies into a local repository
+  if ( ! suppressWarnings(requireNamespace("BiocManager",quietly=TRUE)) ) {
+    utils::install.packages("BiocManager", lib=ve.lib, repos=ve.env$CRAN.mirror, type=.Platform$pkgType )
+    suppressWarnings(requireNamespace("BiocManager",quietly=TRUE))
+  }
+  repos <- unique(as.character(c(build.config$CRAN.mirror,BiocManager::repositories())))
+  if ( ! suppressWarnings(requireNamespace("miniCRAN",quietly=TRUE)) ) {
+    utils::install.packages("miniCRAN", lib=ve.lib, repos=repos, type=.Platform$pkgType )
+    suppressWarnings(requireNamespace("miniCRAN",quietly=TRUE))
+  }
+  # Build local repository file tree if not present
+  src.contrib <- contrib.url(ve.dependencies, .Platform$pkgType)
+  if ( ! dir.exists(src.contrib) ) {
+    miniCRAN::makeRepo(c("desc","dplyr","miniCRAN","BiocManager","yaml"), path = ve.dependencies, repos=repos, type = .Platform$pkgType)
+  }
+
+  # Get full set of dependencies
+  expanded.deps <- miniCRAN::pkgDep( pkg.deps, repos=repos, suggests=FALSE)
+  missing.packages <- findMissingPackages(expanded.deps, repos=ve.dependencies, repo.type=.Platform$pkgType )
+
+  # Make sure the repository is complete (and if it is, then try updating it)
+  if ( length(missing.packages) > 0 ) {
+    miniCRAN::addPackage(missing.packages, path=ve.dependencies, repos=repos, type=.Platform$pkgType, deps=TRUE)
+  } else {
+    miniCRAN::updatePackage(oldPkgs=expanded.deps, path=ve.dependencies, repos=repos, type=.Platform$pkgType, ask=FALSE)
+  }
+
+  # Now install the ones that are not already installed from the local dependency repository
+  deps.missing <- pkg.deps[ ! pkg.deps %in% installed.packages(fields="Package") ]
+  if ( length(deps.missing) > 0 ) {
+    message("Installing dependencies:")
+    print(deps.missing)
+    utils::install.packages(deps.missing, lib=ve.lib, repos=ve.dependencies, type=.Platform$pkgType )
+  }
+
+  # Now load the installed support packages (needed for doing the package build)
   for ( pkg in support.packages ) {
     if ( ! suppressWarnings(requireNamespace(pkg,quietly=TRUE)) ) {
-      utils::install.packages(pkg, lib=ve.lib, repos=build.config$CRAN.mirror, type=.Platform$pkgType )
+      utils::install.packages(pkg, lib=ve.lib, repos=ve.dependencies, type=.Platform$pkgType )
       suppressWarnings(requireNamespace(pkg,quietly=TRUE))
     }
   }
 
-  # Process descriptions of the target packages...
-  #   Then build all the ones that have their dependencies fulfilled and skip the others
-  #   At the bottom of that list, return to the top of the unfulfilled and build again
-  #   Repeat until nothing more can be built, and report an error listing the missing dependencies
-  #     if there are still unfulfilled ones.
-  #   
+  stop("Testing")
+  
+  # Remove any that are in the build list
+  # Install any externals that are not already in ve.lib
+  # Perhaps update any externals that ARE in ve.lib
+  #   Stop with report on any non-build-list that can't be found
+  #     (most will be VE packages available but not built or asked to be built)
+  #   Need to allow for BiocManager packages versus CRAN
+  #   Use available.packages() to locate the installable versions
+
+  # Run through the build list and build packages all of whose
+  #   dependencies are present. Just look for dependencies in
+  #   installed.packages (and update that list after each build)
+
+  # If any package build fails, stop right there
+
+#   pkg.built <- logical(length(pkg.desc)) # fills all with FALSE
+#   names(pkg.built) <- names(pkg.desc)
+#   unbuilt <- length(which(!pkg.built))
+#   last.unbuilt <- 0
+#   while ( unbuilt > 0 && unbuilt != last.unbuilt ) {
+#     for ( pkg in 1:length(pkg.desc) ) {
+#       ip <- row.names(installed.packages())
+#       deps <- pkg.desc[[pkg]]$Dependencies
+#       # TODO: 
+# 
+#       good.deps <- deps %in% ip
+#       if ( all(good.deps) ) {
+#         pending.deps <- deps %in% names(pkg.built)[!pkg.built]
+#         ve.install.deps(deps[!good.deps & !pending.deps])
+#         pkg.built[pkg] <- ve.build.package( pkg.desc[[pkg]]$Folder, ve.src, ve.repository=ve.repository )
+#       }
+#     }
+#     last.unbuilt <- unbuilt
+#     unbuilt <- length(which(!pkg.built))
+#   }
+#   if ( last.unbuilt == unbuilt ) {
+#     message("Unable to build packages due to missing dependencies:")
+#     print(names(pkg.built)[unbuilt])
+#     message("Missing dependencies:")
+#     print(sapply(pkg.desc[unbuilt],function(pkg) pkg$Dependencies[ ! pkg$Dependencies %in% installed.packages()))
+#     stop("\nBuild failed!")
+#   }
+
   # TODO: grab dependencies for the target packages
   #       (install any that are missing; update any that are present)
   # TODO: internal dependencies (on packages not present in ve.lib) should
@@ -203,6 +317,25 @@ ve.build.package <- function(pkg,ve.src,ve.repository,build.type="binary") {
   # TODO: in next line, may need to check loaded namespaces as well to determine if unload is needed
   if ( paste0("package:",pkg.name) %in% search() || pkg.name %in% loadedNamespaces() ) devtools::unload(pkg.name)
   utils::install.packages(ve.pkg.zip,lib=ve.env$ve.lib,repos=NULL,type=.Platform$pkgType)
+  return(TRUE)
+}
+
+findMissingPackages <- function( required.packages, repos, repo.type=.Platform$pkgType ) {
+  # Determine if any packages are missing from the pkg-repository
+  # compared to the required.packages passed in.
+  #
+  # Args:
+  #   required.packages: a character vector containing names of packages
+  #                      we hope to find in pkg-repository
+  #
+  # Returns:
+
+  #   A character vector of package names that are missing from the
+  #   ve.build.type section of the pkg-repository compared to the
+  #   required.packages
+  
+  apb <- available.packages(repos=repos, type=repo.type)
+  return( setdiff( required.packages, apb[,"Package"]) )
 }
 
 # TEMPORARY: basic VEBuild process
