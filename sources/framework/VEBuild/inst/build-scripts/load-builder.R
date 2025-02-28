@@ -33,5 +33,6 @@ env.build$load.builder <- function(ve.scripts,CRAN.mirror="https://cloud.r-proje
     eval(parse(text=paste0("import::into(.into='ve.builder',",paste(script.contents,collapse=","),",.from='",sf,"')")))
     rm(script.contents)
   }
+  unloadNamespace("import") # so we can load it again as part of ve.build
   rm(sf,script.files)
 }
