@@ -2,17 +2,10 @@
 
 # Author: Jeremy Raw
 
-# Create an environment to hold build functions (if not already present)
-env.build <- if ( ! "ve.builder" %in% search() ) {
-  attach(NULL,name="ve.builder")
-} else {
-  as.environment("ve.builder")
-}
-
 # Use import package to load build functions
 #' @param ve.scripts List of package directory patterns to search for packages to build
 #' @param CRAN.mirror URL of CRAN repository containing "import" package
-env.build$load.builder <- function(ve.scripts,CRAN.mirror="https://cloud.r-project.org") {
+load.builder <- function(ve.scripts,CRAN.mirror="https://cloud.r-project.org") {
 
   # install and load import package
   # .libPaths()[1] shoule be ve.lib
@@ -36,3 +29,4 @@ env.build$load.builder <- function(ve.scripts,CRAN.mirror="https://cloud.r-proje
   unloadNamespace("import") # so we can load it again as part of ve.build
   rm(sf,script.files)
 }
+if ( exists("run.build.loader") && run.build.loader ) l

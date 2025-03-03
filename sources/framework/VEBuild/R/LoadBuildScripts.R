@@ -12,7 +12,6 @@
 
 .onAttach <- function(libname, pkgname) {
 
-  # Create an environment on the search path to hold ve.home, ve.build and ve.runtime
   ve.env <- if ( ! "ve.env" %in% search() ) {
     attach(NULL,name="ve.env")
   } else {
@@ -30,11 +29,17 @@
     VEBuild.scripts <- system.file("build-scripts",package="VEBuild")
     build.loader <- file.path(VEBuild.scripts,"load-builder.R")
     if ( ! file.exists(build.loader) ) {
-      message("No build.loader at ",VEBuild.scripts)
+      packageStartupMessage("No build.loader at ",VEBuild.scripts)
       stop("VEBuild is missing load-builder.R.")
     }
-    source(build.loader) # Imports ve.build and related functions
-    load.builder(ve.scripts=VEBuild.scripts,CRAN.mirror=CRAN.mirror)
+    # Create an environment to hold build functions (if not already present)
+    env.build <- if ( ! "ve.builder" %in% search() ) {
+      attach(NULL,name="ve.builder")
+    } else {
+      as.environment("ve.builder")
+    }
+    sys.source(build.loader,envir=env.build) # Imports ve.build and related functions
+    env.build$load.builder(ve.scripts=VEBuild.scripts,CRAN.mirror=CRAN.mirror)
   }
 }
 
@@ -54,12 +59,13 @@
 #'   is an empty character string, which will match all packages; see description above
 #' @param reset a logical; if TRUE, then remove any package artifacts before rebuilding matched
 #'   packages; default is FALSE (up to date packages will be skipped)
+#' @param check a logical; if TRUE, run R CMD check; otherwise skip those tests
 #' @param confirm a logical; if TRUE (default for interactive use), ask user to confirm prior to
 #'   (re-)building each package.
 #' @param config a list of configuration elements that replace iems in the ve-config.yml file (see
 #'   documentation for that file elsewhere)
 #' @return data.frame of packages and status (unchanged, built, failed)
-ve.build <- function() {
+ve.build <- function(packages="",reset=FALSE,check=TRUE,confirm=interactive(),config=list()) {
   do.it <- get("ve.build",envir=as.environment("ve.builder")) # NOTE: will throw an error if not present
-  do.it() 
+  do.it(packages=packages,reset=reset,check=check,confirm=confirm,config=config) 
 }

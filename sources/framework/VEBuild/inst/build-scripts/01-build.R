@@ -41,20 +41,27 @@ script.contents <- c( "ve.build" ) # for "import" package to make a pseudo packa
 # @param packages a character vector of regular expressions naming VE packages to build; default
 #   is an empty character string, which will match all packages; see description above
 # @param reset a logical; if TRUE, then remove any package artifacts before rebuilding matched
-#   packages; default is FALSE (up to date packages will be skipped)
+#   packages; default is FALSE (up to date packages will be minimally rebuilt)
+# @param check a logical; if TRUE, run R CMD check; otherwise skip those tests
 # @param confirm a logical; if TRUE (default for interactive use), ask user to confirm prior to
 #   (re-)building each package.
 # @param config a list of configuration elements that replace iems in the ve-config.yml file (see
 #   documentation for that file elsewhere)
 # @return data.frame of packages and status (unchanged, built, failed)
-ve.build <- function(targets="",reset=FALSE,confirm=interactive(),config=list()) {
+ve.build <- function(targets="",reset=FALSE,check=reset,confirm=interactive(),config=list()) {
   build.config <- ve.build.config(reset=reset,config=config)
 
   pkg.desc <- ve.get.targets(targets,build.config)
 
   ve.load.dependencies(pkg.desc,build.config)
 
-  ve.build.packages(pkg.desc,build.config)
+  ve.build.packages(pkg.desc,build.config,reset=reset,check=check)
+}
+
+ve.env <- if ( ! "ve.env" %in% search() ) {
+  attach(NULL,name="ve.env")
+} else {
+  as.environment("ve.env")
 }
 
 ve.build.config <- function(config=list(),reset=FALSE) {
@@ -80,6 +87,8 @@ ve.build.config <- function(config=list(),reset=FALSE) {
         utils::install.packages("yaml", lib=ve.env$ve.lib, repos=ve.env$CRAN.mirror, type=build.type )
         suppressWarnings(requireNamespace("yaml",quietly=TRUE))
       }
+
+      ve.wantdocs <- TRUE
 
       config.file <- "ve-build-config.yml"
       if ( exists("ve.home") ) { # look here for build configuration
@@ -131,13 +140,15 @@ ve.build.config <- function(config=list(),reset=FALSE) {
       ve.repository <- file.path(ve.env$ve.build.dir,raw.config$BuildTargets["ve.repository"])
       if ( ! dir.exists(ve.repository) ) dir.create(ve.repository)
       ve.repository.url <- paste0("file:///",ve.repository)
-      build.contriburl <- contrib.url(ve.repository, build.type)
+      build.contriburl <- utils::contrib.url(ve.repository, build.type)
+      build.contriburl.src <- utils::contrib.url(ve.repository, "source") # Always build VE source package too
       if ( ! dir.exists(build.contriburl) ) dir.create(build.contriburl,recursive=TRUE)
+      if ( ! dir.exists(build.contriburl.src) ) dir.create(build.contriburl.src,recursive=TRUE)
 
       ve.dependencies <- file.path(ve.env$ve.build.dir,raw.config$BuildTargets["ve.dependencies"])
       if ( ! dir.exists(ve.dependencies) ) dir.create(ve.dependencies)
       ve.dependencies.url <- paste0("file:///",ve.dependencies)
-      dependencies.contriburl <- contrib.url(ve.dependencies, build.type)
+      dependencies.contriburl <- utils::contrib.url(ve.dependencies, build.type)
 
       if ( ! ve.lib %in% .libPaths() ) .libPaths(c(ve.lib,.libPaths())) # add ve.lib to front of .libPaths() if not present
 
@@ -156,6 +167,11 @@ ve.build.config <- function(config=list(),reset=FALSE) {
         message("Can't locate these build paths:")
         print(raw.config$PackageSources[missing.paths])
       }
+      # These get used during build to find obsolete installed packages
+      pkgs.info <- utils::installed.packages(lib.loc=ve.lib)[,c("Package","Version")]
+      pkgs.installed <- pkgs.info[,"Package"]
+      pkgs.version <- pkgs.info[,"Version"]
+      rm(pkgs.info)
     }
   )
 }
@@ -234,7 +250,7 @@ ve.load.dependencies <- function(pkg.desc,build.config) {
       # Assemble a complete list of dependencies that are not currently being built
       # Mark out BaseR packages (even if explicitly listed, they will always be there)
       base.lib <- dirname(find.package("base")) # looking for recommended packages
-      pkgs.BaseR <- installed.packages(lib.loc=base.lib, priority=c("base", "recommended"))[,"Package"]
+      pkgs.BaseR <- utils::installed.packages(lib.loc=base.lib, priority=c("base", "recommended"))[,"Package"]
       #   message("BaseR Packages:")
       #   print(pkgs.BaseR)
 
@@ -243,14 +259,14 @@ ve.load.dependencies <- function(pkg.desc,build.config) {
       pkg.deps <- unique(c(support.packages,pkg.deps))
       pkg.deps <- pkg.deps[ ! pkg.deps %in% c(names(pkg.desc),pkgs.BaseR) ]
       # ignore any that are not available in repos.online
-      available.online <- available.packages(repos=repos.online,type=build.type)[,"Package"] # will take a while...
+      available.online <- utils::available.packages(repos=repos.online,type=build.type)[,"Package"] # will take a while...
       available.online <- pkg.deps %in% available.online
       pkg.deps.online <- pkg.deps[ available.online ]
       if ( any( ! available.online ) ) {
         # Make sure offline dependencies (VE or locally built packages) are either already built or
         # scheduled to be built (i.e. present in pkg.desc list of targets)
         local.deps <- pkg.deps[ ! available.online ]
-        available.local <- available.packages(repos=ve.repository.url,type=build.type)[,"Package"]
+        available.local <- utils::available.packages(repos=ve.repository.url,type=build.type)[,"Package"]
         available.local <- local.deps %in% c(available.local,names(pkg.desc)) # either built already or scheduled to build
         if ( any( ! available.local ) ) {
           message("Required package(s) are not built and not scheduled to build:")
@@ -284,7 +300,7 @@ ve.load.dependencies <- function(pkg.desc,build.config) {
       }
 
       # Complete installing those downloaded packages into ve-lib for runtime use
-      inst.pkgs <- installed.packages(lib.loc=ve.lib)[,"Package"]
+      inst.pkgs <- utils::installed.packages(lib.loc=ve.lib)[,"Package"]
       deps.missing <- pkg.deps[ ! pkg.deps %in% inst.pkgs ]
       if ( length(deps.missing) > 0 ) {
         message("Installing missing dependencies...")
@@ -303,7 +319,7 @@ ve.load.dependencies <- function(pkg.desc,build.config) {
   )
 }
 
-ve.build.packages <- function(pkg.desc,build.config) {
+ve.build.packages <- function(pkg.desc,build.config,reset=FALSE,check=TRUE) {
   # Process pkg.desc so we cumulatively build VE packages that depend on earlier VE packages
 
   # Perform the build on each package
@@ -315,13 +331,13 @@ ve.build.packages <- function(pkg.desc,build.config) {
     }
   )
 
-  cat("\nRunning package build")
+  cat("\nRunning package build\n")
   Sys.setenv(VE_BUILD_RUNNING="Yes")
   pkg.built <- logical(length(pkg.desc)) # fills all with FALSE
   last.pkg.built <- 0
   while ( any( ! pkg.built ) ) {
     for ( i in seq_along(pkg.desc) ) {
-      pkg.built[i] <- ve.build.one.package(pkg.desc[[i]],build.config) # TRUE if it was built successfully
+      pkg.built[i] <- ve.build.one.package(pkg.desc[[i]],build.config,reset=reset,check=check) # TRUE if it was built successfully
     }
     built.this.time <- length(which(pkg.built))
     if ( built.this.time > last.pkg.built ) {
@@ -344,26 +360,26 @@ ve.build.packages <- function(pkg.desc,build.config) {
 # pkg is an absolute path to a directory containing a package
 # ve.src is where to assemble the package to build
 # ve.repository is the root of the CRAN-like repository to receive the built package
-ve.build.one.package <- function(pkg,build.config) {
+ve.build.one.package <- function(pkg,build.config,reset=FALSE,check=TRUE,debug=0) {
   # ve.src,ve.repository,build.type="binary")
   with(
     build.config,
     {
-      folder <- pkg$Folder
-      pkg.name <- basename(folder) # Change to use name from DESCRIPTION
+      pkg.folder <- pkg$Folder
+      pkg.name <- basename(pkg.folder) # Change to use name from DESCRIPTION
       pkg.src <- file.path(ve.src,pkg$Package)
 
       # Prepare package to build in ve.src
       # Allows auto-generation of namespace plus VE data estimation and documentation if required
+      cat("\nBuilding",pkg$Package)
       if ( pkg.name != pkg$Package ) {
-        message("Building Package Name",pkg$Package," differs from Folder ",folder)
+        message("Building Package Name",pkg$Package," differs from Folder ",pkg.folder)
         message("Output will be in ",pkg.src)
         pkg.name <- pkg$Package
       }
-      cat("Building",pkg$Package)
 
       # Check that all the dependencies are installed, otherwise gracefully return FALSE
-      available.dependencies <- installed.packages(lib.loc=ve.lib,)[,"Package"]
+      available.dependencies <- utils::installed.packages(lib.loc=ve.lib,)[,"Package"]
       pkg.deps <- pkg$Dependencies$package
       if ( any( missing.deps <- (! pkg.deps %in% available.dependencies) ) ) {
         # Already screened for missing dependencies that are not in the list to build
@@ -375,33 +391,363 @@ ve.build.one.package <- function(pkg,build.config) {
       }
 
       # Gracefully return TRUE if the package is up to date and installed
-      if ( ! newerThan(folder,pkg.src ) && pkg.name %in% installed.packages(lib.loc=ve.lib)[,"Package"] ) {
+      if ( ! newerThan(pkg.folder,pkg.src ) && pkg.name %in% utils::installed.packages(lib.loc=ve.lib)[,"Package"] ) {
         cat(": INSTALLED.\n")
         return(TRUE)
       }
 
       # try to continue the overall build even if this package fails
-      cat(" from",folder,"\n\n")
-      te <- try( silent=TRUE,
-        {
-          file.copy(from=folder,to=ve.src,recursive=TRUE)
-          withr::with_dir(
-            pkg.src,
-            {
-              roxygen2::roxygenise(roclets=c("collate","namespace","rd"))
-              ve.pkg.zip <- devtools::build(".",path=build.contriburl,binary=any(grepl("binary",build.type)))
-              status <- if ( file.exists(ve.pkg.zip) ) {
-                if ( paste0("package:",pkg.name) %in% search() || pkg.name %in% loadedNamespaces() ) devtools::unload(pkg.name)
-                utils::install.packages(ve.pkg.zip,lib=ve.lib,repos=NULL,type=build.type)
-                TRUE
-              } else {
-                stop("Failed to build ",pkg.name)
-              }
-            }
-          )
+      cat(" from",pkg.folder,"\n\n")
+      #       te <- try( silent=TRUE,
+      #         {
+      #           file.copy(from=pkg.folder,to=ve.src,recursive=TRUE)
+      #         # Minimal build
+      #           withr::with_dir(
+      #             pkg.src,
+      #             {
+      #               roxygen2::roxygenise(roclets=c("collate","namespace","rd"))
+      #               ve.pkg.zip <- devtools::build(".",path=build.contriburl,binary=any(grepl("binary",build.type)))
+      #               status <- if ( file.exists(ve.pkg.zip) ) {
+      #                 if ( paste0("package:",pkg.name) %in% search() || pkg.name %in% loadedNamespaces() ) devtools::unload(pkg.name)
+      #                 utils::install.packages(ve.pkg.zip,lib=ve.lib,repos=NULL,type=build.type)
+      #                 TRUE
+      #               } else {
+      #                 stop("Failed to build ",pkg.name)
+      #               }
+      #             }
+      #           )
+      #         }
+      #       )
+
+      # Step 1: Determine package status (built, installed)
+      built.path.src <- utils::contrib.url(ve.repository, type="source")
+      built.path.binary <- utils::contrib.url(ve.repository, type=build.type)
+      binary.build <- built.path.binary != built.path.src
+      src.module <- file.path(built.path.src,modulePath(pkg.name,built.path.src))
+      if (reset) {
+        cat("+++++++++++++Removing Previous Build Files\n")
+        local({
+          module.src <- src.module
+          if ( length(module.src)>0 ) { # built source package exists
+            module.src <- file.path(built.path.src,module.src)
+          } else module_src <- character(0)
+          if ( length(module.src)>0 ) {
+            unlink(module.src);
+            cat(module.src,"\n")
+          } else cat(pkg.name,": No Source Package.\n",sep="")
+
+          if ( binary.build ) {
+            module.bin <- modulePath(pkg.name,built.path.binary)
+            if ( length(module.bin)>0 ) { # built binary package
+              module.bin <- file.path(built.path.binary,module.bin)
+            } else module.bin <- character(0)
+            if ( length(module.bin)>0 ) {
+              unlink(module.bin);
+              cat(module.bin,"\n")
+            } else cat(pkg.name,": No Binary Package.\n",sep="")
+          }
+        })
+        if ( dir.exists( pkg.src) ) { unlink(pkg.src,recursive=TRUE); cat(pkg.src,"\n") } else cat("No Build Directory.\n")
+        # TODO: make sure if package is in library, it is detached and removed
+        cat("++++++++++++ Done removing previous files\n")
+      }
+
+      # Construct list of pkg.files
+      all.files <- dir(pkg.folder,recursive=TRUE,all.files=FALSE) # not hidden files, relative to pkg.folder
+      pkg.files <- grep("^data/",all.files,value=TRUE,invert=TRUE) # ignore data directory (recreate later)
+      if ( length(all.files)!=length(pkg.files) ) {
+        data.files <- setdiff(all.files,pkg.files)
+      } else data.files <- character(0)
+      # only releevant dot.files are .VEbuildignore and .Rbuildignore
+      dot.files <- dir(pkg.folder,pattern="^\\.(VE|R)buildignore$",all.files=TRUE)
+      if ( length(dot.files)>0 ) {
+        if ( ".Rbuildignore" %in% dot.files ) {
+          pkg.files <- c(pkg.files,".Rbuildignore")
         }
+        if ( ".VEbuildignore" %in% dot.files ) {
+          ignore.files <- ".VEbuildignore"
+          # These are patterns to ignore when copying to src/ folder for build
+          # Generally a subset of .Rbuildignore (keeping things like the VEModel walkthrough)
+        } else {
+          ignore.files <- ".Rbuildignore"
+          # Do not copy anything that will be ignored during the R build
+        }
+        read.dot.files <- file.path(pkg.folder,ignore.files)
+        ignore.patterns <- readLines(read.dot.files)
+        # empty lines in .Rbuildignore would blow away everything
+        ignore.patterns <- grep("^[[:space:]]*$",ignore.patterns,invert=TRUE,value=TRUE)
+#         if ( debug>2 ) {
+#           if( length(buildMessage) > 0 ) { cat(buildMessage); buildMessage <- character(0) }
+#           message("Ignoring ",ignore.files," patterns:")
+#           print(ignore.patterns)
+#         }
+        for ( pattern in ignore.patterns ) {
+#           if ( debug>2 ) {
+#             if( length(buildMessage) > 0 ) { cat(buildMessage); buildMessage <- character(0) }
+#             cat("Ignoring:",pattern,"; Before:\n")
+#             print(pkg.files)
+#           }
+          pkg.files <- grep(pattern=pattern,pkg.files,value=TRUE,invert=TRUE)
+#           if ( debug>2 ) {
+#             cat("After:\n")
+#             print(pkg.files)
+#           }
+        }
+      } else {
+        message("No .Rbuildignore found in ",pkg.folder)
+#         if ( debug ) {
+#           print(dir(pkg.folder,recursive=TRUE,all.files=FALSE))
+#           message("dot.files")
+#           print(dot.files)
+#           message("pkg.files")
+#           print(pkg.files)
+#         }
+      }
+
+      # See what is already built and installed
+      check.dir <- file.path(pkg.src,paste0(pkg.name,".Rcheck"))
+#       if ( debug ) cat( pkg.src,"exists:",dir.exists(pkg.src),"\n")
+      package.built <- if ( binary.build ) {
+        # On Windows, the package is already built if:
+        #   a. Binary package is present, and
+        #   b. Source package is present, and
+        #   c. package source is not newer than ve.src copy of source
+        #   d. check.dir exists (previous built test will verify age of check.dir)
+        #   e. Binary package is newer than source package
+        me <- sc <- de <- ck <- nt <- vr <- as.logical(NA)
+        is.built <- (me <- moduleExists(pkg.name, built.path.binary)) &&
+        (sc <- moduleExists(pkg.name, built.path.src)) &&
+        (de <- ( dir.exists(pkg.src) && ! newerThan(pkg.folder,pkg.src,quiet=(!debug))) ) &&
+        (nt <- ! newerThan( quiet=(!debug),
+          pkg.folder, # don't use pkg.files here: file lists will be different
+          file.path(built.path.binary,
+            modulePath(pkg.name,built.path.binary))) ) &&
+        (vr <- samePkgVersion(pkg.folder,getPathVersion(pkg.src),debug=debug) )
+        if ( ! is.built ) {
+          cat("Status of unbuilt",pkg.name,paste0("(",is.built,")"),"\n")
+          cat("Module",me)
+          # Some of the test results won't exist since && short-circuits
+          if ( !is.na(sc) ) cat(" Src",sc)
+          if ( !is.na(de) ) cat(" Dir",de)
+          if ( !is.na(nt) ) cat(" Newer",nt)
+          cat(" Inst",(pkg.name %in% pkgs.installed))
+          if ( is.na(vr) ) cat(" Ver",vr)
+          cat("\n")
+          if ( exists("de") && ( is.na(de) || ! de ) ) {
+            cat(pkg.src,ifelse(dir.exists(pkg.src),"Exists","Does not exist"),"\n")
+            cat(check.dir,ifelse(dir.exists(check.dir),"Exists","Does not exist"),"\n")
+            cat("Newer than on directory (want FALSE):",newerThan(pkg.folder,pkg.src,quiet=FALSE),"\n")
+          }
+        }
+        is.built
+      } else {
+        # If Source build, the package is "built" if:
+        #   a. package source is not newer than ve.src copy of source
+        (
+          ! is.na(src.module) &&
+          dir.exists(pkg.src) &&
+          ! newerThan( pkg.name, pkg.files=pkg.files, pkg.src ) &&
+          samePkgVersion(pkg.name,getPackageVersion(src.module),debug=(debug>1))
+        )
+      }
+      if ( ! package.built ) {
+        cat(pkg.name,"is NOT built\n")
+      } else { cat(pkg.name,"is BUILD\n") }
+
+      # Package is installed if it is built and is an available installed package
+      package.installed <- (
+        package.built &&
+        ! is.na( pkgs.installed[pkg.name] ) &&
+        samePkgVersion(pkg.folder,pkgs.version[pkg.name],debug=(debug>1))
       )
-      return( class(te) != "try-error" ) # errors should be manifest in the console log
+      if ( ! package.installed ) {
+        if ( package.built ) {
+          cat(pkg.name,"is built but NOT installed\n")
+        }
+        if ( pkg.name %in% pkgs.installed ) {
+          cat("Removing obsolete module package version:",pkgs.version[pkg.name],"\n")
+          try( remove.packages(pkg.name,lib=ve.lib) ) # ignore any errors
+        } else {
+          cat(pkg.name,"is NOT INSTALLED\n")
+        }
+      } else { cat(pkg.name,"is INSTALLED\n") }
+
+      # Step 3: If package is not built, (re-)copy package source to ve.src
+      # On Windows: ve.src copy is used to build source and binary packages and to run tests
+      # For Source build: ve.src copy is used to build source package
+      if ( ! package.built ) {
+        if ( debug>1 ) {
+          # Dump list of package source files if debugging
+          show.pkg.files <- file.path(pkg.folder,dir(pkg.folder,recursive=TRUE,all.files=TRUE))
+          if ( ! any(grepl("Rbuildignore",show.pkg.files)) ) warning("No .Rbuildignore for package ",pkg.name)
+          cat(paste("Copying",show.pkg.files,"to",pkg.src,"\n",sep=" "),sep="")
+        } else {
+          cat("++++++++++ Copying module source",pkg.folder,"to build/test environment...\n")
+        }
+        if ( is.null(reset) ) reset <- TRUE
+        if ( reset ) {
+          if ( dir.exists(pkg.src) || file.exists(pkg.src) )
+          unlink(pkg.src,recursive=TRUE) # Get rid of the build directory and start fresh
+        }
+        pkg.dirs <- c(dirname(pkg.files),"data") # recreate a data directory with nothing in it
+        # R build process will remove that data directory if it is still empty at the end of the build
+        lapply( grep("^\\.$",invert=TRUE,value=TRUE,unique(file.path(pkg.src,pkg.dirs))),
+          FUN=function(x) { dir.create(x, showWarnings=FALSE, recursive=TRUE ) } )
+        if ( debug ) {
+          message("Copying package files:")
+          print(pkg.files)
+        }
+        invisible(
+          file.copy(
+            from=file.path(pkg.folder,pkg.files),
+            to=file.path(pkg.src,pkg.files),
+            overwrite=TRUE, recursive=FALSE
+          )
+        )
+
+        ###### HACK ALERT
+        # Code above prevents the build from looking at the Github 'data' directory, since it is too
+        # hard to ensure that such data gets updated when new source data is provided. We will rebuild
+        # the data directory in all cases.
+        #     HOWEVER:
+        # VETravelDemandMM includes pre-estimated data files based on confidential NHTS that have to go
+        # into the 'data' directory - they are found in 'data-raw/estimated', so we'll just copy them
+        # into place...
+        ######
+        withr::with_dir(pkg.src,{
+          MM.estimated <- dir("data-raw/estimated",full.names=TRUE)
+          if ( length(MM.estimated)>0 ) {
+            file.copy(MM.estimated,"data")
+          }
+        })
+        ###### END HACK
+
+        if ( ! dir.exists(pkg.src) ) {
+          stop("Failed to create build/test environment:",pkg.src)
+        }
+        # Compare newest dates (not specific list of files)
+        if ( newerThan(pkg.folder,pkg.src,quiet=(!debug)) ) {
+          stop("After copying, build/test environment is still older than package.paths")
+        }
+      }
+
+      # Step 4: Run devtools::document() separately to rebuild the /data directory
+      if ( ! package.built ) {
+        cat("++++++++++ Pre-build / Document ",pkg.name,"\n",pkg.src,"\n",sep="")
+
+        # Build collate and namespace
+        if ( ve.wantdocs ) { # optionally build docs
+          te <- try( withr::with_dir(pkg.src,roxygen2::roxygenise(roclets=c("collate","namespace","rd"))), silent=TRUE )
+          if ( class(te)=="try-error" ) {
+            stop(paste("Documentation error (full docs):\n",te))
+          }# ignore errors
+        } else {
+          te <- try( withr::with_dir(pkg.src,roxygen2::roxygenise(roclets=c("collate","namespace"))), silent=TRUE)
+          if ( class(te)=="try-error" ) {
+            stop(paste("Documentation error:\n",te))
+          }# ignore errors
+        }
+
+        if ( reset || check || ! dir.exists(check.dir) ) {
+          cat("++++++++++ Checking and pre-processing ",pkg.name,"\nin ",pkg.src,"\n",sep="")
+          # Run the module check (prior to building anything)
+          # Set working directory outside devtools:check, or it gets very confused about where to put generated /data elements.
+          # Need to set "check.dir" location explicitly to "check_dir=pkg.src" (otherwise lost in space)
+          # Also need to make sure that Suggested packages are also loaded (e.g. VE2001NHTS) (cran=FALSE)
+          chk.args <- "--no-tests" # Never do build-time tests
+          check.results <- withr::with_dir(  pkg.src,
+            devtools::check(
+              ".",
+              check_dir=pkg.src, # what we call check.dir gets recreated by devtools::check
+              document=FALSE,
+              args=chk.args,
+              cran=FALSE,
+              error_on="error"
+            )
+          )
+          cat("++++++++++ Check results\n")
+          print(check.results)
+        }
+
+        # devtools::document with load_pkgload leaves the package loaded to a temporary library
+        # Therefore we need to explicitly detach it so we can install it properly later on
+        if ( (bogus.package <- paste("package:",pkg.name,sep="")) %in% search() ) {
+          cat("Detaching",bogus.package,"\n")
+          detach(bogus.package,character.only=TRUE,unload=TRUE)
+          print(search())
+        }
+
+        # Then get rid of the temporary (and possibly obsolete) source package that is left behind
+        # Must build again rather than use that built package, because the results of devtools::check
+        #   updates (but does not include) any files in /data
+        tmp.build <- file.path(pkg.src,modulePath(pkg.name,pkg.src))
+        if ( length(tmp.build)>0 && file.exists(tmp.build) ) unlink(tmp.build)
+      }
+
+      # If not built, rebuild the source module from pkg.src (this time, with updated /data)
+      # and place the result in built.path.src (the VE package repository we're building)
+      if ( ! package.built ) {
+        obsolete <- dir(built.path.src,pattern=paste0(pkg.name,"*_"))
+        if ( length(obsolete)>0 ) cat("obsolete:",obsolete,"\n")
+        unlink( file.path(built.path.src,obsolete) )
+        src.module <- devtools::build(pkg.src, path=built.path.src)
+      }
+
+      # Step 6: Build the binary package (Windows or Mac) and install the package
+      tryCatch(
+        {
+          # VE_BUILD_PHASE="BUILD" says remove package datasets from R/ space (see visioneval/R/module.R)
+          # Tells visioneval::savePackageDataset to remove the dataset object rather than save it again
+          # Running devtools::document() will have already saved the dataset for the old-style modules
+          # New style modules (e.g. VETravelDemandMM) have pre-built data which gets copied into data/
+          # above (see the 'hack' which will eventually become standard procedure). So they don't use
+          # visioneval::savePackageDataset and don't need/are immune to this flag.
+          Sys.setenv(VE_BUILD_PHASE="BUILD")
+          if ( binary.build ) {
+            # Binary build and install works a little differently from source
+            if ( ! package.built ) {
+              # Rebuild the binary package from the ve.src folder
+              # We do this on Windows (rather than building from the source package) because
+              # we want to use devtools::build, but a bug in devtools prior to R 3.5.3 or so
+              # prevents devtools:build from correctly building from a source package (it
+              # requires an unpacked source directory, which we have in pkg.src)
+              cat("building",pkg.name,"from",pkg.src,"as",build.type,"\n")
+              cat("building into",built.path.binary,"\n")
+
+              obsolete <- dir(built.path.binary,pattern=paste0(pkg.name,"*_"))
+              if ( length(obsolete)>0 ) cat("obsolete:",obsolete,"\n")
+              unlink( file.path(built.path.binary,obsolete) )
+              built.package <- devtools::build(pkg.src,path=built.path.binary,binary=TRUE)
+              if ( length(built.package) > 1 ) { # Fix weird bug that showed up in R 3.6.2 devtools::build
+                built.package <- grep("zip$",built.package,value=TRUE)
+              }
+            } else {
+              cat("++++++++++ BUILT","binary package:",pkg.name,ifelse(package.installed,"(Already Installed)",""),"\n")
+              built.package <- file.path(built.path.binary, modulePath(pkg.name, built.path.binary))
+            }
+            if ( ! package.installed ) {
+              # On Windows, install from the binary package
+              cat("++++++++++ Installing built package:",built.package,"\n")
+              utils::install.packages(built.package, repos=NULL, lib=ve.lib, type=build.type) # so they will be available for later modules
+              cat("++++++++++ DONE",pkg.name,"\n\n")
+              package.installed <- TRUE
+            }
+          } else { # source build
+            # Just do installation directly from source package (no binary package created)
+            if ( ! package.installed ) {
+              cat("++++++++++ Installing source package:",src.module,"\n")
+              if ( pkg.name %in% pkgs.installed ) remove.packages(pkg.name)
+              utils::install.packages(src.module, repos=NULL, lib=ve.lib, type="source")
+              cat("++++++++++ DONE",pkg.name,"\n\n")
+              package.installed <- TRUE
+            } else {
+              cat("Existing source package",pkg.name,"(Already Installed)\n")
+            }
+          }
+        }, # we define no handlers: conditions are just passed through to the parent after calling finally
+        finally = Sys.unsetenv("VE_BUILD_PHASE")
+      )
+      return( package.installed ) # errors should be manifest in the console log
     }
   )
 }
@@ -417,217 +763,11 @@ findMissingPackages <- function( required.packages, repos, repo.type=.Platform$p
   # Returns:
 
   #   A character vector of package names that are missing from the
-  #   ve.build.type section of the pkg-repository compared to the
+  #   build.type section of the pkg-repository compared to the
   #   required.packages
   
-  apb <- available.packages(repos=repos, type=repo.type)
+  apb <- utils::available.packages(repos=repos, type=repo.type)
   return( setdiff( required.packages, apb[,"Package"]) )
-}
-
-# Helper function to compare package path (source) to a built target (modification date)
-newerThan <- function( srcpath, tgtpath, pkg.files=character(0), quiet=TRUE ) {
-  # Compare modification time for a set of files to a target file
-  #
-  # Args:
-  #   srcpath - a single folder containing a bunch of files that might be newer, or a vector of files
-  #   tgtpath - one (or a vector) of files that may be older, or may not exist
-  #   pkg.files - if provided, make sure the same files are present in both places
-  #   quiet - if TRUE, then print a message about what is being tested
-  #
-  # Value: TRUE if the most recently modified srcpath file is newer
-  #        than the newest tgtpath file
-  if (!quiet) cat("Comparing",srcpath,"to",paste(tgtpath,collapse="\n"),"\n")
-  if ( any(is.null(srcpath)) || any(is.na(srcpath)) || any(nchar(srcpath))==0 || ! file.exists(srcpath) ) return(TRUE)
-  if ( any(is.null(tgtpath)) || any(is.na(tgtpath)) || any(nchar(tgtpath))==0 || ! file.exists(tgtpath) ) return(TRUE)
-  if ( dir.exists(srcpath) ) {
-    srcfiles <- dir(srcpath,recursive=TRUE,all.files=TRUE)
-    if ( length(pkg.files)>0 ) {
-      srcfiles <- srcfiles[ srcfiles %in% pkg.files ]
-    }
-    srcpath <- file.path(srcpath,srcfiles)
-  }
-  if ( dir.exists(tgtpath) ) {
-    tgtfiles <- dir(tgtpath,recursive=TRUE,all.files=TRUE)
-    if ( length(pkg.files)>0 ) {
-      tgtfiles <- tgtfiles[ tgtfiles %in% pkg.files ]
-    }
-    tgtpath <- file.path(tgtpath,tgtfiles)
-  }
-  if ( length(tgtpath) < 1 ) {
-    if (!quiet) cat("Newer: target files do not exist\n")
-    return(TRUE)
-  }
-  if ( length(pkg.files)>0 && length(srcpath) > length(tgtpath) ) {
-    # Only check for same length file list if pkg.files is provided
-    if (!quiet) {
-      cat("Newer: target files different length than source\n")
-      print( srcfiles[ ! srcfiles %in% tgtfiles ] )
-    }
-    return(TRUE)
-  }
-  source.time <- file.mtime(srcpath)
-  target.time <- file.mtime(tgtpath)
-  source.newest <- order(source.time,decreasing=TRUE)
-  target.newest <- order(target.time,decreasing=TRUE)
-  if (!quiet) cat("Source:",srcpath[source.newest[1]],strftime(source.time[source.newest[1]],"%d/%m/%y %H:%M:%S"),"\n")
-  if (!quiet) cat("Target:",tgtpath[target.newest[1]],strftime(target.time[target.newest[1]],"%d/%m/%y %H:%M:%S"),"\n")
-  newer <- source.time[source.newest[1]] > target.time[target.newest[1]]
-  if (!quiet) cat("Newer:",newer,"\n")
-  return(newer)
-}
-
-# TEMPORARY: basic VEBuild process
-keep.around <- function() {
-  # locate the VEBuild package in the source tree
-  # keep this up to date with Github repository structure
-  # Create the full package source directory from which to build packages
-  ve.src <- file.path(ve.build,ve.src.name)
-  ve.src.VEBuild <- file.path(ve.src,"VEBuild")
-  if ( dir.exists(ve.src.VEBuild) ) unlink(ve.src.VEBuild,recursive=TRUE) # blow away temp source directory
-  dir.create(ve.src.VEBuild,recursive=TRUE)
-  file.copy(from=VEBuild.package,to=ve.src,recursive=TRUE)
-
-  # Install packages required for building
-  # Note that RTools in a suitable version also needs to be installed
-  if ( ! suppressWarnings(requireNamespace("desc",quietly=TRUE)) ) {
-    utils::install.packages("desc", lib=ve.lib, repos=build.config$CRAN.mirror, type=.Platform$pkgType )
-  }
-  if ( ! suppressWarnings(requireNamespace("devtools",quietly=TRUE)) ) {
-    utils::install.packages("devtools", lib=ve.lib, repos=build.config$CRAN.mirror, type=.Platform$pkgType )
-  }
-  if ( ! suppressWarnings(requireNamespace("roxygen2",quietly=TRUE)) ) {
-    utils::install.packages("roxygen2", lib=ve.lib, repos=build.config$CRAN.mirror, type=.Platform$pkgType )
-  }
-  if ( ! suppressWarnings(requireNamespace("rcmdcheck",quietly=TRUE)) ) {
-    utils::install.packages("rcmdcheck", lib=ve.lib, repos=build.config$CRAN.mirror, type=.Platform$pkgType )
-  }
-  if ( ! suppressWarnings(requireNamespace("withr",quietly=TRUE)) ) {
-    utils::install.packages("withr", lib=ve.lib, repos=build.config$CRAN.mirror, type=.Platform$pkgType )
-  }
-
-  # Find and install dependencies specifically for VEBuild (some are not part of development
-  # environment)
-  deps <- pkgload::pkg_desc(ve.src.VEBuild)$get_deps()
-  deps <- deps[deps$package != "R", ]$package
-  for ( pkg in deps ) {
-    if ( ! requireNamespace(pkg,quietly=TRUE) ) {
-      utils::install.packages( pkg,lib=ve.lib,repos=CRAN.mirror,type=.Platform$pkgType )
-    }
-  }
-
-  # Update all existing packages in case of R Repository updates in dependencies
-  utils::update.packages(lib=ve.lib,repos=CRAN.mirror,type=.Platform$pkgType,ask=FALSE)
-
-  # Construct package supports using collate, rd and namespace
-  # Build the package not into ve-pkg but rather temp-build so we don't confuse things later
-  # VEBuild will be rebuilt in the correct final place when full VE is built
-  # NOTE: Will always rebuild, even if already present to ensure correct build process updating
-  ve.pkg.built <- file.path(ve.build,temp.build)
-  if ( ! dir.exists(ve.pkg.built) ) dir.create(ve.pkg.built,recursive=TRUE)
-  withr::with_dir(ve.src.VEBuild,roxygen2::roxygenise(roclets=c("collate","namespace","rd")))
-  ve.pkg.zip <- devtools::build(ve.src.VEBuild,path=ve.pkg.built,binary=TRUE)
-  if ( ! file.exists(ve.pkg.zip) ) stop("Failed to build VEBuild in ",ve.pkg.built)
-  if ( "package:VEBuild" %in% search() ) devtools::unload("VEBuild")
-  utils::install.packages(ve.pkg.zip,lib.loc=ve.lib,type=.Platform$pkgType)
-
-  # Load VEBuild (which creates ve.builder functions), then unload it again
-  # so we can rebuild it as part of the full installation.
-  message("Load VEBuild")
-  if ( ! require("VEBuild",quietly=TRUE) ) {
-    stop("Failed to build VEBuild")
-  }
-  if ( ! file.exists(file.path(ve.home,"ve-build-config.yml")) ) {
-    file.copy( system.file(file.path("build-scripts","ve-build-config.yml"),package="VEBuild"), ve.home )
-    # This file uses locations relative to VE_HOME (for source code) and VE_BUILD (for build destination)
-  }
-  if ( "ve.builder" %in% search() ) {
-    devtools::unload("VEBuild")
-    detach("devtools_shims") # left over from roxygenize/pkgload
-  } else {
-    stop("VEBuild failed to load ve.builder functions.")
-  }
-}
-
-#=================== HELPER FUNCTIONS
-
-# Helper functions (loaded into ve.builder and callable from build scripts
-# TODO 4.0: note that we're allowing builds from multiple repositories.
-# We probably need a YAML configuration file that lists the repositories and source
-# code locations (essentially a lighter/reworked version of VE-config.yml).
-
-localBranch <- function(repopath) {
-  localbr <- git2r::branches(repopath,flags="local")
-  hd <- which(sapply(localbr,FUN=git2r::is_head,simplify=TRUE))
-  return( localbr[[hd]]$name )
-}
-
-# Helper function to get roots and branches
-checkBranchOnRoots <- function(roots,branches) {
-  #  rtb <- names(branches)
-  for ( rt in roots ) {
-    # It's okay if there is not branch (i.e. not github)
-    # but it's an error if there is a local branch name and it doesn't match
-    if ( length(branches) > 0 ) {
-      br <- branches[rt]
-      if ( length(br)==1 && nzchar(br) ) {
-        repopath <- get(rt)
-        #       cat("Examining branch for",rt,"which should be",paste0("'",br,"'"),"\n")
-        if ( dir.exists(repopath) && git2r::in_repository(repopath) ) {
-          # Find the currently checked out branch by looking at HEAD for local branches
-          # cat("Need branch",paste0("<",br,">"),"on repository",repopath,"\n")
-          hd <- localBranch(repopath)
-          # cat("Have branch",paste0("<",hd,">"),"on repository",repopath,"\n")
-          cat("hd:",hd,"\n")
-          cat("br:",br,"\n")
-          if ( hd != br) {
-            cat(paste("Root",rt,"wants branch",paste0("<",br,">"),"but has",paste0("<",hd,">")),"\n")
-            return(FALSE)
-          }
-        } else {
-          end.message <- if ( ! dir.exists(repopath) ) {
-            "does not exist"
-          } else if ( ! git2r::in_repository(repopath) ) {
-            "is not a Git repository"
-          } else {
-            "is bad for an unknown reason"
-          }
-          cat("Branch",paste0("'",br,"'"),"specified, but",repopath,end.message,".")
-          return(FALSE)
-        }
-      }
-    }
-  }
-  return(TRUE)
-}
-
-# Helper function for other scripts, to verify situational awareness
-
-checkVEEnvironment <- function() {
-  # Check for situational awareness, and report if we are lost
-  # Returns 0 or 1
-  if ( ! exists("ve.installer") || is.na(ve.installer) || ! file.exists(ve.installer) ) {
-    message("Missing ve.installer; run build-config.R")
-    return(FALSE)
-  } else if ( ! exists("ve.repository") || is.na(ve.repository) ) {
-    message("Missing ve.repository definition; run build-config.R")
-    return(FALSE)
-  } else if ( ! exists("ve.dependencies") || is.na(ve.dependencies) ) {
-    message("Missing ve.dependencies definition; run build-config.R")
-    return(FALSE)
-  } else if ( ! exists("ve.runtime") || is.na(ve.runtime) ) {
-    message("Missing ve.runtime definition; run build-config.R")
-    return(FALSE)
-  } else if ( ! exists("ve.pkgs") || is.na(ve.pkgs) ) {
-    message("Missing ve.pkgs definition; run build-config.R")
-    return(FALSE)
-  } else if ( ! exists("ve.lib") || is.na(ve.lib) ) {
-    message("Missing ve.lib definition; run build-config.R")
-    return(FALSE)
-  } else if ( ! exists("ve.roots") || ! exists("ve.branches") || ! checkBranchOnRoots(ve.roots,ve.branches) ) {
-    message("Missing roots, or incorrect branches")
-    return(FALSE)
-  }
-  return(TRUE)
 }
 
 # The following two helpers extract modules from built packages
@@ -668,5 +808,102 @@ moduleExists <- function( module, path ) {
   found.test <- length(found)>0
 }
 
-# ========== DONE WITH HELPER FUNCTIONS ==========
+# Helper function to compare package path (source) to a built target (modification date)
+newerThan <- function( srcpath, tgtpath, pkg.files=character(0), quiet=TRUE ) {
+  # Compare modification time for a set of files to a target file
+  #
+  # Args:
+  #   srcpath - a single folder containing a bunch of files that might be newer, or a vector of files
+  #   tgtpath - one (or a vector) of files that may be older, or may not exist
+  #   pkg.files - if provided, make sure the same files are present in both places
+  #   quiet - if TRUE, then print a message about what is being tested
+  #
+  # Value: TRUE if the most recently modified source file is newer
+  #        than the newest target file
+  if (!quiet) cat("Comparing",srcpath,"to",paste(tgtpath,collapse="\n"),"\n")
+  if ( any(is.null(srcpath)) || any(is.na(srcpath)) || any(nchar(srcpath))==0 || ! file.exists(srcpath) ) return(TRUE)
+  if ( any(is.null(tgtpath)) || any(is.na(tgtpath)) || any(nchar(tgtpath))==0 || ! file.exists(tgtpath) ) return(TRUE)
+  if ( dir.exists(srcpath) ) {
+    srcfiles <- dir(srcpath,recursive=TRUE,all.files=TRUE)
+    if ( length(pkg.files)>0 ) {
+      srcfiles <- srcfiles[ srcfiles %in% pkg.files ]
+    }
+    srcpath <- file.path(srcpath,srcfiles)
+  }
+  if ( dir.exists(tgtpath) ) {
+    tgtfiles <- dir(tgtpath,recursive=TRUE,all.files=TRUE)
+    if ( length(pkg.files)>0 ) {
+      tgtfiles <- tgtfiles[ tgtfiles %in% pkg.files ]
+    }
+    tgtpath <- file.path(tgtpath,tgtfiles)
+  }
+  if ( length(tgtpath) < 1 ) {
+    if (!quiet) cat("Newer: target files do not exist\n")
+    return(TRUE)
+  }
+  if ( length(pkg.files)>0 && length(srcpath) > length(tgtpath) ) {
+    # Only check for same length file list if pkg.files is provided
+    if (!quiet) {
+      cat("Newer: target files different length than source\n")
+      print( srcfiles[ ! srcfiles %in% tgtfiles ] )
+    }
+    return(TRUE)
+  }
+  source.time <- file.mtime(srcpath)
+  target.time <- file.mtime(tgtpath)
+  source.newest <- order(source.time,decreasing=TRUE)
+  target.newest <- order(target.time,decreasing=TRUE)
+  if (!quiet) cat("Source:",srcpath[source.newest[1]],strftime(source.time[source.newest[1]],"%d/%m/%y %H:%M:%S"),"\n")
+  if (!quiet) cat("Target:",tgtpath[target.newest[1]],strftime(target.time[target.newest[1]],"%d/%m/%y %H:%M:%S"),"\n")
+  newer <- source.time[source.newest[1]] > target.time[target.newest[1]]
+  if (!quiet) cat("Newer:",newer,"\n")
+  return(newer)
+}
+
+samePkgVersion <- function( pkg.path, version, debug=FALSE ) {
+  # Compare version from package path to a target version (already built)
+  #
+  # Args:
+  #   pkg.path: path to root of a package containing DESCRIPTION
+  #   version: a Version string from some other package
+  #   debug: print a message
+  #
+  # Returns:
+  #   TRUE if the versions are the same, else FALSE
+
+  # The "all" will handle pathological cases where version is a vector longer than 1
+  result <- all((old.version<-getPathVersion(pkg.path)) == version)
+  if (debug) {
+    cat("samePkgVersion checks",pkg.path,old.version,"against",version,":",result,"\n")
+  }
+  return( result )
+}
+
+getPathVersion <- function( path ) {
+  # Extract version string from DESCRIPTION on path
+  #
+  # Args:
+  #   path: path to root of a package containing DESCRIPTION
+  #         error if no DESCRIPTION on that path
+  #
+  # Returns:
+  #   Version string from DESCRIPTION file
+  desc.path <- file.path(path,"DESCRIPTION")
+  if ( ! file.exists(desc.path) ) stop("getPathVersion: Did not find package at",desc.path)
+  return ( read.dcf(file=desc.path)[1,"Version"] )
+}
+
+getPackageVersion <- function( package ) {
+  # Extract version string from a built source module (using version encoded in its name)
+  #
+  # Args:
+  #   package: path to a source or binary package (with version encoded)
+  #
+  # Returns:
+  #   Version string from package file name
+
+  # Eliminate package compression formats
+  version <- sapply(strsplit(substr(package,1,regexpr(".(\\.tar\\.gz|\\.zip)",package)),"_"),FUN=function(x)x[2],simplify=TRUE)
+  return( version )
+}
 

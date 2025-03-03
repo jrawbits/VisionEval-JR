@@ -92,8 +92,14 @@ local(
       message("No build.loader at ",build.loader)
       stop("VisionEval source tree has unexpected structure.")
     } else message("Loading ve.build...")
-    source(build.loader) # creates ve.builder environment and load.builder function
-    load.builder(
+    # Create an environment to hold build functions (if not already present)
+    env.build <- if ( ! "ve.builder" %in% search() ) {
+      attach(NULL,name="ve.builder")
+    } else {
+      as.environment("ve.builder")
+    }
+    sys.source(build.loader,envir=env.build) # creates ve.builder environment and load.builder function
+    env.build$load.builder(
       ve.scripts=VEBuild.scripts,
       CRAN.mirror=ve.env$CRAN.mirror
     )
