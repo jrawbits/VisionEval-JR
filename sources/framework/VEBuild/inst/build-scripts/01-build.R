@@ -379,7 +379,8 @@ ve.build.one.package <- function(pkg,build.config,reset=FALSE,check=TRUE,debug=0
       }
 
       # Check that all the dependencies are installed, otherwise gracefully return FALSE
-      available.dependencies <- utils::installed.packages(lib.loc=ve.lib,)[,"Package"]
+      # Need to look at all libraries as some system packages slip through the cracks (e.g. methods)
+      available.dependencies <- utils::installed.packages()[,"Package"]
       pkg.deps <- pkg$Dependencies$package
       if ( any( missing.deps <- (! pkg.deps %in% available.dependencies) ) ) {
         # Already screened for missing dependencies that are not in the list to build
