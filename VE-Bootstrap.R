@@ -28,7 +28,7 @@ local(
         ve.env$ve.build.dir <- ve.env$ve.home
         ve.env$ve.home <- getwd()
       } else {
-        if ( ! "ve-lib" in dir(ve.env$ve.home) ) {
+        if ( ! grepl("ve-lib",dir(ve.env$ve.home)) ) {
           # Cleaner if ve.home came from a repository to build in a subdirectory
           ve.env$ve.build.dir <- file.path(ve.env$ve.home,"built")
         } else {
@@ -43,11 +43,11 @@ local(
     #
     # If no ve-build-config.yml, acquire VEBase and do an end-user installation from one of these places:
     #   1. Local pre-installed ve-lib (like old installer)
-    #   2. Local pre-installec ve-pkg (all installable packages and dependencies as source)
+    #   2. Local pre-installed ve-pkg (all installable packages and dependencies as source)
     #      TODO: contrib.url for specific R version
     #   3. Local pre-installed ve-pkg-repo (VE + BioC); dependencies from CRAN
     #      TODO: contrib.url for specific R version
-    #   4. Local no installed pacakges: VE/BioC from online package repo; dependencies from CRAN
+    #   4. Local no installed packages: VE/BioC from online package repo; dependencies from CRAN
     # 
     # After installing runtime VE via VEBase, switch to build environment
     #   Switch by loading VEBuild and running ve.build(), which does this:

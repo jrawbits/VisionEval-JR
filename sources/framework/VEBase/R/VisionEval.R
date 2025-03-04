@@ -50,11 +50,11 @@ startVisionEval <- function(
   ve.setup.lib="ve-setup"
 ) {
   ve.setup.lib.path <- file.path(getwd(),ve.setup.lib)
-  ve.pkg.repo <- "pkg-ve-repo" # from VEBuild makeInstaller - local set of packages
+  ve.pkg.repo <- "pkg-ve-repo" # from VEBuild - local set of packages
 
   # Identify location for VE_HOME (contains ve-lib, and optionally ve-pkg for local repository installation)
   if ( missing(ve.home) || is.null(ve.home) ) {
-    ve.home <- Sys.getenv("VE_BUILD",Sys.getenv("VE_HOME",getwd())) # Just in case we're loading from a build environment
+    ve.build.dir <- Sys.getenv("VE_BUILD",Sys.getenv("VE_HOME",getwd())) # Just in case we're loading from a build environment
     # VE_BUILD is the target location for VEBuild, the "home" that is constructed by running ve.build
     # TODO: how to transition seamlessly from VEBase (end user installation) to VEBuild (source code installation)?
     # VE_HOME will be set by VEBase. When we later load VEBuild, we need to know where the source code is, and
@@ -111,10 +111,10 @@ startVisionEval <- function(
   if ( is.na(ve.runtime) ) {
     home.as.runtime <- askYesNo(paste("Install VisionEval 'models' folder in",ve.home,"?"))
     if ( is.na(home.as.runtime) ) {
-      message("Please select a suitable VisionEval home directory")
+      message("Please select a suitable VisionEval runtime directory for models.")
       stop("Installation cancelled.")
     }
-  }
+  } else home.as.runtime <- ( ve.runtime == ve.home )
 
   if ( ! home.as.runtime  ) {
     caption <- "Select directory for VisionEval 'models' folder (VE_RUNTIME)"
@@ -214,7 +214,7 @@ checkVE <- function(lib.loc=NULL) {
 #' @param repos A character vector of additional CRAN-like repository URLs for VE packages
 #' @param use.default If TRUE (default), Look for "built-in" VE repositories (including
 #'   in pkg-ve-repo for offline installation)
-#' @param offline If TRUE, only look for the local VE_HOME/ve-pkg-repos
+#' @param offline If TRUE, only look for the local VE_HOME/ve-pkg-repo
 #' @param ve.home path to VE_HOME; if not provided or NULL, look in VEBase::getRuntimeEnvironment()
 #' @return character vector of CRAN-like repositories from which to install or update VE packages
 #' @export
@@ -223,9 +223,10 @@ getRepositories <- function(repos=NULL, use.default=TRUE, offline=TRUE, ve.home=
   if ( missing(ve.home) ) ve.home <- ve.env$ve.home
 
   # Set up default repositories (local or online)
+  browse()
   search.repos <- character(0)
   if ( isTRUE(use.default) ) {
-    if ( file.exists( ve.env$ve.pkg.repo ) ) {
+    if ( dir.exists( ve.env$ve.pkg.repo ) ) {
       search.repos <- c(search.repos,paste0("file:",ve.env$ve.pkg.repo))
     }
   }   
@@ -252,7 +253,7 @@ getRepositories <- function(repos=NULL, use.default=TRUE, offline=TRUE, ve.home=
   search.repos <- grep("^\\s*$",search.repos,invert=TRUE,value=TRUE) # Keep only non- blank lines
   if ( length(search.repos) == 0 ) {
     message("No VisionEval repositories available.")
-    stop("Minimally need either local VE_HOME/ve-pkg-repos or online https://packages.visioneval.org")
+    stop("Minimally need either local VE_HOME/ve-pkg-repo or online https://packages.visioneval.org")
   }
 
   # Clean up the list - remove duplicates and empty lines

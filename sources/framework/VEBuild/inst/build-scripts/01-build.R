@@ -595,7 +595,11 @@ ve.build.one.package <- function(pkg,build.config,reset=FALSE,check=TRUE,debug=0
         }
         if ( pkg.name %in% pkgs.installed ) {
           cat("Removing obsolete module package version:",pkgs.version[pkg.name],"\n")
-          try( utils::remove.packages(pkg.name,lib=ve.lib) ) # ignore any errors
+          try( {
+            base::unloadNamespace(pkg.name)
+            utils::remove.packages(pkg.name,lib=ve.lib)
+          }
+          ) # ignore any errors
         } else {
           cat(pkg.name,"is NOT INSTALLED\n")
         }
@@ -772,7 +776,6 @@ ve.build.one.package <- function(pkg,build.config,reset=FALSE,check=TRUE,debug=0
             # Just do installation directly from source package (no binary package created)
             if ( ! package.installed ) {
               cat("++++++++++ Installing source package:",src.module,"\n")
-              if ( pkg.name %in% pkgs.installed ) remove.packages(pkg.name)
               utils::install.packages(src.module, repos=NULL, lib=ve.lib, type="source")
               package.installed <- TRUE
             }
