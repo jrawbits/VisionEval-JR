@@ -27,4 +27,4 @@ BuildTargets:                 # relative to Output
 PackageSources:               # absolute path or relative to VE_HOME
   - sources                   # name of sub-directory of VE_HOME
   - external                  # originally empty sub-directory (could clone other git repos here)
-  # - C:/Git-Repos/VE-Another-Source
+  - C:/Git-Repos/VisionEval-extras  # Extra packages

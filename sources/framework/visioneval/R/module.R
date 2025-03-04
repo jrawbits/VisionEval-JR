@@ -34,7 +34,6 @@ item <- list
 #' @export
 items <- list
 
-
 #INITIALIZE DATA LIST
 #====================
 #' Initialize a list for data transferred to and from datastore

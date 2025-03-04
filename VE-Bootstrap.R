@@ -16,8 +16,8 @@ local(
     ve.env$CRAN.mirror <- "https://cloud.r-project.org"
 
     # User-adjustable names and defauls
-    build.config <- "ve-build-config.yml"
-    ve.lib.name <- "ve-lib"
+    ve.env$build.config <- "ve-build-config.yml"
+    ve.env$ve.lib.name <- "ve-lib"
     ve.env$ve.home <- normalizePath(Sys.getenv("VE_HOME",getwd()),winslash="/",mustWork=FALSE)
     ve.env$ve.build.dir <- Sys.getenv("VE_BUILD",NA)
     if ( is.na(ve.env$ve.build.dir) ) {
@@ -28,7 +28,12 @@ local(
         ve.env$ve.build.dir <- ve.env$ve.home
         ve.env$ve.home <- getwd()
       } else {
-        ve.env$ve.build.dir <- file.path(ve.env$ve.home,"built")
+        if ( ! "ve-lib" in dir(ve.env$ve.home) ) {
+          # Cleaner if ve.home came from a repository to build in a subdirectory
+          ve.env$ve.build.dir <- file.path(ve.env$ve.home,"built")
+        } else {
+          ve.env$ve.build.dir <- ve.env$ve.home
+        }
       }
     }
 

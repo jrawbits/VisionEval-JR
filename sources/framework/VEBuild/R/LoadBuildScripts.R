@@ -18,10 +18,7 @@
     as.environment("ve.env")
   }
 
-  # TODO: Initialize ve.home, ve.build.dir and ve.runtime if they are not already initialized
-
   # Load the ve.builder scripts so VEBuild itself can be unloaded and rebuilt
-  # TODO: go back to using the import package to make just the exposed names public
   running <- Sys.getenv("VE_BUILD_RUNNING",NA) # Don't reload scripts if one of them might be rebuilding VEBuild
   if ( is.na(running) ) {
     # It's on the script to set and unset VE_BUILD_RUNNING
@@ -65,7 +62,10 @@
 #' @param config a list of configuration elements that replace iems in the ve-config.yml file (see
 #'   documentation for that file elsewhere)
 #' @return data.frame of packages and status (unchanged, built, failed)
-ve.build <- function(packages="",reset=FALSE,check=TRUE,confirm=interactive(),config=list()) {
-  do.it <- get("ve.build",envir=as.environment("ve.builder")) # NOTE: will throw an error if not present
-  do.it(packages=packages,reset=reset,check=check,confirm=confirm,config=config) 
-}
+#' @name ve.build
+NULL
+
+# ve.build <- function(packages="",reset=FALSE,check=TRUE,confirm=interactive(),config=list()) {
+#   do.it <- get("ve.build",envir=as.environment("ve.builder")) # NOTE: will throw an error if not present
+#   do.it(packages=packages,reset=reset,check=check,confirm=confirm,config=config) 
+# }
