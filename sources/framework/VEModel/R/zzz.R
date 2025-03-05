@@ -7,10 +7,10 @@
 # .onAttach is called when a library is attached to the search path
 .onAttach <- function(libname, pkgname) {
   initLog(Save=FALSE,Threshold=Sys.getenv("VE_LOGLEVEL",unset="warn")) # Set default logging threshold
-  if ( ! "package:VEBase" %in% search() ) { # running without VEBase
+  if ( ! "package:VEStart" %in% search() ) { # running without VEStart
     packageStartupMessage("Welcome to the VisionEval 4.0!")
     getSetup(reload=TRUE)   # with no arguments, reload the ve.runtime configuration and return ve.env$RunParam_ls
-  } # else all of this will have been done in VEBase and will get set up when VEBase loads VEModel
+  } # else all of this will have been done in VEStart and will get set up when VEStart loads VEModel
 }
 
 .onDetach <- function(libpath) {

@@ -3,9 +3,9 @@
 # Change the bootstrap.lib name if you like (don't use "ve-lib"!)
 bootstrap.lib <- normalizePath("ve-setup-lib",winslash="/",mustWork=FALSE)
 
-# Install VEBase from likely locations if it is not available in .libPaths() (which could include
+# Install VEStart from likely locations if it is not available in .libPaths() (which could include
 # R_LIBS_USER)
-if ( ! require(VEBase,,quietly=TRUE ) {
+if ( ! require(VEStart,,quietly=TRUE ) {
   # Find usable repositories
   # Default repository list
   local.repos <- Sys.getenv("VE_REPOS","ve-repos.cnf") # Override for development
@@ -40,26 +40,26 @@ if ( ! require(VEBase,,quietly=TRUE ) {
     unlink(boostrap.clear,recursive=TRUE)
   }
 
-  # Install VEBase
+  # Install VEStart
   installType <- if ( .Platform$OS.type == "windows" ) "binary" else "source"
-  utils::install.packages("VEBase",lib.loc=bootstrap.lib,repos=ve.repos,type=installType)
-  if ( ! require(VEBase,lib.loc=bootstrap.lib,quietly=TRUE) ) {
-    stop("VEBase is not available; check access to VisionEval repositories.")
+  utils::install.packages("VEStart",lib.loc=bootstrap.lib,repos=ve.repos,type=installType)
+  if ( ! require(VEStart,lib.loc=bootstrap.lib,quietly=TRUE) ) {
+    stop("VEStart is not available; check access to VisionEval repositories.")
   }
   
-  # Get here with VEBase loaded
-  .VEBase::ve.init())           # Force pre-defined VE_HOME or interact to set VE_HOME
+  # Get here with VEStart loaded
+  .VEStart::ve.init())           # Force pre-defined VE_HOME or interact to set VE_HOME
                                 # If user is manually setting VE_HOME, do selection of VE_RUNTIME here
                                 # Add installed VE library to .libPaths and R_LIBS_USER
                                 # Respect VE_BUILD and VE_BRANCH to locate libraries (don't reinstall)
-  VEBase::ve.setup()            # Force pre-defined VE_RUNTIME or use VE_HOME
+  VEStart::ve.setup()            # Force pre-defined VE_RUNTIME or use VE_HOME
                                 # Returns with working directory set to VE_RUNTIME
 
-  # Clean up bootstrap installation of VEBase
-  unloadNamespace(VEBase)
+  # Clean up bootstrap installation of VEStart
+  unloadNamespace(VEStart)
   if ( dir.exists(bootstrap.lib) ) unlink(bootstrap.lib,recursive=TRUE)
-  require(VEBase,quietly=TRUE)  # Reload from VE_HOME/ve-lib
+  require(VEStart,quietly=TRUE)  # Reload from VE_HOME/ve-lib
 }
 require(VEModel,quietly=TRUE)
-VEBase::ve.init()               # Reload VE_HOME and VE_RUNTIME and set .libPaths()
-VEModel::initVisionEval(VEBase::getRuntimeEnvironment())
+VEStart::ve.init()               # Reload VE_HOME and VE_RUNTIME and set .libPaths()
+VEModel::initVisionEval(VEStart::getRuntimeEnvironment())

@@ -7,7 +7,7 @@
 
 # May need to run a second time to complete installation on Mac or Linux
 
-# startupFiles is a package global defined in VEBase::VisioneEval.R
+# startupFiles is a package global defined in VEStart::VisioneEval.R
 checkValidVERuntime <- function(ve.runtime) {
   initNeeded <- c()
   if ( ! all( lower(startupFiles) %in% lower(dir(ve.runtime)) ) ) {

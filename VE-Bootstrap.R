@@ -23,7 +23,7 @@ local(
     if ( is.na(ve.env$ve.build.dir) ) {
       if ( getwd() != ve.env$ve.home ) {
         # If ve.env$ve.home is somewhere else than working directory, we presume it's because
-        # the user previously did an end-user (VEBase) installation at that location
+        # the user previously did an end-user (VEStart) installation at that location
         # The working directory is the fresh source code location.
         ve.env$ve.build.dir <- ve.env$ve.home
         ve.env$ve.home <- getwd()
@@ -38,10 +38,10 @@ local(
     }
 
     # Look for trigger to initiate build (presence of ve-build-config.yml), under these use cases:
-    #   If config is found and VEBuild is available, load VEBuild instead of VEBase
+    #   If config is found and VEBuild is available, load VEBuild instead of VEStart
     #   Configure ve.build environment from the YAML config
     #
-    # If no ve-build-config.yml, acquire VEBase and do an end-user installation from one of these places:
+    # If no ve-build-config.yml, acquire VEStart and do an end-user installation from one of these places:
     #   1. Local pre-installed ve-lib (like old installer)
     #   2. Local pre-installed ve-pkg (all installable packages and dependencies as source)
     #      TODO: contrib.url for specific R version
@@ -49,7 +49,7 @@ local(
     #      TODO: contrib.url for specific R version
     #   4. Local no installed packages: VE/BioC from online package repo; dependencies from CRAN
     # 
-    # After installing runtime VE via VEBase, switch to build environment
+    # After installing runtime VE via VEStart, switch to build environment
     #   Switch by loading VEBuild and running ve.build(), which does this:
     #   Construct a default ve-build-config.yml.
     #   Work in VE_HOME - set up "built" directory and work there to download and build from source.
@@ -60,7 +60,7 @@ local(
     #   Don't provide too many options (but do allow individual package rebuilds).
     #   Keep the shell-based build scripts going for the time being as well.
     #
-    # Provide ve.run() in ve.builder functions, and also in VEBase. Will retreat to end-user installation if
+    # Provide ve.run() in ve.builder functions, and also in VEStart. Will retreat to end-user installation if
     #   VE_HOME lacks ve-lib. If VE is installed, ve.run() will change to VE_RUNTIME and load VEModel.
     #
     # ve.test() is available in VEBuild; provide a package name to search in src folder and load from

@@ -8,8 +8,8 @@
 
 # The ve.env environment is accessed via VEModel::runtimeEnvironment.
 
-ve.env <- new.env()             # Supports standalone use of VEModel; in VE 4.0 it is replaced by VEBase:::ve.env
-ve.env$RunParam_ls <- list()    # In VE 4.0, this is copied into the VEBase environment (see runtimeEnvironment below)
+ve.env <- new.env()             # Supports standalone use of VEModel; in VE 4.0 it is populated by VEStart:::ve.env
+ve.env$RunParam_ls <- list()    # In VE 4.0, this is copied into the VEStart environment (see runtimeEnvironment below)
 
 #ACCESS R ENVIRONMENT FOR MODEL RUN
 #==================================
@@ -105,15 +105,15 @@ runtimeEnvironment <- function(ve.new.env=NULL) {
   ve.env
 }
 
-# Initialize VEModel from external environment (probrably VEBase)
-#' Set up initial VEModel environment from VEBase
+# Initialize VEModel from external environment (probrably VEStart)
+#' Set up initial VEModel environment from VEStart
 #'
 #' @param ve.env An encironment containing ve.home, ve.runtime and other setup variables
 #' @return None
 #' @export
 initVisionEval <- function(ve.env) {
   message("Loading VisionEval 4.0!")
-  runtimeEnvironment(ve.env)             # point VEModel to the VEBase environment
+  runtimeEnvironment(ve.env)             # point VEModel to the VEStart environment
   getSetup(reload=TRUE)                  # reload global RunParam_ls; also will align with ve.env$ve.runtime
   ModelRoot <- getModelDirectory()       # Full path built from ve.runtime and global visioneval.cnf model directory name
   if ( ! dir.exists(ModelRoot) ) {

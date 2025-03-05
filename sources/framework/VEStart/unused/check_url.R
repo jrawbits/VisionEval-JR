@@ -1,5 +1,5 @@
 # https://stackoverflow.com/questions/52911812/check-if-url-exists-in-r
-# JR NOTE: Not sure we want this as it depends on httr package and we want VEBase to be "clean" of dependencies
+# JR NOTE: Not sure we want this as it depends on httr package and we want VEStart to be "clean" of dependencies
 # Example usage:
 #     c(
 #       "http://content.thief/",

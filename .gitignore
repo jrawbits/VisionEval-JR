@@ -6,9 +6,9 @@
 *.R-text
 *.bak
 .DS_Store
+ve-lib/
 built/
 build/*.make
-build/*make*.out
 dev/
 docs/
 external/

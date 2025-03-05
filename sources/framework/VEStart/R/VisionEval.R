@@ -1,13 +1,88 @@
 # Install, update and launch VisionEval system
 
+# Comprehensively change VEStart to VEStart
+
+# VEStart makes sure that ve-lib is present in VE_HOME. Put it there with ve.build as well (but put
+# the other build artifacts into VE_BUILD, defaulting to VE_HOME/built - or VE_HOME/build since the
+# build scripts directory is going away). Then VE_RUNTIME defaults to VE_HOME/runtime but can be
+# moved anywhere. VEStart will also make sure the runtime is set up with a "models" folder, a
+# stub visioneval.cnf with global settings, and the startup scripts (which can also be updated
+# in VE_HOME.)
+
+# Can edit file locations (show .Renviron or defaults) then give the user an easy text-based dialog
+# to choose different directories for VE_BUILD and VE_RUNTIME. VE_HOME will be the place we're
+# running, either getwd() or the pre-set VE_HOME.
+
+# If the user is going to change VE_HOME from VEStart, there needs to be a ve-lib at that location,
+# or they need to do a setup (looking for various kinds of things that can be used to populate
+# ve-lib - either a snapshot for this version of R, or a source or binary contriburl for the current
+# version of R, from which the packages can be installed). The local repository can be either just
+# the VE packages or the VE packages plus all CRAN/BioC dependencies. Some basic packages could go
+# with the VE packages even in the most basic case - include yaml, BiocManager. Then if we're
+# missing dependencies, we can just truck off to CRAN and BiocManager:repositories to find them.
+# contriburl parameter for install.packages can be a vector of locations, just like repos, so we can
+# just build those out.
+
+# So perhaps the key step is to install VEStart and its dependencies (yaml and BiocManager, perhaps
+# git2r) for the current version of R (very simple online packages repository), then browse/download
+# various package files based on the current R version.
+# https://github.com/VisionEval/VisionEval-Dev/releases/download/VE-3.1.2/VE-3.1-PackageSources-R4.4.1_2024-10-10.zip
+
+# So the assets in the Github release can just be variously sized .zip files containing a small
+# config saying what to expect there and where to go for the rest. That can be downloaded manually
+# by the user and placed into VE_HOME. VEStart will look for the most recently downloaded .zip file,
+# extract the manifest and contents into "install" subdirectory of VE_HOME. If no .zip file, hunt
+# around in the current release (corresponding to VEStart version and ) on Github to find the
+# assets. Let the user choose the specific release.
+
+# Manifest needs to contain the type of install (win.binary, source, etc.) and the contriburl name.
+# Source install requires the presence of RTools.
+# How to bootstrap VEStart? Download the 
+# Then when it starts, look in the "install" directory if any, otherwise let the user browse the
+# Github release assets for this version of VEStart.
+
+
+# If they're setting up ve.build, they can pick VE_HOME anywhere (again, it will default to
+# getwd()) and that will be where the default VE_BUILD will go for intermediate build products
+# and where ve-lib will be placed (directly in VE_HOME).
+
+# The VEBuild process needs to start by selecting what directories to build (construct
+# ve-build-config.yml).
+
+# VE-Bootstrap.R is intended to run in the root of the Github, and we'll always get that (rather
+# than the simpler use of VEStart in VE_RUNTIME): it will load ve.build() and another function
+# ve.run() that basically just does the .Rprofile work that VEStart sets up.
+
+# Set up ve-build-config.yml more explicitly if it doesn't exist. So when VEBuild is loaded on
+# top of an end-user installation, it checks the ve-build-config.yml if it exists and prompts
+# the user to set up the different directories: show the ones can be found, and then prompt
+# the user to add another directory (dialog pops up as directory finder, but the main part is
+# just a text list of directories to build: enter the number to show the packages that would
+# be built, with options to remove the directory from the config or just return; enter a "+" to add
+# another directory. Once picked, the packages are shown (or "no packages" in that directory), and
+# the user has the option to remove the directory from the config or just go back.
+
+# So don't provide a ve-build-config.yml by default. Instead, if it's not present, go straight
+# into the package configuration dialog when the user chooses ve.build(). They can always choose
+# different packages by running ve.package.directories() to see what's set up.
+
+# That gives us the option to add new packages into an existing end-user VE_HOME (it will create
+# the "built/build" directory.
+
+# So the pre-creation of a default ve-build-config.yml should be factored out into that setup
+# function. Bootstrap will just work straight off the Github using what is already in the
+# configuration file. Later, the one real package function in VEBuild is to hunt up another
+# directory (either interactively or as a function parameter or as getwd()) and add it to the
+# build configuration.
+
 #CREATE ENVIRONMENT
 # This environment is later copied into VEModel to keep track of ve.runtime, ve.home, etc.
 ve.env <- new.env()
 
-#' Called from VEModel to link to VEBase environment
-#' Items set in the VEBase environment such as ve.home are propagated to VEModel after everything
+#' Called from VEModel to link to VEStart environment
+#' Items set in the VEStart environment such as ve.home are propagated to VEModel after everything
 #' is installed. This function is used by VEModel.
-#' @return Returns the VEBase environment
+#' @return Returns the VEStart environment
 #' @export
 getRuntimeEnvironment <- function() ve.env
 
@@ -56,8 +131,8 @@ startVisionEval <- function(
   if ( missing(ve.home) || is.null(ve.home) ) {
     ve.build.dir <- Sys.getenv("VE_BUILD",Sys.getenv("VE_HOME",getwd())) # Just in case we're loading from a build environment
     # VE_BUILD is the target location for VEBuild, the "home" that is constructed by running ve.build
-    # TODO: how to transition seamlessly from VEBase (end user installation) to VEBuild (source code installation)?
-    # VE_HOME will be set by VEBase. When we later load VEBuild, we need to know where the source code is, and
+    # TODO: how to transition seamlessly from VEStart (end user installation) to VEBuild (source code installation)?
+    # VE_HOME will be set by VEStart. When we later load VEBuild, we need to know where the source code is, and
     # make VE_HOME into VE_BUILD. Need some dialoguing in VEBuild if we have VE_HOME but no VE_BUILD, and if
     # ve-build-config.yml does not exist.
   }
@@ -131,10 +206,10 @@ startVisionEval <- function(
 
   message("Setting up VE_RUNTIME as ",ve.runtime)
 
-  # Put important parameters into VEBase:::ve.env for use in later functions, and relayed to VEModel
+  # Put important parameters into VEStart:::ve.env for use in later functions, and relayed to VEModel
   ve.env$ve.runtime <- ve.runtime
   ve.env$ve.home <- ve.home
-  ve.env$ve.repos.list.name = ve.repos.list.name # See VEBase::getRepositories function 
+  ve.env$ve.repos.list.name = ve.repos.list.name # See VEStart::getRepositories function 
   Sys.setenv(VE_HOME=ve.home,VE_RUNTIME=ve.runtime) # Somewhat redundantly, also save to operating system environment
   # NOTE: ve.setup below will also save VE_HOME and VE_RUNTIME into the .Renviron startup file
 
@@ -169,7 +244,7 @@ startVisionEval <- function(
 
   # Initialize the VE installed package library
   # Installs missing packages or updates them from the provided CRAN-like repositories
-  # Note that VEBase won't update until we re-run the standard .Rprofile that ve.setup installs
+  # Note that VEStart won't update until we re-run the standard .Rprofile that ve.setup installs
   ve.init(lib.loc=ve.env$ve.lib,repos=repos,update=update)
 
   # check and construct startup files in VE_RUNTIME and (optionally) VE_HOME if the latter is different from VE_RUNTIME
@@ -199,7 +274,7 @@ startVisionEval <- function(
 }
 
 # Install bare bones VisionEval (these are checked to see if installation was complete)
-VE.framework <- c("VEBase","VEModel","visioneval")
+VE.framework <- c("VEStart","VEModel","visioneval")
 
 # Check if framework is installed
 checkVE <- function(lib.loc=NULL) {
@@ -215,7 +290,7 @@ checkVE <- function(lib.loc=NULL) {
 #' @param use.default If TRUE (default), Look for "built-in" VE repositories (including
 #'   in pkg-ve-repo for offline installation)
 #' @param offline If TRUE, only look for the local VE_HOME/ve-pkg-repo
-#' @param ve.home path to VE_HOME; if not provided or NULL, look in VEBase::getRuntimeEnvironment()
+#' @param ve.home path to VE_HOME; if not provided or NULL, look in VEStart::getRuntimeEnvironment()
 #' @return character vector of CRAN-like repositories from which to install or update VE packages
 #' @export
 getRepositories <- function(repos=NULL, use.default=TRUE, offline=TRUE, ve.home=NULL) {
@@ -340,7 +415,7 @@ uninstalled.packages.VE <- function(installed,available,getNames=FALSE) {
 #' Initialize a VisionEval installation by installing or updating VisionEval packages
 #'
 #' \code{ve.init} will install and update VisionEval R packages and create a runnable VisionEval installation. The
-#' standard procedure for installing VisionEval 4.0 is to install the \code{VEBase} package and then run
+#' standard procedure for installing VisionEval 4.0 is to install the \code{VEStart} package and then run
 #' \code{ve.init()}. The \code{startVisionEval()} function simply calls \code{ve.init()}
 #'
 #' This function installs or (optionally) updates VisionEval packages from a list containing online
@@ -545,16 +620,16 @@ ve.setup <- function(ve.home,ve.runtime,setupHome=FALSE,overwrite=FALSE) {
     writeLines(renv.txt,renv.file)
 
     # Write launch.bat, providing default R_HOME
-    launch.bat.template <- system.file("startup/launch.bat.template",package="VEBase",mustWork=TRUE)
+    launch.bat.template <- system.file("startup/launch.bat.template",package="VEStart",mustWork=TRUE)
     launch.bat <- file.path(location,"launch.bat")
     launch.txt <- readLines(launch.bat.template)
     launch.txt <- gsub(pattern = "=R_HOME_DEFAULT", replacement = paste0("=",R.home()), x = launch.txt)
     writeLines(launch.txt, con = launch.bat)
 
     # Directly copy over .Rprofile and VisionEval.Rproj (no template modifications needed)
-    file.copy(system.file("startup/Rprofile.default.R",package="VEBase",mustWork=TRUE),file.path(location,".Rprofile"),overwrite=TRUE)
-    file.copy(system.file("startup/VisionEval.Rproj",package="VEBase",mustWork=TRUE),location,overwrite=TRUE)
-    file.copy(system.file("startup/visioneval.cnf.sample",package="VEBase",mustWork=TRUE),location,overwrite=TRUE)
+    file.copy(system.file("startup/Rprofile.default.R",package="VEStart",mustWork=TRUE),file.path(location,".Rprofile"),overwrite=TRUE)
+    file.copy(system.file("startup/VisionEval.Rproj",package="VEStart",mustWork=TRUE),location,overwrite=TRUE)
+    file.copy(system.file("startup/visioneval.cnf.sample",package="VEStart",mustWork=TRUE),location,overwrite=TRUE)
     if ( file.exists( has.Rdata <- file.path(location,".Rdata")) ) file.copy(has.Rdata,file.path(location,"previous.Rdata"))
     save(list=character(0),file=file.path(location,".Rdata")) # double click .Rdata to run fully-installed RGUI
   }
@@ -569,7 +644,7 @@ ve.setup <- function(ve.home,ve.runtime,setupHome=FALSE,overwrite=FALSE) {
 # VE 4: This will be a directory in VE_HOME, populated during setup from system
 #   files saved inside VE_BASE
 # This should be deprecated, as we'll just be packaging these in the future
-# In any case, we probably want to move it to VEModel since a design goal for VEBase is not to have
+# In any case, we probably want to move it to VEModel since a design goal for VEStart is not to have
 #   any non-system dependencies except VEModel (which is installed/handled internally and not
 #   visibly made into an import in the DESCRIPTION file.
 #

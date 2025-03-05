@@ -18,7 +18,7 @@ script.contents <- c( "ve.build" ) # for "import" package to make a pseudo packa
 #   - Install the packages
 #   - Make installers
 #     - Offline installer requires R version (so we just do contriburl)
-#     - Create a different kind of directory name for VEBase to seek
+#     - Create a different kind of directory name for VEStart to seek
 #       - all of those located in VE_BUILD or VE_HOME
 #       - ve-pkg-repo versus ve-pkg-contrib
 #       - dependency-repo versus dependency-contrib

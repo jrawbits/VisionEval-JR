@@ -1,5 +1,5 @@
 #' @include VisionEval.R
-# zzz.R - VEBase package .onLoad function
+# zzz.R - VEStart package .onLoad function
 
 # .onAttach is called when a package is attached to an R session
 .onAttach <- function(libname, pkgname) {

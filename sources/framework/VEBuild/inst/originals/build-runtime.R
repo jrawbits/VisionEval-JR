@@ -10,7 +10,7 @@ if ( ! exists("ve.installer" ) ) ve.installer <- getwd()
 source(file.path(ve.installer,"scripts","get-runtime-config.R"))
 
 # TODO: for VE 4.0, this won't copy a pre-built runtime. Rather, it will regenerate a
-# quick runtime from pieces in VEBase, including a launch.bat, a .Rprofile, and especially
+# quick runtime from pieces in VEStart, including a launch.bat, a .Rprofile, and especially
 # a ve-repos-dev.cnf and .Renviron with VE_REPOS that point back to the installed
 # locations. There will be version specific runtimes created (using this.R) because
 # launch.bat is version-specific. VE_BUILT, VE_HOME and R_LIBS_USER should be set up in
@@ -40,7 +40,7 @@ if ( length(copy.paths) > 0 ) {
   }
 }
 
-# VEBase now does this
+# VEStart now does this
 # # Create the R version tag in the runtime folder
 # cat("that.R:",this.R,"\n",sep="",file=file.path(ve.runtime,"r.version"))
 # cat("ve.lib.name:",basename(ve.lib),"\n",sep="",file=file.path(ve.runtime,"r.version"),append=TRUE)
