@@ -27,4 +27,6 @@ BuildTargets:                 # relative to Output
 PackageSources:               # absolute path or relative to VE_HOME
   - sources                   # name of sub-directory of VE_HOME
   - external                  # originally empty sub-directory (could clone other git repos here)
-  - C:/Git-Repos/VisionEval-extras  # Extra packages
+  # - optional                  # original VETravelDemandMM and VERPAT
+  # - C:/Git-Repos/VisionEval-extras  # Extra packages; add as many of these as you want
+  # - C:/Git-Repos/VisionEval-extras/VEPopulationSim # Can also pick out individual packages

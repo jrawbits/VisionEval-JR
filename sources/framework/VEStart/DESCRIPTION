@@ -1,4 +1,4 @@
-Package: VEBase
+Package: VEStart
 Type: Package
 Title: Bootstrap VisionEval with online load
 Version: 4.0.0

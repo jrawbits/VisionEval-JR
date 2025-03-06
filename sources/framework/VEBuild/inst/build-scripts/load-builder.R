@@ -2,7 +2,8 @@
 
 # Author: Jeremy Raw
 
-# Use import package to load build functions
+# Use import package to load build functions into an attached environment ve.builder
+# The script calling load.build should have created and attached the ve.builder environment.
 #' @param ve.scripts List of package directory patterns to search for packages to build
 #' @param CRAN.mirror URL of CRAN repository containing "import" package
 load.builder <- function(ve.scripts,CRAN.mirror="https://cloud.r-project.org") {
@@ -12,6 +13,8 @@ load.builder <- function(ve.scripts,CRAN.mirror="https://cloud.r-project.org") {
   if ( ! suppressWarnings(requireNamespace("import",quietly=TRUE)) ) {
     utils::install.packages("import", lib=.libPaths()[1], repos=CRAN.mirror, type=.Platform$pkgType )
   }
+
+  
 
   script.files <- file.path(ve.scripts,dir(ve.scripts,pattern="\\.R$"),fsep="/")
   for ( sf in script.files ) {
@@ -29,4 +32,3 @@ load.builder <- function(ve.scripts,CRAN.mirror="https://cloud.r-project.org") {
   unloadNamespace("import") # so we can load it again as part of ve.build
   rm(sf,script.files)
 }
-if ( exists("run.build.loader") && run.build.loader ) l

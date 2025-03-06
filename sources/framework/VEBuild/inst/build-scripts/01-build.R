@@ -39,12 +39,25 @@ script.contents <- c( "ve.build" ) # for "import" package to make a pseudo packa
 #   (re-)building each package.
 # @param config a list of configuration elements that replace iems in the ve-config.yml file (see
 #   documentation for that file elsewhere)
+# @param debug if TRUE or numeric non-zero, issue additional debugging messages during build
+# @param list if TRUE just report what packages would be built and exit
 # @return data.frame of packages and status (unchanged, built, failed)
-ve.build <- function(targets="",reset=FALSE,check=reset,confirm=interactive(),config=list(),debug=FALSE) {
+ve.build <- function(
+  targets="",
+  reset=FALSE,
+  check=reset,
+  confirm=interactive(),
+  config=list(),
+  debug=FALSE,
+  listtargets=FALSE
+) {
 
   build.config <- ve.build.config(config=config,debug=debug)
 
   pkg.desc <- ve.get.targets(targets,build.config,debug=debug)
+  if ( listtargets ) {
+    return(pkg.desc)
+  }
 
   ve.load.dependencies(pkg.desc,build.config,debug=debug)
 
@@ -138,7 +151,8 @@ ve.build.config <- function(config=list(),debug=FALSE) {
 
       # NOTE: this ve.lib may not be the same as ve.env$ve.lib
       # It won't matter if they differ, but there may be a few rendundant downloads
-      ve.lib <- file.path(ve.env$ve.build.dir,raw.config$BuildTargets["ve.lib"],tools::file_path_sans_ext(this.R))
+      # Put ve.lib in VE_HOME to interoperate between developer and end-user installations
+      ve.lib <- file.path(ve.env$ve.home,raw.config$BuildTargets["ve.lib"],tools::file_path_sans_ext(this.R))
       if ( ! dir.exists(ve.lib) ) dir.create(ve.lib,recursive=TRUE)
 
       # This is the location where the VE packages are built up prior to being built into R packages
@@ -182,6 +196,8 @@ ve.build.config <- function(config=list(),debug=FALSE) {
         print(package.paths)
       }
       # The following shortcuts get used during build to find obsolete installed packages
+      pkgs.info <- utils::installed.packages(lib.loc=ve.lib)
+      if ( nrow(pkgs.info) == 0 ) 
       pkgs.info <- utils::installed.packages(lib.loc=ve.lib)[,c("Package","Version")]
       pkgs.installed <- pkgs.info[,"Package"] # list of installed package names (including dependencies)
       pkgs.version <- pkgs.info[,"Version"]   # versions of the packages (only checked later for VE packages)
@@ -436,8 +452,10 @@ ve.build.one.package <- function(pkg,build.config,reset=FALSE,check=TRUE,debug=0
 
       # Gracefully return TRUE if the package is up to date and installed
       # TODO: might want to check pkg version here as well...
-      if ( ! newerThan(pkg.folder,pkg.src ) && pkg.name %in% utils::installed.packages(lib.loc=ve.lib)[,"Package"] ) {
-        cat(": Already INSTALLED.\n")
+      if ( ! reset &&
+           ! newerThan(pkg.folder,pkg.src ) &&
+           pkg.name %in% utils::installed.packages(lib.loc=ve.lib)[,"Package"] ) {
+        cat(": already INSTALLED\n")
         return(TRUE)
       }
 
@@ -685,7 +703,7 @@ ve.build.one.package <- function(pkg,build.config,reset=FALSE,check=TRUE,debug=0
           }# ignore errors
         }
 
-        if ( reset || check || ! dir.exists(check.dir) ) {
+        if ( check || ( ! reset && ! dir.exists(check.dir) ) ) {
           # Always run check if reset (building from scratch), otherwise only if there is no trace of a prior check.
           cat("++++++++++ Checking and pre-processing ",pkg.name,"\nin ",pkg.src,"\n",sep="")
           # Run the module check (prior to building anything)

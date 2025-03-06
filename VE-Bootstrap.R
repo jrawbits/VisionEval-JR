@@ -1,3 +1,5 @@
+#!/usr/bin/env RScript VE-Bootstrap.R
+
 # Bootstrap loading of ve.build() and ve.run() and related functions
 # Requires RTools and R set up in desired version; Rstudio optional
 
@@ -20,6 +22,7 @@ local(
     ve.env$ve.lib.name <- "ve-lib"
     ve.env$ve.home <- normalizePath(Sys.getenv("VE_HOME",getwd()),winslash="/",mustWork=FALSE)
     ve.env$ve.build.dir <- Sys.getenv("VE_BUILD",NA)
+    ve.env$ve.runtime <- Sys.getenv("VE_RUNTME",NA)
     if ( is.na(ve.env$ve.build.dir) ) {
       if ( getwd() != ve.env$ve.home ) {
         # If ve.env$ve.home is somewhere else than working directory, we presume it's because
@@ -28,12 +31,17 @@ local(
         ve.env$ve.build.dir <- ve.env$ve.home
         ve.env$ve.home <- getwd()
       } else {
-        if ( ! grepl("ve-lib",dir(ve.env$ve.home)) ) {
-          # Cleaner if ve.home came from a repository to build in a subdirectory
-          ve.env$ve.build.dir <- file.path(ve.env$ve.home,"built")
-        } else {
-          ve.env$ve.build.dir <- ve.env$ve.home
-        }
+        # Park the artifacts in "built" subdirectory
+        # ve-lib itself will go in ve.home
+        ve.env$ve.build.dir <- file.path(ve.env$ve.home,"built")
+      }
+    } else if ( is.na(ve.env$ve.runtime) ) {
+      if ( getwd() != ve.env$ve.home ) {
+        # If ve.env$ve.home is somewhere else than working directory, we presume we
+        # are in the runtime directory
+        ve.env$ve.runtime <- getwd()
+      } else {
+        ve.env$ve.runtime <- file.path(ve.env$ve.home,"runtme")
       }
     }
 
@@ -68,18 +76,23 @@ local(
     #   code - top-level estimation nonsense makes module packages "inconvenient".
 
     # Do the rest of the work reading sources etc from VE_HOME and putting build artifacts in VE_BUILD.
+    if ( ! dir.exists(ve.env$ve.runtime) ) {
+      message("Creating VE_RUNTIME directory: '",ve.env$ve.runtime,"'")
+      dir.create(ve.env$ve.runtime,recursive=TRUE)
+    }
     if ( ! dir.exists(ve.env$ve.build.dir) ) {
       message("Creating VE_BUILD directory: '",ve.env$ve.build.dir,"'")
       dir.create(ve.env$ve.build.dir,recursive=TRUE)
     }
     Sys.setenv(VE_BUILD=ve.env$ve.build.dir)
+    Sys.setenv(VE_RUNTIME=ve.env$ve.runtime)
     setwd(ve.env$ve.home) # Bootstrap starts in ve.home
 
     # Construct a ve-lib in ve.build.dir
     # These can be ignored/re-done when a full build happens, based on ve-build-config.yml
     # Generally with the default names and locations, these will end up in the right place
     this.R <- paste(c(R.version["major"],R.version["minor"]),collapse=".")
-    ve.env$ve.lib <- file.path(ve.env$ve.build.dir,ve.lib.name,tools::file_path_sans_ext(this.R))
+    ve.env$ve.lib <- file.path(ve.env$ve.home,ve.lib.name,tools::file_path_sans_ext(this.R))
     if ( ! dir.exists(ve.env$ve.lib) ) {
       dir.create(ve.env$ve.lib,recursive=TRUE)
       # if ( ! ve.env$ve.lib %in% .libPaths() ) .libPaths(ve.env$ve.lib,.libPaths())
@@ -98,11 +111,11 @@ local(
       stop("VisionEval source tree has unexpected structure.")
     } else message("Loading ve.build...")
     # Create an environment to hold build functions (if not already present)
-    env.build <- if ( ! "ve.builder" %in% search() ) {
-      attach(NULL,name="ve.builder")
-    } else {
-      as.environment("ve.builder")
+    if ( "ve.builder" %in% search() ) {
+      # blow it away and start again
+      detach("ve.builder")
     }
+    env.build <- attach(NULL,name="ve.builder")
     sys.source(build.loader,envir=env.build) # creates ve.builder environment and load.builder function
     env.build$load.builder(
       ve.scripts=VEBuild.scripts,
@@ -112,12 +125,11 @@ local(
     # Generate .Renviron with default locations
     renv.file <- file.path(ve.env$ve.home,".Renviron")
     renv.txt <- c(
-      # NOTE: use wildcard for library R version,
-      # so the same .Renviron will work for future versions of R.
-      paste0("R_LIBS_USER=",file.path(ve.env$ve.build.dir,ve.lib.name,"%v")), # 2-digit R versions
+      # NOTE: use wildcard for library R version, so the same .Renviron works for future R versions
+      paste0("R_LIBS_USER=",file.path(ve.env$ve.home,ve.lib.name,"%v")), # 2-digit R versions
       paste0("VE_HOME=",ve.env$ve.home),
       paste0("VE_BUILD=",ve.env$ve.build.dir),
-      paste0("VE_RUNTIME=",ve.env$ve.home)
+      paste0("VE_RUNTIME=",ve.env$ve.runtime)
     )
     if ( ! file.exists(renv.file) ) {
       writeLines(renv.txt,renv.file)

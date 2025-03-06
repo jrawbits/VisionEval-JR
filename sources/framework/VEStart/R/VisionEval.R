@@ -1,6 +1,20 @@
 # Install, update and launch VisionEval system
 
-# Comprehensively change VEStart to VEStart
+# https://github.com/VisionEval/VisionEval-Dev/releases/download/VE-3.1.2/VE-3.1-PackageSources-R4.4.1_2024-10-10.zip
+
+# We want to write one-liner code onto the website and have it reach for a script on the website.
+
+# Workflow:
+#    -- Source the script that sets up the VE_HOME location,sets the R verson and then finds
+#       the corresponding VEStart
+#    -- VEStart can be pre-built for recent R versions, but if not available redirect to
+#       VEBuild from a clone of the Github. If a source build for Windows, user must have RTools
+#       available.
+
+
+# That script will prompt the user for the VisionEval version to download
+# (those can get built into the "docs" repository and updated from there), then grab VEStart for
+# that release as a .zip file.
 
 # VEStart makes sure that ve-lib is present in VE_HOME. Put it there with ve.build as well (but put
 # the other build artifacts into VE_BUILD, defaulting to VE_HOME/built - or VE_HOME/build since the
@@ -26,7 +40,6 @@
 # So perhaps the key step is to install VEStart and its dependencies (yaml and BiocManager, perhaps
 # git2r) for the current version of R (very simple online packages repository), then browse/download
 # various package files based on the current R version.
-# https://github.com/VisionEval/VisionEval-Dev/releases/download/VE-3.1.2/VE-3.1-PackageSources-R4.4.1_2024-10-10.zip
 
 # So the assets in the Github release can just be variously sized .zip files containing a small
 # config saying what to expect there and where to go for the rest. That can be downloaded manually
@@ -129,7 +142,8 @@ startVisionEval <- function(
 
   # Identify location for VE_HOME (contains ve-lib, and optionally ve-pkg for local repository installation)
   if ( missing(ve.home) || is.null(ve.home) ) {
-    ve.build.dir <- Sys.getenv("VE_BUILD",Sys.getenv("VE_HOME",getwd())) # Just in case we're loading from a build environment
+    ve.home <- Sys.getenv("VE_HOME",getwd())
+    ve.build.dir <- Sys.getenv("VE_BUILD",ve.home) # Just in case we're loading from a build environment
     # VE_BUILD is the target location for VEBuild, the "home" that is constructed by running ve.build
     # TODO: how to transition seamlessly from VEStart (end user installation) to VEBuild (source code installation)?
     # VE_HOME will be set by VEStart. When we later load VEBuild, we need to know where the source code is, and
@@ -298,7 +312,6 @@ getRepositories <- function(repos=NULL, use.default=TRUE, offline=TRUE, ve.home=
   if ( missing(ve.home) ) ve.home <- ve.env$ve.home
 
   # Set up default repositories (local or online)
-  browse()
   search.repos <- character(0)
   if ( isTRUE(use.default) ) {
     if ( dir.exists( ve.env$ve.pkg.repo ) ) {

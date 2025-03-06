@@ -30,7 +30,11 @@ Detailed release notes are found in the "release-notes" directory of repository.
 
 There are five repositories in the VisionEval organization to serve different purposes:
 
- - **[VisionEval](https://github.com/VisionEval/VisionEval)**: Public release version of VisionEval. There is one master branch only. If you have a bug report or other issue, create an issue instead in the VisionEval-Dev repository ([here](https://github.com/VisionEval/VisionEval-Dev/issues)).
+ - **[VisionEval](https://github.com/VisionEval/VisionEval)**: Public release version of VisionEval.
+   There is one master branch only. If you have a bug report or other issue, create an issue instead
+   in the VisionEval-Dev repository ([here](https://github.com/VisionEval/VisionEval-Dev/issues)).
+   **DEPRECATED** in VisionEval 4.0: this repository will be changed to contain a smaller set of scripts
+   and related information for installing VisionEval. The system code will only reside in VisionEval-dev.
  
  - **[VisionEval-Dev](https://github.com/VisionEval/VisionEval-Dev)**: Main repository for
    developers and power-users who want to contribute code improvements. There are multiple branches,
@@ -38,15 +42,23 @@ There are five repositories in the VisionEval organization to serve different pu
    development happens. Additional branches can be used to evaluate new features or pull requests.
    Developers / power-users should [create issues](https://github.com/VisionEval/VisionEval-Dev/issues)
    and [pull requests](https://github.com/VisionEval/VisionEval-Dev/pulls) to this repository.
+   **RESTRUCTURED** in VisionEval 4.0: the VE-4.0 branch will initially be released, followed by a
+   shift where "development" becomes "VE-3.0" and "VE-4.0" becomes "development". Future work should
+   be based on VE-4.0.
  
  - **[VisionEval.github.io](https://github.com/VisionEval/VisionEval.github.io)**: Website repository. You can
    [create issues](https://github.com/VisionEval/VisionEval.org/issues) here for website-related change
    requests.
  
- - **[VisionEval-Docs](https://github.com/VisionEval/VisionEval-Docs)**: Documentation respository. 
+ - **[VisionEval-Docs](https://github.com/VisionEval/VisionEval-Docs)**: Documentation respository.
+   Changes checked into the main branch here will be auto-posted to the website. 
 
  - **[VisionEval-Extras](https://github.com/VisionEval/VisionEval-Extras)**: Additional tools and
    module packages that may be added to core VisionEval.
+
+   **IMPROVED** in VisionEval 4.0: These packages can be built into a standard VisionEval
+   installation with a simple configuration change. You can add them to an end-user installation
+   without having to rebuild the rest of VisionEval.
 
 ## Issues
 

@@ -23,6 +23,7 @@
   if ( is.na(running) ) {
     # It's on the script to set and unset VE_BUILD_RUNNING
     packageStartupMessage("Bootstrapping VisionEval...")
+    CRAN.mirror <- "https://cloud.r-project.org"
     VEBuild.scripts <- system.file("build-scripts",package="VEBuild")
     build.loader <- file.path(VEBuild.scripts,"load-builder.R")
     if ( ! file.exists(build.loader) ) {
