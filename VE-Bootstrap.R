@@ -41,7 +41,7 @@ local(
         # are in the runtime directory
         ve.env$ve.runtime <- getwd()
       } else {
-        ve.env$ve.runtime <- file.path(ve.env$ve.home,"runtme")
+        ve.env$ve.runtime <- file.path(ve.env$ve.home,"runtime")
       }
     }
 
