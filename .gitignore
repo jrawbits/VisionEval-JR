@@ -6,6 +6,7 @@
 *.bak
 ve-build-config.yml
 ve-lib/
+runtime/
 built/
 build/*.make
 external/

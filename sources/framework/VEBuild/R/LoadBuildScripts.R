@@ -1,49 +1,46 @@
 # These functions will load the build scripts from VEBuild systemdata build-scripts folder
 
-# We don't just make the build functions elements of the package namespace, because rebuilding the
+# We don't just make the build functions part of the package namespace, because rebuilding the
 # VEBuild package itself may require detaching it so it can be rebuilt and reinstalled into the VE
 # library.
 
-# Dependencies in the loaded files (e.g. yaml, miniCRAN) are identified for the package
+# Dependencies in the loaded files (e.g. yaml, miniCRAN) are identified in the package
 # DESCRIPTION file.
 
-# Note: may still want to use the import package so that private objects can be hidden from
-# the environment.
+# In general, requiring VEBuild as a library will not be used to build VEBuild itself.
+# To rebuild from scratch, it is better to start VE from the Github root.
 
 .onAttach <- function(libname, pkgname) {
-
-  ve.env <- if ( ! "ve.env" %in% search() ) {
-    attach(NULL,name="ve.env")
-  } else {
-    as.environment("ve.env")
-  }
 
   # Load the ve.builder scripts so VEBuild itself can be unloaded and rebuilt
   running <- Sys.getenv("VE_BUILD_RUNNING",NA) # Don't reload scripts if one of them might be rebuilding VEBuild
   if ( is.na(running) ) {
-    # It's on the script to set and unset VE_BUILD_RUNNING
+    # The build script loaded below will set and unset VE_BUILD_RUNNING during ve.build()
     packageStartupMessage("Bootstrapping VisionEval...")
-    CRAN.mirror <- "https://cloud.r-project.org"
     VEBuild.scripts <- system.file("build-scripts",package="VEBuild")
     build.loader <- file.path(VEBuild.scripts,"load-builder.R")
     if ( ! file.exists(build.loader) ) {
       packageStartupMessage("No build.loader at ",VEBuild.scripts)
       stop("VEBuild is missing load-builder.R.")
     }
-    # Create an environment to hold build functions (if not already present)
-    env.build <- if ( ! "ve.builder" %in% search() ) {
-      attach(NULL,name="ve.builder")
-    } else {
-      as.environment("ve.builder")
+
+    # Create an environment to hold build functions (re-create if it exists)
+    if ( "ve.builder" %in% search() ) {
+      # blow it away and start again
+      detach("ve.builder")
     }
+    env.build <- attach(NULL,name="ve.builder")
+
+    # Load the build scripts
     sys.source(build.loader,envir=env.build) # Imports ve.build and related functions
-    env.build$load.builder(ve.scripts=VEBuild.scripts,CRAN.mirror=CRAN.mirror)
+    env.build$load.builder(ve.scripts=VEBuild.scripts)
+    # The load-builder.R script gives the user instructions about how to proceed
   }
 }
 
-# ve.build will build VisionEval from local sources
-# This function stub will probably never be called, but it is maintained here to generate
-#  function documentation.
+# Function documentation for ve.build.
+# The block of roxygen code below should be kept consistent wit ve.build in the build-scripts folder
+
 #' Build VisionEval from source code in local directories.
 #' The VEBuild package loads a separate searchable environment and namespace which contains the
 #'   true machinery of ve.build. The function here exists for documentation purposes and will just
@@ -66,7 +63,11 @@
 #' @name ve.build
 NULL
 
-# ve.build <- function(packages="",reset=FALSE,check=TRUE,confirm=interactive(),config=list()) {
-#   do.it <- get("ve.build",envir=as.environment("ve.builder")) # NOTE: will throw an error if not present
-#   do.it(packages=packages,reset=reset,check=check,confirm=confirm,config=config) 
-# }
+#' Imports the build scripts into a pre-created attached environment called "ve.builder".
+#' This function uses the import package to load build functions into an attached environment ve.builder.
+#' The script calling load.build should have created and attached the ve.builder environment.
+#' See \code{VE-Bootstrap.R} at the root of the source tree, or \code{VEBuild::.onAttach()}
+#' @param ve.scripts is the directory in which to seek the builder scripts (usually "inst/build-scripts" within VEBuild)
+#' @value NULL
+#' @name load.builder
+NULL

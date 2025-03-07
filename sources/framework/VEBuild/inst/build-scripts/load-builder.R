@@ -2,19 +2,30 @@
 
 # Author: Jeremy Raw
 
-# Use import package to load build functions into an attached environment ve.builder
-# The script calling load.build should have created and attached the ve.builder environment.
-#' @param ve.scripts List of package directory patterns to search for packages to build
-#' @param CRAN.mirror URL of CRAN repository containing "import" package
-load.builder <- function(ve.scripts,CRAN.mirror="https://cloud.r-project.org") {
+# NOTE: keep this up to date with VEBuild/R/LoadBuildScripts.R
+#' \code{load.builder()} will import the build scripts into a pre-created attached environment called "ve.builder".
+#' This function uses the import package to load build functions into an attached environment ve.builder.
+#' The script calling load.build should have created and attached the ve.builder environment.
+#' See \code{VE-Bootstrap.R} at the root of the source tree, or \code{VEBuild::.onAttach()}
+#' @param ve.scripts is the directory in which to seek the builder scripts (usually "inst/build-scripts" within VEBuild)
+#' @value NULL
+#' @name load.builder
+load.builder <- function(ve.scripts) {
 
   # install and load import package
-  # .libPaths()[1] shoule be ve.lib
-  if ( ! suppressWarnings(requireNamespace("import",quietly=TRUE)) ) {
-    utils::install.packages("import", lib=.libPaths()[1], repos=CRAN.mirror, type=.Platform$pkgType )
+  # .libPaths()[1] should be ve.lib
+  ve.env <- try( silent=TRUE, as.environment("ve.env" ) )
+  if ( ! is.environment(ve.env) ) {
+    ve.lib <- .libPaths()[1]
+    CRAN.mirror <- Sys.getenv("VE_CRAN_MIRROR","https://cloud.r-project.org")
+  } else {
+    ve.lib <- get0("ve.lib",envir=ve.env,ifnotfound=.libPaths()[1])
+    CRAN.mirror <- get0("CRAN.mirror",envir=ve.env,ifnotfound="https://cloud.r-project.org")
   }
 
-  
+  if ( ! suppressWarnings(requireNamespace("import",quietly=TRUE)) ) {
+    utils::install.packages("import", lib=ve.lib, repos=CRAN.mirror, type=.Platform$pkgType )
+  }
 
   script.files <- file.path(ve.scripts,dir(ve.scripts,pattern="\\.R$"),fsep="/")
   for ( sf in script.files ) {

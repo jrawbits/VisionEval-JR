@@ -19,13 +19,13 @@ start <- if ( dir.exists( ve.lib ) ) {
     # Developer bootstrap start
     ve.bootstrap
   } else {
-    # Check if VE minimal packates are present
+    # Check if VE minimal packages are present
     inst.pkgs <- utils::installed.packages(lib.loc=ve.lib)[,"Package"]
     if ( all ( minimal.ve %in% inst.pkgs ) ) {
       # If so, just do a regular startup
       "VEStart"
     } else {
-      # if missing packages, do an install beginning with VEStart
+      # if missing packages, do an install
       "install"
     }
   }
@@ -40,6 +40,7 @@ if ( start == ve.bootstrap ) {
   return(invisible(getwd()))
 } else if ( start == "install" ) {
   # Install VEStart from Github assets
+  # Look for properly formed files 
   pkgType <- .Platform$pkgType
   if ( pkgType == "win.binary" ) {
     vestart.file <- paste0("VEStart_R",two.digit.R,".zip") # VEStart_R4.4.zip

@@ -110,13 +110,16 @@ local(
       message("No build.loader at ",build.loader)
       stop("VisionEval source tree has unexpected structure.")
     } else message("Loading ve.build...")
+
     # Create an environment to hold build functions (if not already present)
     if ( "ve.builder" %in% search() ) {
       # blow it away and start again
       detach("ve.builder")
     }
     env.build <- attach(NULL,name="ve.builder")
-    sys.source(build.loader,envir=env.build) # creates ve.builder environment and load.builder function
+
+    # Load the builder scripts
+    sys.source(build.loader,envir=env.build)
     env.build$load.builder(
       ve.scripts=VEBuild.scripts,
       CRAN.mirror=ve.env$CRAN.mirror
@@ -143,6 +146,10 @@ local(
     message("  (VE_BUILD is currently '",ve.env$ve.build.dir,"')\n")
     message("Edit ve-build-config.yml to set locations of package files that might reside")
     message("  outside the VE_HOME directory tree.\n")
-    message("When ready, run ve.build() to build a full VisionEval installation.\n")
+    message("ve.build() to build a full VisionEval installation.\n")
+    if ( "VEStart" %in% available.packages()[,"Package"] ) {
+      message("ve.run() to start VisionEval.\n")
+    }
   }
 )
+

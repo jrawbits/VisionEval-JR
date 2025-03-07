@@ -64,12 +64,6 @@ ve.build <- function(
   ve.build.packages(pkg.desc,build.config,reset=reset,check=check,debug=debug)
 }
 
-ve.env <- if ( ! "ve.env" %in% search() ) {
-  attach(NULL,name="ve.env") # Should always have been set up already by VE-Bootstrap.R or VEBuild
-} else {
-  as.environment("ve.env")
-}
-
 ve.build.config <- function(config=list(),debug=FALSE) {
   # Prepare Configuration and setup from ve-build-config.yml and update from config parameter
 
@@ -78,6 +72,11 @@ ve.build.config <- function(config=list(),debug=FALSE) {
   # the user alters the configuration after starting R, it is possible that the new ve.lib will
   # lead to re-downloading stuff when the full dependencies are built. Unlikely to be a problem in
   # practice. VE-Bootstrap.R sets that environment up, as does VEBuild for deeper end-user builds.
+
+  ve.env <- try( silent=TRUE, as.environment("ve.env") )
+  if ( ! is.environment(ve.env) ) {
+    stop("VisionEval environment is unavailable. Use VE-Bootstrap.R or VESTart to begin.", call. = FALSE)
+  }
 
   build.config <- list()
   within( build.config,
