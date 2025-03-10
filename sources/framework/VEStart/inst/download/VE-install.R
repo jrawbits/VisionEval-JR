@@ -1,4 +1,45 @@
-# Script to scope out the user's candidate for VE_HOME
+# Set up user's VE_HOME directory
+#   Bare directory, or with an installer zip file
+#   Or look for Github structure (VE-Bootstrap.R plus sources)
+# Create ve-lib
+# Prompt for installer.
+# Options:
+#   0. Locally available .zip installer in VE_HOME
+#   1. Any standard available installer at the Github
+#      Standard name pattern
+#      look for assets in latest release to download
+#      Filter based on user's R version
+#   2. Alternative Github from ve-install.cnf (YAML format)
+#      Look for assets in latest release to download
+#   3. Alternative to Clone and build from VisionEval-dev Github
+#   4. Alternative Github for CLone from ve-install.cnf (YAML format)
+# Download (if a release) or Clone (for development)
+#   Both require VE_HOME set and empty
+# If Download:
+#   Unzip the installer file into "install" directory of VE_HOME
+#   Look for type of install in installation manifest
+#      (pre-installed, win.binary install, source install)
+#   Pre-install
+#     Copy to ve-lib (this is the existing approach - big download)
+#     win.binary install - install.packages from contriburl
+#       If dependencies are not present, load them from online
+#     source install - install packages from contriburl
+#       Probably requires RTools, especially if getting all
+#       dependencies; get dependencies online if not present in
+#       installer
+#   Load VEStart
+#     Then run startVisionEval()
+#     Will prompt user to set startup location for models
+#     (VE_RUNTIME)
+#     Create startup files in VE_HOME and VE_RUNTIME
+#     Then change to that directory and load VEModel
+# If Clone
+#    Go to selected Github and do git2r clone into VE_HOME
+#      (reject and prompt for new VE_HOME not empty)
+#    Set VE_BUILD, VE_HOME
+#    Launch VE-Boostrap.R once complete
+#    ve.build() then ve.run()
+
 
 ve.home <- getwd()
 ve.bootstrap <- "VE-Bootstrap.R"

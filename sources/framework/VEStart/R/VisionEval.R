@@ -2,7 +2,10 @@
 
 # https://github.com/VisionEval/VisionEval-Dev/releases/download/VE-3.1.2/VE-3.1-PackageSources-R4.4.1_2024-10-10.zip
 
-# We want to write one-liner code onto the website and have it reach for a script on the website.
+# Installation strategy
+
+# 1. One-liner VE-get.R that user can copy from the website
+# 2. Sources VE-install.R
 
 # The VE installation process entails selecting an installer
 # We could have the user source an online script to find and download the installer they need
