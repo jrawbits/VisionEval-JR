@@ -99,6 +99,7 @@ runtimeEnvironment <- function(ve.new.env=NULL) {
   } else {
     as.environment("ve.env")
   }
+  message("ve.env created: ",is.environment(ve.env))
 
   # Load ve.env from ve.new.env
   # NOTE: probably obsolete since everyone should be using the attached "ve.env" environment

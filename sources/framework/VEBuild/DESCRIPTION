@@ -12,6 +12,7 @@ Depends: R (>= 4.0.0)
 Imports:
     import,
     yaml,
+    gert,
     desc,
     devtools,
     dplyr,

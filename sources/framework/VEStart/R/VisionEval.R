@@ -132,8 +132,6 @@ getRuntimeEnvironment <- function() {
 #' @param ve.lib.name Character string with name of ve-lib within VE_HOME (default "ve-lib")
 #' @param ve.pkg.name Character vector with names of optional local package repositories that may exist in VE_HOME
 #' @param ve.repos.list.name Character string with name of file inwhich to seek additional package repository URLs (CRAN-like)
-#' @param ve.setup.lib Character string with name of R library for simple bootstrap setup (option to
-#'   delete after installation is complete)
 #' @return location of VE_RUNTIME, invisibly
 #' @import utils tcltk
 #' @export
@@ -142,10 +140,8 @@ startVisionEval <- function(
   repos=NULL,update=TRUE,overwrite=FALSE,
   ve.lib.name="ve-lib",
   ve.pkg.name=c("ve-pkg","ve-dependencies"),
-  ve.repos.list.name="ve-repos.cnf",
-  ve.setup.lib="ve-setup"
+  ve.repos.list.name="ve-repos.cnf"
 ) {
-  ve.setup.lib.path <- file.path(getwd(),ve.setup.lib)
   ve.pkg.repo <- "pkg-ve-repo" # from VEBuild - local set of packages
 
   # Identify location for VE_HOME (contains ve-lib, and optionally ve-pkg for local repository installation)
@@ -159,45 +155,6 @@ startVisionEval <- function(
     # ve-build-config.yml does not exist.
   }
   if ( missing(ve.runtime) ) ve.runtime <- NULL
-
-  # Check if VE_HOME is already set up (contains ve-lib)
-  existing.libs <- character(0) # Check below for existence of VE_LIB or VE_SETUP_LIB
-  repeat {
-    ve.home.contents <- dir(ve.home)
-    valid.ve.home <- (
-      ( empty.ve.home <- length(ve.home.contents) == 0 ) ||
-      any( existing.libs <- c(VE_LIB=ve.lib.name,VE_SETUP_LIB=ve.setup.lib) %in% ve.home.contents )
-    )
-
-    # If not set up
-    if ( valid.ve.home && ! empty.ve.home ) {
-      valid.ve.home <- askYesNo(paste("Install VisionEval in",ve.home,"?"))
-      if ( is.na(valid.ve.home) ) {
-        message("VisionEval installation was cancelled.")
-        message("Please select a suitable VisionEval home directory")
-        break # with valid.ve.home set to NA
-      }
-    }
-    if ( ! isTRUE(valid.ve.home) ) {
-      # NOTE: ve.home will be offered in the following directory browse dialogs and if the user just re-selects that
-      # directory, it will be used anyway, creating ve-lib at that location.
-      caption <- "Select directory for VisionEval code installation (VE_HOME)"
-      ve.home <- if (exists('utils::choose.dir')) { # Won't exist on non-Windows platforms
-        utils::choose.dir(caption = caption)
-      } else {
-        tcltk::tk_choose.dir(getwd(),caption = caption)
-      }
-      if ( ! is.na(ve.home) && dir.exists(ve.home) ) { # NA if dialog was cancelled
-        message("Setting up VE_HOME as ",ve.home)
-        break
-      } else {
-        message("No valid location selected for VE_HOME:")
-        valid.ve.home <- NA
-        break # with valid.ve.home set to NA
-      }
-    } else break
-  }
-  if ( is.na(valid.ve.home) ) stop("Installation unsuccesful; Re-run startVisionEval()")
 
   # Set up VE_RUNTIME
   if ( is.null(ve.runtime) ) {
@@ -251,7 +208,7 @@ startVisionEval <- function(
   ve.env$this.R <- paste(c(R.version["major"],R.version["minor"]),collapse=".")
   ve.env$ve.lib <- file.path(ve.home,ve.lib.name,tools::file_path_sans_ext(ve.env$this.R))
   if ( ! dir.exists(ve.env$ve.lib) ) dir.create(ve.env$ve.lib,recursive=TRUE)
-  .libPaths(ve.env$ve.lib) # will add ve-lib if it's not present; ve.setup.lib may remain there harmlessly
+  .libPaths(ve.env$ve.lib)
 
   # Set the installation type based on the OS
   # Not using the default of "both" simplifies online install so we can just supply the relevant contriburl rather than
@@ -273,21 +230,6 @@ startVisionEval <- function(
   # check and construct startup files in VE_RUNTIME and (optionally) VE_HOME if the latter is different from VE_RUNTIME
   # Configure ve.runtime (.Renviron etc.)
   ve.setup(ve.home,ve.runtime,overwrite=overwrite)
-
-  # Offer to clean up VE-Setup.R and ve.setup.lib
-  # This should not happen until after we've bootstrapped
-  # Move it to .Rprofile?
-  if ( ! ve.setup.lib.path %in% .libPaths() ) {
-    seek.setup <- ve.setup.lib.path
-    if ( 0 < length( setup.files <- seek.setup[file.exists(seek.setup)] ) ) {
-      message("Unnecessary bootstrap setup files are present:")
-      print(as.character(setup.files))
-      remove.setup <- readline("Remove these setup files? (Y/n)")
-      if ( grepl("(^[Yy])|(^$)",remove.setup) ) {
-        unlink( setup.files, recursive=TRUE)
-      }
-    }
-  }
 
   # Make installed library path active (set VE_HOME, with ve.env$ve.lib in .Renviron
   if ( ! ve.env$ve.lib %in% .libPaths() ) {

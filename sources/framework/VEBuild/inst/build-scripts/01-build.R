@@ -75,15 +75,15 @@ ve.build.config <- function(config=list(),debug=FALSE) {
 
   ve.env <- try( silent=TRUE, as.environment("ve.env") )
   if ( ! is.environment(ve.env) ) {
-    stop("VisionEval environment is unavailable. Use VE-Bootstrap.R or VESTart to begin.", call. = FALSE)
+    stop("VisionEval environment is unavailable. Use VE-Bootstrap.R to begin.", call. = FALSE)
   }
 
   build.config <- list()
   within( build.config,
-    # ve.build.config returns a copy of build.config with elements added for each of the objects
-    # created in the expression block below, and accessible as e.g. build.config$config.file
-    # The build.config list is used later as an environment for the build sub-steps.
     {
+      # ve.build.config returns a copy of build.config with elements added for each of the objects
+      # created in the expression block below, and accessible as e.g. build.config$config.file
+      # The build.config list is used later as an environment for the build sub-steps.
       cat("Loading Build environment...\n")
       build.type <- .Platform$pkgType
       if ( ! suppressWarnings(requireNamespace("yaml",quietly=TRUE)) ) {
@@ -119,8 +119,8 @@ ve.build.config <- function(config=list(),debug=FALSE) {
           ve.dependencies = "dependencies-repo"   # Repository for dependencies (downloaded, only for platform package type)
         ),
         PackageSources = c( "sources", "external" ) # Directories (absolute or relative to VE_HOME) with packages to build
-                                                    # Can be a single package directory or the parent of many package
-                                                    # directories (sought recursively)
+        # Can be a single package directory or the parent of many package
+        # directories (sought recursively)
       )
       if ( length(raw.config) == 0 || is.null(names(raw.config)) ) {
         raw.config <- default.config
@@ -261,7 +261,7 @@ ve.load.dependencies <- function(pkg.desc,build.config,debug=FALSE) {
   with(
     build.config, # as an environment for these commands, providing configured locations
     {
-      support.packages <- c("BiocManager","desc","devtools","dplyr","miniCRAN","rcmdcheck","roxygen2","withr","yaml")
+      support.packages <- c("BiocManager","desc","devtools","dplyr","miniCRAN","rcmdcheck","roxygen2","withr","gert","yaml")
       if ( ! suppressWarnings(requireNamespace("dplyr",quietly=TRUE)) ) {
         # Used to easily assemble the dependencies into a single list of packages
         utils::install.packages("dplyr", lib=ve.lib, repos=CRAN.mirror, type=build.type, quiet=TRUE )
@@ -682,6 +682,30 @@ ve.build.one.package <- function(pkg,build.config,reset=FALSE,check=TRUE,debug=0
           # Not sure if this would ever happen in practice...
           stop("After copying, build/test environment is still older than package.paths")
         }
+
+        # Add Git information to DESCRIPTION if pkg.folder is in a Git repository
+        today <- date()
+        build.info <- if ( class(try(repo.info <- gert::git_info(pkg.folder))) != "try-error" ) {
+          c(
+            paste0("Date|",today),                                         # Date and time of build
+            paste0("Branch|",repo.info$shorthand),                         # Branch name
+            paste0("Commit|",gert::git_commit_id(repo=pkg.folder)),        # Commit ID
+            paste0("RemoteURL|",
+              gert::git_remote_info(repo.info$remote,repo=pkg.folder)$url, # URL for primary remote
+            paste0("UpstreamBranch|",repo.info$upstream),                  # Upstream branch on primary remote
+            paste0("LocalRepoPath|",repo.info$path)                        # Local path for repo clone
+          )
+        } else {
+          c(
+            paste0("Date|",today),                                         # Date and time of build
+            paste0("Branch|Not from Git repository"),                      # Warning message
+            paste0("Commit|NA"),                                           # Commit ID
+            paste0("RemoteURL|NA",                                         # URL for primary remote
+            paste0("UpstreamBranch|NA"),                                   # Upstream branch on primary remote
+            paste0("LocalRepoPath|",pkg.folder,                            # Directory path for package source
+          )
+        }
+        desc::desc_set_list("VEBuildID",list_value=build.info,file=file.path(pkg.src,"DESCRIPTION"),normalize=TRUE)
       }
 
       # Step 4: Run devtools::document() separately to rebuild the /data directory

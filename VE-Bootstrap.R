@@ -120,10 +120,7 @@ local(
 
     # Load the builder scripts
     sys.source(build.loader,envir=env.build)
-    env.build$load.builder(
-      ve.scripts=VEBuild.scripts,
-      CRAN.mirror=ve.env$CRAN.mirror
-    )
+    env.build$load.builder(ve.scripts=VEBuild.scripts)
 
     # Generate .Renviron with default locations
     renv.file <- file.path(ve.env$ve.home,".Renviron")
@@ -147,7 +144,7 @@ local(
     message("Edit ve-build-config.yml to set locations of package files that might reside")
     message("  outside the VE_HOME directory tree.\n")
     message("ve.build() to build a full VisionEval installation.\n")
-    if ( "VEStart" %in% available.packages()[,"Package"] ) {
+    if ( suppressPackageStartupMessages(require("VEStart",lib.loc=ve.env$ve.lib,quietly=TRUE)) ) {
       message("ve.run() to start VisionEval.\n")
     }
   }

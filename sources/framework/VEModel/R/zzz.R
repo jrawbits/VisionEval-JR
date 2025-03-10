@@ -17,5 +17,5 @@
   # If attaching the package put us in a different working directory,
   # then detaching should put us back where we came from.
   ve.env <- runtimeEnvironment()
-  if ( !is.na(ve.env$start.dir) ) setwd(ve.env$start.dir)
+  if ( "start.dir" %in% ls(ve.env) && !is.na(ve.env$start.dir) ) setwd(ve.env$start.dir)
 }
