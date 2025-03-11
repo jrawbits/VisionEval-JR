@@ -1,12 +1,18 @@
 # VisionEval installation script
 # Author: Jeremy Raw
 
-# Hunt up files with standard names:
-# WindowsLibrary
-# WindowsBuilt
-# SourceBuilt
-# Windows version includes x.y R version
-# Source is version independent
+# Hunt up .zip files with standard names:
+# library_Rx.y (extract contents into install/ve-lib/x.y)
+# winbinary_Rx.y (extract contents into install/contrib/x.y and use winbinary oncontriburl on install.packages
+# source (extract contents into install/contrib and use source contriburl)
+
+# store an entire repository tree branch starting at "install-temp"
+# add that ahead of the online repositories (perhaps from the manifest)
+# so we'll drop the manifest at the root of "install-temp"
+# Manifest to include:
+# - pkgType (with "library" as a non-standard)
+# - Manifest (all the stuff generated when a package is built, notably branch, repo, commit ID)
+#   * Individual packages have their own Manifests.
 
 # "Library" includes all dependencies
 # "Built" produces contriburl for install.packages - keep R version in install subfolder
@@ -16,33 +22,24 @@
 
 # To hunt up installers, look locally for any already downloaded using name patterns
 #   VEInstall-<Type>-Rx.y.zip
-# Search for same types on Github for download
+# Search for same types on Github for download (see download.R)
 # ve-install-config.cnf can list additional VEGithubRepositories:
-#   (full URL's separated by commas)
+#   user/repository format (e.g. visioneval/visioneval-dev or jrawbits/visioneval-jr
 # Will look for latest release on those alternate repositories
 # Option also to Build - that will clone the repository into VE_HOME and source VE-Bootstrap.R
 #   (initially only work for public repositories)
 #   (cloning will only work into an empty directory)
-
-# Github REST API endpoints (on https://api.github.com)
-#   - /repos/{owner}/{repo}/releases/latest : JSON returned, look for "id" as {release_id}
-#     Also produces "assets_url" which can be interrogated to list assets (that's the next one)
-#   - /repos/{owner}/{repo}/releases/{release_id}/assets : Assets URL
-#     Look for a JSON list, with "browser_download_url" as part of each object
+#   (cloning is painful due to the historical crud - only allow it for the new rooted repos).
 
 # Options:
-#   0. Locally available .zip installer in VE_HOME
+#   0. Locally available .zip installer in VE_HOME with conforming name pattern
 #   1. Any standard available installer at the Github
-#      Standard name pattern
-#      look for assets in latest release to download
-#      Filter based on user's R version
-#   2. Alternative Github from ve-install.cnf (YAML format)
-#      Look for assets in latest release to download
-#      Only look for alternative if yaml is (or can be) installed
+#      Standard name pattern filtered by R version (see download.R)
+#   2. Alternative Github from ve-install.cnf
+#      Just a simple config (readable via "desc" package)
 #   3. Alternative to Clone and build from VisionEval-dev Github
-#      Only look for Githubs if git2r is (or can be) installed
-#   4. Alternative Github for CLone from ve-install.cnf (YAML format)
-#      Only look for alternative if yaml is (or can be) installed
+#      Use the same repositories that are checked for released assets
+#      Use the gert package for Github (easy!)
 # Download (if a release) or Clone (for development)
 # If Download:
 #   Unzip the installer file into "install" directory of VE_HOME
@@ -57,7 +54,7 @@
 #       dependencies; get dependencies online if not present in
 #       installer
 #     In every case, do an update from the installer if ve-lib has
-#       old packages
+#       old packages relative to what was downloaded.
 #   Load VEStart
 #     Then run startVisionEval()
 #     Will prompt user to set startup location for models
