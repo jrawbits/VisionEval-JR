@@ -1,3 +1,35 @@
+# VisionEval installation script
+# Author: Jeremy Raw
+
+# Hunt up files with standard names:
+# WindowsLibrary
+# WindowsBuilt
+# SourceBuilt
+# Windows version includes x.y R version
+# Source is version independent
+
+# "Library" includes all dependencies
+# "Built" produces contriburl for install.packages - keep R version in install subfolder
+# Add online repositories (CRAN, BioC) to search for missing dependencies
+# Manifest "INSTALLATION" Says Platform / LibraryOrSource / Git Manifest entry
+# Git manifest is dumped as the installer is built (snapshot of repository situation)
+
+# To hunt up installers, look locally for any already downloaded using name patterns
+#   VEInstall-<Type>-Rx.y.zip
+# Search for same types on Github for download
+# ve-install-config.cnf can list additional VEGithubRepositories:
+#   (full URL's separated by commas)
+# Will look for latest release on those alternate repositories
+# Option also to Build - that will clone the repository into VE_HOME and source VE-Bootstrap.R
+#   (initially only work for public repositories)
+#   (cloning will only work into an empty directory)
+
+# Github REST API endpoints (on https://api.github.com)
+#   - /repos/{owner}/{repo}/releases/latest : JSON returned, look for "id" as {release_id}
+#     Also produces "assets_url" which can be interrogated to list assets (that's the next one)
+#   - /repos/{owner}/{repo}/releases/{release_id}/assets : Assets URL
+#     Look for a JSON list, with "browser_download_url" as part of each object
+
 # Options:
 #   0. Locally available .zip installer in VE_HOME
 #   1. Any standard available installer at the Github
