@@ -14,10 +14,10 @@
 # - Manifest (all the stuff generated when a package is built, notably branch, repo, commit ID)
 #   * Individual packages have their own Manifests.
 
-# "Library" includes all dependencies
-# "Built" produces contriburl for install.packages - keep R version in install subfolder
-# Add online repositories (CRAN, BioC) to search for missing dependencies
-# Manifest "INSTALLATION" Says Platform / LibraryOrSource / Git Manifest entry
+# Try not to zip multilayer folders - just the bottom-most directories
+# Put the necessary contriburl structure into the manifest (including R version)
+
+# When installing, add online repositories (CRAN, BioC) to search for missing dependencies
 # Git manifest is dumped as the installer is built (snapshot of repository situation)
 
 # To hunt up installers, look locally for any already downloaded using name patterns
