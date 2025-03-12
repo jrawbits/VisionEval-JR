@@ -51,8 +51,8 @@ ve.select.installer <- function(downloads=list()) {
   # TODO: filter only .zip files, and only those that contain "Installer", and if they contain
   # "Rx.y" than x.y must match this.R
   # We want a Source installer or installers for the current R version
-  filter.this.R <- grepl(paste0("Installer.*_R",this.R,"_.*\\.zip$"),available)
-  filter.source <- grepl("Installer_Source_.*\\.zip$",available)
+  filter.this.R <- grepl(paste0("Installer-Windows-R",this.R,".*\\.zip$"),available)
+  filter.source <- grepl(paste0("PackageSources-R",this.R,".*\\.zip$"),available)
   filter <- filter.this.R | filter.source
 
   # print(filter)
@@ -79,9 +79,11 @@ ve.fetch.installer <- function(item) {
 
 downloads <- ve.get.release()
 installer <- ve.select.installer(downloads)
-message("Retrieving installer: ",installer)
-retrieved <- ve.fetch.installer(installer)
-message("Retrieved: ", retrieved)
+if ( is.list(installer) ) {
+  message("Retrieving installer: ",installer)
+  retrieved <- ve.fetch.installer(installer)
+  message("Retrieved: ", retrieved)
+}
 
 # Next step is to unzip the download
 # Need to create the proper directory structure for a repository/contriburl

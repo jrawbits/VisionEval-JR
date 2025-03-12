@@ -16,13 +16,10 @@ script.contents <- c( "ve.build","ve.run" ) # for "import" package to make a pse
 #     - need it to use the existing ve-lib from VE_HOME, so navigating ve-lib
 #       when we start up VEBuild and sticking with that will be important.
 #   - Install the packages
-#   - Make installers
-#     - Offline installer requires R version (so we just do contriburl)
-#     - Create a different kind of directory name for VEStart to seek
-#       - all of those located in VE_BUILD or VE_HOME
-#       - ve-pkg-repo versus ve-pkg-contrib
-#       - dependency-repo versus dependency-contrib
-#     - build directory, then zip it
+#   - Make installers (ve.make.installer)
+#     - Library - fully installed win.binary
+#     - WinBinary
+#     - Source (packages) - do we also want SourceSource? (old version of SourcePackages)
 
 # IMPORTANT:
 #   Keep the documentation below in sync with the stub ve.build in VEBuild since
@@ -262,6 +259,7 @@ ve.load.dependencies <- function(pkg.desc,build.config,debug=FALSE) {
     build.config, # as an environment for these commands, providing configured locations
     {
       support.packages <- c("BiocManager","desc","devtools","dplyr","miniCRAN","rcmdcheck","roxygen2","withr","gert","yaml")
+      # We'll get some of these now, and ther est later
       if ( ! suppressWarnings(requireNamespace("dplyr",quietly=TRUE)) ) {
         # Used to easily assemble the dependencies into a single list of packages
         utils::install.packages("dplyr", lib=ve.lib, repos=CRAN.mirror, type=build.type, quiet=TRUE )
@@ -353,7 +351,7 @@ ve.load.dependencies <- function(pkg.desc,build.config,debug=FALSE) {
         utils::install.packages(deps.missing, lib=ve.lib, contriburl=paste0("file:///",dependencies.contriburl),type=build.type )
       }
 
-      # Now load the installed support packages (needed for doing the package build)
+      # Now load the remaining support packages (needed for doing the package build)
       for ( pkg in support.packages ) {
         if ( ! suppressWarnings(requireNamespace(pkg,quietly=TRUE)) ) {
           utils::install.packages(pkg, lib=ve.lib, contriburl=paste0("file:///",dependencies.contriburl), type=build.type )

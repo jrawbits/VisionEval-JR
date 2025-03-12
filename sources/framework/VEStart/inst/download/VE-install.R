@@ -20,8 +20,6 @@
 # When installing, add online repositories (CRAN, BioC) to search for missing dependencies
 # Git manifest is dumped as the installer is built (snapshot of repository situation)
 
-# To hunt up installers, look locally for any already downloaded using name patterns
-#   VEInstall-<Type>-Rx.y.zip
 # Search for same types on Github for download (see download.R)
 # ve-install-config.cnf can list additional VEGithubRepositories:
 #   user/repository format (e.g. visioneval/visioneval-dev or jrawbits/visioneval-jr
@@ -32,7 +30,6 @@
 #   (cloning is painful due to the historical crud - only allow it for the new rooted repos).
 
 # Options:
-#   0. Locally available .zip installer in VE_HOME with conforming name pattern
 #   1. Any standard available installer at the Github
 #      Standard name pattern filtered by R version (see download.R)
 #   2. Alternative Github from ve-install.cnf
@@ -77,9 +74,26 @@ this.R <- paste(c(R.version["major"],R.version["minor"]),collapse=".") # used to
 two.digit.R <- tools::file_path_sans_ext(this.R)                       # two digits are the key for ve-lib etc
 minimal.ve <- c("VEStart","VEBuild","VEModel","visioneval")            # files suggesting an installation has happened
 ve.lib.name <- "ve-lib"                                                # Probably never gets changed
-ve.lib <- file.path(ve.home,ve.lib.name,two.digit.R)                   # Location for ve-lib for this R version
+ve.lib.base <- file.path(ve.lib.name,two.digit.R)                      # Prepend ve.hom to make ve-lib for this R version
+install.name <- "install"                                              # ve.home folder with extracted installer
+manifest.name <- "Manifest.txt"                                        # Manifest file describing installation file
 
-# Give user options for installation
+# Make sure pattern fits with current installer naming convention
+installer.pattern <- paste0(
+"VEInstaller_.*_", # .* will be the VE Version
+paste0("(Windows_R",two.digit.R,"|Source)"),
+".zip$")
+
+# Change the path when going live
+# repository.path <- "https://github.com/visioneval/VisionEval-dev/releases/latest/download"
+CRAN.mirror <- "https://cloud.r-project.org"
+pkgType <- .Platform$pkgType
+git.repository <- c(
+  # user="visioneval",
+  # repository="visioneval-dev"
+  user="jrawbits",
+  repository="visioneval-jr"
+)
 
 # Check for "install" subdirectory - check manifest for version against VE_HOME
 #   ve-version.txt
@@ -129,318 +143,273 @@ ve.lib <- file.path(ve.home,ve.lib.name,two.digit.R)                   # Locatio
 # Manifest should also say whether to hunt online for dependencies
 # Manifest should be a file format we can handle in Base R
 
-# Change the path when going live
-# repository.path <- "https://github.com/visioneval/VisionEval-dev/releases/latest/download"
-repository.path <- "C:/Git-Repos/VisionEval-dev-VE40/built/ve-pkg-repo/bin/windows/contrib/4.4"
-
 # Check for presence of VisionEval development environment
-start <- character(0)
-if ( file.exists(startup.script <- file.path(ve.home,ve.bootstrap)) ) {
-  # Developer bootstrap start
-  # User will be managing repository externally
-  source(startup.script)
-  return(invisible(getwd()))
-}
 
-# Conduct installation or update as appropriate
-start <- if ( dir.exists( ve.lib ) ) {
-  # Check if VE minimal packages are present
-  inst.pkgs <- utils::installed.packages(lib.loc=ve.lib)[,"Package"]
-  if ( all ( minimal.ve %in% inst.pkgs ) ) {
-    # If so, just do a regular startup
-    "VEStart"
-  } else {
-    # if missing packages, do an install
-    "install"
+ve.check.bootstrap <- function() {
+  start <- character(0)
+  if ( file.exists(ve.bootstrap)) ) {
+    # Developer bootstrap start
+    # User will be managing repository externally
+    source(ve.bootstrap)
+    return(invisible(getwd()))
   }
-} else {
+}
+
+ve.install.type <- function() {
+  # Determine how to install, if necessary
+  if ( dir.exists( ve.lib.base ) ) { # Check for valid installation in current directory
+    # Check if VE minimal packages are present
+    inst.pkgs <- utils::installed.packages(lib.loc=file.path(getwd(),ve.lib.base))[,"Package"]
+    if ( all ( minimal.ve %in% inst.pkgs ) ) {
+      # If so, just do a regular startup
+      return("VEStart")
+    }
+  }
+  return("install")
+}
+
+set.ve.home <- function() {
+  # Set ve.home somewhere else if desired
+  ve.home <- getwd()
+  repeat {
+    # See if we can use ve.home
+    ve.home.contents <- dir(ve.home)
+    valid.ve.home <- dir.exists(
+      ( empty.ve.home <- length(ve.home.contents) == 0 ) ||
+      any( existing.libs <- ve.lib.name %in% ve.home.contents )
+    )
+
+    # If not set up
+    if ( valid.ve.home && ! empty.ve.home ) {
+      valid.ve.home <- askYesNo(paste("Install VisionEval in",ve.home,"?"))
+    }
+    if ( ! isTRUE(valid.ve.home) ) { # Also handles NA value for valid.ve.home
+      # NOTE: ve.home will be offered in the following directory browse dialogs and if the user just re-selects that
+      # directory, it will be used anyway, creating ve-lib at that location.
+      caption <- "Select directory for VisionEval code installation (VE_HOME)"
+      ve.home <- if (exists('utils::choose.dir')) { # Won't exist on non-Windows platforms
+        utils::choose.dir(caption = caption)
+      } else {
+        tcltk::tk_choose.dir(getwd(),caption = caption)
+      }
+      if ( ! is.na(ve.home) && dir.exists(ve.home) ) { # NA if dialog was cancelled
+        message("Setting up VE_HOME in ",ve.home)
+        break
+      } else {
+        message("No valid location selected for VE_HOME: ",ve.home)
+        valid.ve.home <- NA
+        break # with valid.ve.home set to NA
+      }
+    } else break
+  }
+  if ( is.na(valid.ve.home) ) stop("Invalid VisionEval installation location - please re-install.")
+
+  # Change to selected ve.home
+  setwd(ve.home)
+
   # Make sure ve.lib is present
-  dir.create(ve.lib,recursive=TRUE)
-  "install"
-}
-if ( start == "install" ) {
+  ve.lib <- file.path(ve.home,ve.lib.base)
+  if ( ! dir.exists(ve.lib) ) dir.create(ve.lib,recursive=TRUE)
+  if ( ! ve.lib %in% .libPaths() ) .libPaths(c(ve.lib,.libPaths()))
 
-# OBSOLETE: dialog to pick VE_HOME - user now needs to do this externally
-#   repeat {
-#     ve.home.contents <- dir(ve.home)
-#     valid.ve.home <- (
-#       ( empty.ve.home <- length(ve.home.contents) == 0 ) ||
-#       any( existing.libs <- ve.lib.name %in% ve.home.contents )
-#     )
-# 
-#     # If not set up
-#     if ( valid.ve.home && ! empty.ve.home ) {
-#       valid.ve.home <- askYesNo(paste("Install VisionEval in",ve.home,"?"))
-#     }
-#     if ( ! isTRUE(valid.ve.home) ) { # Also handles NA value for valid.ve.home
-#       # NOTE: ve.home will be offered in the following directory browse dialogs and if the user just re-selects that
-#       # directory, it will be used anyway, creating ve-lib at that location.
-#       caption <- "Select directory for VisionEval code installation (VE_HOME)"
-#       ve.home <- if (exists('utils::choose.dir')) { # Won't exist on non-Windows platforms
-#         utils::choose.dir(caption = caption)
-#       } else {
-#         tcltk::tk_choose.dir(getwd(),caption = caption)
-#       }
-#       if ( ! is.na(ve.home) && dir.exists(ve.home) ) { # NA if dialog was cancelled
-#         message("Setting up VE_HOME as ",ve.home)
-#         break
-#       } else {
-#         message("No valid location selected for VE_HOME:")
-#         valid.ve.home <- NA
-#         break # with valid.ve.home set to NA
-#       }
-#     } else break
-#   }
-#   if ( is.na(valid.ve.home) ) stop("Installation unsuccesful; Re-install VisionEval")
-
-  if ( ! ve.lib %in% .libPaths() ) .libPaths(c(ve.lib),.libPaths())
-  ve.release <- file.path(repository.path,vestart.file)
-  cat("VE Release:",ve.release,"\n")
-  install.packages(ve.release,repos=NULL,lib=ve.lib,type=pkgType)
+  return(list(ve.home=ve.home,ve.lib=ve.lib)
 }
+
+installer.dialog <- function(available,local=FALSE) {
+  # This works if available is either a list or character vector
+  cat("Available Installers:\n")
+  print( available )
+  dl <- 0
+  while ( length(available)>0 && ! is.na(dl) && ( dl<1 || dl > length(available) ) ) {
+    prompt <- if ( ! local ) {
+      "Which release to download (q to exit)? "
+    } else {
+      "Which file to install (d+number to delete, q to exit)? "
+    }
+    raw.dl <- readline(prompt=prompt)
+    dl <- try( suppressWarnings(as.integer(raw.dl)) ) # NA if raw.dl is not an integerable thing
+    if ( is.na(dl) ) {
+      # if local files, process delete option
+      if ( local && grepl("^d",raw.dl) && ! is.na( which <- try( suppressWarnings(as.integer(gsub("^d","",raw.dl))) ) ) ) {
+        confirm <- askYesNo(paste0("Delete local installer: ",dl[[which]],"?"))
+        if ( isTRUE(confirm) ) {
+          unlink(dl[[which]])
+          stop(call.=FALSE,"Deleted local installer - please restart installation")
+          # stop because it's too hard to relay the modified available list out of here
+        }
+      } # wrap around to use the loop test to exit if valid
+    }
+  }
+  return( dl )
+}
+
+ve.existing.folder <- function(ve.home) {
+  install.dir <- ""
+  if ( install.name %in% dir(ve.home) ) {
+    unzipped <- askYesNo(prompt="Use existing 'install' directory to install or update?")
+    if ( isTRUE(unzipped) ) install.dir <- file.path(ve.home,install.name)
+  }
+  ve.do.install(pkgType="Folder",from=install.dir) # check Manifest.txt and dispatch accordingly
+  return(install.dir)
+}
+
+ve.online.installer <- function()
+{
+  # Try to obtain an online installer
+  # Gather necessary dependency to retrieve assets
+  if ( ! suppressWarnings(requireNamespace("rjson",quietly=TRUE)) ) {
+    utils::install.packages(
+      "rjson",lib=ve.lib,
+      repos=CRAN.mirror,type=pkgType,
+      verbose=FALSE,quiet=TRUE
+    )
+    suppressWarnings(requireNamespace("rjson",quietly=TRUE))
+  }
+
+  # Use the Github API to list releases and their properties
+  # NOTE: releases seem to be in descending date-time order, so [1] should be the latest release.
+  downloads <- list()
+  all.releases <- rjson::fromJSON(
+    file=paste0(
+      "https://api.github.com/repos/",
+      git.repository$user,"/",
+      git.repository$repository,"/releases"
+    )
+  )
+  latest <- if ( length(all.releases)>0 ) all.releases[1] else NA # reduce to a list of one
+  if ( is.list(latest) ) {
+    release <- latest[[1]] # Get the object from the release list of 1
+    downloads <- lapply(
+      release$assets,
+      function(a) {
+        list(
+          timeout = as.integer(round(a$size/750000,0)),
+          url     = a$browser_download_url,
+          file    = basename(a$browser_download_url)
+        )
+      }
+    )
+  }
+  if ( length(downloads) > 0 ) {
+    available <- sapply(downloads,function(d)d$file,simplify=TRUE)
+    filtered <- grep(installer.pattern,available)
+    available <- available[filtered]
+    downloads <- downloads[filtered]
+  }
+  asset <- list()
+  if ( length(available)>0 ) {
+    which <- installer.dialog(available)
+    if ( is.integer(which) && which > 0 && which <= length(available) ) {
+      asset <- downloads[[which]]
+    }
+  }
+
+  # Download the installer
+  if ( is.list(asset) && length(asset)>0 && all(c("timeout","url","file") %in% names(asset)) ) {
+    options(timeout = max(item$timeout, getOption("timeout"))) # ten minute timeout; set dynamically based on reported file size?
+    download.file(item$url,destfile=item$file,method="auto",mode="wb")
+    installer <= item$file
+  } else installer <- ""
+
+  return(installer)
+}
+
+ve.local.installer <- function(ve.home) {
+  installer <- ""
+  # See if there are already-downloaded local installers
+  local.installers <- dir(ve.home,pattern=installer.pattern)
+  if ( length(local.installers>0) ) {
+    which <- installer.dialog(local.installers,local=TRUE)
+    if ( is.integer(which) && which > 0 && which <= length(local.installers) ) {
+      installer <- local.installers[[which]]
+    }
+  }
+  return(installer)
+}
+
+ve.unzip.installer <- function(installer.zip) {
+  # Check the manifest
+  manifest <- read.dcf( unz(installer.zip,filename=manifest.name), n=1 )
+  m.names <- dimnames(manifest)[2]
+  if ( is.null(m.names) || ! "pkgType" %in% m.names  ) {
+    message("Ill-formed installer: ",installer.zip)
+    stop("No valid ",manifest.name," file",call.=FALSE)
+  }
+  pkgType <- manifest[1,"pkgType"]
+  ve.do.install(pkgType,zip=installer.zip)
+  if ( pkgType=="Library" ) {
+    # double check that the zip file has the correct R version
+    # blow away all the files in ve-lib
+    doit <- askYesNo(prompt="Replace your VisionEval installation? (y/n/cancel)")
+    # TODO: Probably should move ve-lib aside rather than delete it outright
+    if ( ! isTRUE(doit) ) stop("Installation cancelled.",call.=FALSE)
+    if ( dir.exists(ve.lib) ) {
+      message("Deleting existing VisionEval library")
+      unlink(ve.lib,recursive=TRUE)
+      message("Old VisionEval library removed; now installing new version")
+    }
+    install.dir <- ve.lib # will re-create when installer.zip is unzipped
+    unzip(installer.zip,exdir=install.dir)
+  } else if ( pkgType %in% c("WinBinary","Source") ) {
+    install.dir <- file.path(ve.home,install.name)
+    if ( dir.exists(install.dir) ) unlink(install.dir,recursive=TRUE)
+    unzip(installer.zip,exdir=install.dir)
+    # Move ve-lib aside
+    # Get BiocManager
+    # Set contriburl for BioC repositories and CRAN consistent with contriburl at
+    # install.dir, and do utils::install.packages.
+  } else {
+    stop("Installation failed: unknown Package Type: ",pkgType,call.=FALSE)
+  }
+  return(install.dir)
+}
+    
+
+  # 7. Identify installation parameters (R Version, library/source/win.binary)
+  # 8. Put files into appropriate locations
+  ve.do.install(install.dir,ve.lib) # Get the packages from their various places into ve.lib
+  #    - Library copies "assets" to "ve-lib"
+  #    - pkgType constructs contriburl list and does install.packages (online dependencies)
+  #      * do it in 2 phases: install BiocManager from CRAN, then get it to dish repositories
+  #        to install the rest
+
+  return(install.dir)
+}
+
+###############################################
+
+# Now run the installation
+if ( ve.install.type() == "install" ) { # Otherwise just fall through to load VEStart
+
+  # Possibly reposition ve.home and ve.lib if installer
+  home.lib <- set.ve.home()
+  ve.home  <- home.lib$ve.home
+  ve.lib   <- home.lib$ve.lib
+
+  # See if we've already unzipped an installer
+  install.dir <- ve.existing.folder(ve.home)
+    
+  if ( ! dir.exists(install.dir) ) {
+    installer.zip <- ve.local.installer(ve.home)
+    if ( ! file.exists(installer.zip) ) {
+      installer.zip <- ve.online.installer()
+    }
+    if ( file.exists(installer.zip) ) {
+      # Now unzip and install everything
+      install.dir <- ve.unzip.installer(installer.zip)
+    }
+    # install.dir may still not exist
+  }
+  if ( ! dir.exists(install.dir) ) {
+    stop("No installer; please retry",call.=FALSE)
+  }
+}
+
+# The moment we've all been waiting for: just start it!
 if ( ! require("VEStart",lib.loc=ve.lib,quietly=TRUE) ) {
   message("Installation failed due to missing VisionEval packages.")
   stop("VEStart is not present in ",ve.lib)
 }
 startVisionEval()
-# Creates startup files (.Renviron) in VE_RUNTIME and VE_HOME
+# Synchronizes startup files (.Renviron, VE_RUNTIME and VE_HOME) with ve.env
 # Then loads VEModel
-
-##### Previous work done on online installation; we're working on something simpler.
-
-# Prior Stuff from previous VEStart with integrted installation
-# Install bare bones VisionEval (these are checked to see if installation was complete)
-VE.framework <- c("VEStart","VEModel","visioneval")
-
-# Check if framework is installed
-checkVE <- function(lib.loc=NULL) {
-  return(all( VE.framework %in% installed.packages(lib.loc=lib.loc)[,"Package"]))
-}
-
-# Figure out which repositories to use to install VisionEval
-#' Generate a list of CRAN-like repositories to search for VE packages
-#' The standard VE package repository (either online or offline) will have the basic model and module packages
-#' to support base VERSPM, VE-State and VERPAT. If non-standard repositories are provided, the packages there
-#' must have names that start with "VE", and they must be available for the current R version (or as source).
-#' @param repos A character vector of additional CRAN-like repository URLs for VE packages
-#' @param use.default If TRUE (default), Look for "built-in" VE repositories (including
-#'   in pkg-ve-repo for offline installation)
-#' @param offline If TRUE, only look for the local VE_HOME/ve-pkg-repo
-#' @param ve.home path to VE_HOME; if not provided use "ve.env" version
-#' @return character vector of CRAN-like repositories from which to install or update VE packages
-#' @export
-getRepositories <- function(repos=NULL, use.default=TRUE, offline=TRUE, ve.home=NULL) {
-
-  ve.env <- getRuntimeEnvironmen()
-  if ( missing(ve.home) ) ve.home <- ve.env$ve.home
-
-  # Set up default repositories (local or online)
-  search.repos <- character(0)
-  if ( isTRUE(use.default) ) {
-    if ( dir.exists( ve.env$ve.pkg.repo ) ) {
-      search.repos <- c(search.repos,paste0("file:",ve.env$ve.pkg.repo))
-    }
-  }   
-
-  # Add manually defined locations in VE_HOME/ve.repos.list.name (ahead of defaults)
-  # Should be a text file with one CRAN-like URL per line
-  userfile.name <- Sys.getenv("VE_REPOS",ve.env$ve.repos.list.name) # Override for development
-  userfile.repos.file <- file.path(ve.home,userfile.name)
-  if ( file.exists(userfile.repos.file) ) {
-    userfile.repos <- c(grep("(^\\s*#\\s*)|(^\\s*$)",readLines(userfile.repos.file),invert=TRUE,value=TRUE),search.repos)
-    # the contents of ve-repos.cnf is one url per line suitable for use with install.packages or update.packages
-    # lines can be commented out if their first non-blank character is a # (hash or pound) symbol
-    if ( length(userfile.repos) > 0 ) {
-      search.repos <- c( userfile.repos, search.repos )
-    }
-  } else message("Could not find local repository list: ",userfile.repos.file)
-
-  # Add any repos provided as arguments to this function (ahead of all the others)
-  # Repos is a character vector of fully-formed CRAN-like repository URLs from which to install VE package
-  if ( is.character(repos) ) {
-    search.repos <- c( repos, search.repos )
-  }
-  # Backstop removal of empty lines
-  search.repos <- grep("^\\s*$",search.repos,invert=TRUE,value=TRUE) # Keep only non- blank lines
-  if ( length(search.repos) == 0 ) {
-    message("No VisionEval repositories available.")
-    stop("Minimally need either local VE_HOME/ve-pkg-repo or online https://packages.visioneval.org")
-  }
-
-  # Clean up the list - remove duplicates and empty lines
-  search.repos <- grep ("^\\s*$",search.repos,invert=TRUE,value=TRUE) # no empty lines
-  search.repos <- search.repos[! duplicated(search.repos)]            # only first instance of duplicated repositories
-
-  return (search.repos)
-}
-
-# Additional helpers for managing installed VE packages
-
-# Report package names
-packageNames <- function(available.matrix) available.matrix[,"Package"] # also works to do row.names(available.matrix)
-
-# lib.loc is the directory that holds the VE files (see ve.lib.name parameter for startVisionEval())
-# This function will look for installed.packages called "VE..."
-# It returns an avaialble.package matrix
-installed.packages.VE <- function(lib.loc) {
-  installed <- installed.packages(lib.loc=lib.loc)
-  if ( ! is.null(installed) ) {
-    inst.names <- grepl("^VE",packageNames(installed))
-    installed <- installed[grepl("^VE",packageNames(installed)),]
-  }
-  installed
-}
-
-# Returns an available.packages matrix that filters the packages available at
-# repos.list looking for packages that are named "VE..."
-# Eventually, could also or instead look for VEModels or VEModules entries in each Package DESCRIPTION
-available.packages.VE <- function(repos.list) {
-  ve.env <- getRuntimeEnvironment()
-  available.list <- NULL
-  for ( repo in repos.list ) {
-    avail <- suppressWarnings(
-      available.packages(
-        repos=repo,
-        type=ve.env$installType,
-        filters = list(
-          add = TRUE,
-          function (db) {
-            db[grepl("^VE",db[,"Package"]),]
-          }
-        )
-      )
-    )
-    if ( ! is.null(avail) && nrow(avail) > 0 ) {
-      if ( is.null(available.list) ) available.list <- avail else rbind(available.list,avail)
-    }
-  }
-  return(available.list[!duplicated(row.names(available.list)),])
-}
-
-# Get the available.packages matrix of out of date packages compared to the repositories in repos.list
-old.packages.VE <- function(lib.loc,repos.list) {
-  ve.env <- getRuntimeEnvironment()
-  old.list <- NULL
-  for ( repo in repos.list ) {
-    old <- suppressWarnings( old.packages(
-      lib.loc=lib.loc,
-      repos=repo,
-      type=ve.env$installType
-    ) )
-    if ( ! is.null(old) && nrow(old) > 0 ) {
-      if ( is.null(old.list) ) old.list <- old else rbind(old.list,old)
-    }
-  }
-  return(old.list[!duplicated(row.names(old.list)),])
-}
-
-# this function finds any packages in available (package matrix) that are not present in installed (package matrix)
-# installed is a matrix of installed package information, available is an available.packages matrix of VE packages
-# This function returns a matrix of packages to install
-# Do NOT run it on CRAN package lists or you'll get a list of thousands, almost all of which you don't want
-uninstalled.packages.VE <- function(installed,available,getNames=FALSE) {
-  if ( is.null(installed) || nrow(installed)==0 ) {
-    return(available)
-  }
-  package.names <- packageNames(available)
-  uninstalled <- ! ( packageNames(available) %in% packageNames(installed) )
-  uninstalled.packages <- if ( any(uninstalled) ) available[uninstalled,,drop=FALSE] else character(0)
-  return(uninstalled.packages)
-}
-
-#INITIALIZE VISIONEVAL
-#=====================
-#' Initialize a VisionEval installation by installing or updating VisionEval packages
-#'
-#' \code{ve.init} will install and update VisionEval R packages and create a runnable VisionEval installation. The
-#' standard procedure for installing VisionEval 4.0 is to install the \code{VEStart} package and then run
-#' \code{ve.init()}. The \code{startVisionEval()} function simply calls \code{ve.init()}
-#'
-#' This function installs or (optionally) updates VisionEval packages from a list containing online
-#' repository URLs, local folder paths, or paths to .zip files (see \code{ve.install}). Use the VEBuild package to
-#' packages from Github source code. The ve-lib parameter says where to put the installed packages (or look for
-#' packages to update.
-#' 
-#' IMPORTANT: lib.loc must be created in the file system before calling this function
-#'
-#' @param lib.loc character vector, path for ve-lib / first path in R_LIBS_USER (default: \code{libPaths()[1]})
-#' @param update logical: Install or update VE packages from repos (packages whose names start in VE) (default: TRUE),
-#' @param repos a character vector of repository URLs for non-standard repositories in which to seek VE packages
-#' @param namedOnly ignore any of the default or configuration file repositories
-#' @return invisibly, a character string containing the normalized path of the selected VisionEval runtime location
-#' @export
-
-ve.init <- function(
-  lib.loc=.libPaths()[1],  # location of ve-lib / first path in R_LIBS_USER; saved as VE_LIB in .Renviron
-  update=TRUE,             # Install or update VE packages from repos (packages whose names start in VE)
-  repos=NULL,              # eventually a standard online location e.g. https://visioneval.org/packages
-  namedOnly=FALSE          # only look at repositories listed in repos (rather than the defaults or ve-repos.cnf)
-) {
-
-  # NOTE: local ve-pkg-repo should have a full repository (not just contriburl) but may have only one source or binary
-  #   branch with a single R version (so we can zip up a snapshot)
-
-  # Find VE Repositories using ve.env$ve.home/ve-repos.cnf and built-in standard search locations
-  if ( ! namedOnly || ( as.character(repos) && length(repos)>0 ) ) {
-    repos.list <- getRepositories(repos)
-  } else {
-    repos.list <- repos
-  }
-
-  ve.env <- getRuntimeEnvironment()
-
-  # Find installed and available VE packages
-  VE.installed.packages <- installed.packages.VE(lib.loc)
-  VE.available.packages <- available.packages.VE(repos.list) # VE.available.packages is an available packages matrix
-
-  # Identify and install any VE packages that are available but not installed by comparing the lists
-  VE.uninstalled.packages <- uninstalled.packages.VE(VE.installed.packages,VE.available.packages)
-  if ( length(VE.uninstalled.packages)>0 && NROW(VE.uninstalled.packages) > 0 ) {
-    # We know we'll need yaml as a dependency, so use that to see if existing repos.list has dependencies available
-    # If not, add a CRAN mirror for dependencies
-    # Since we're still depending on Bioconductor HDF5 implementation, VEBuild is currently putting those dependencies into the
-    #  default VE package repository since Bioconductor frowns on direct implementations.
-    message("Installing uninstalled packages:")
-    print(packageNames(VE.uninstalled.packages))
-    install.repos <- if ( ! "yaml" %in% packageNames( suppressWarnings(
-        available.packages(type=ve.env$installType,repos=repos.list)
-      ) ) ) {
-      message("Adding CRAN repository for dependencies as https://cloud.r-project.org")
-      c( repos.list ,"https://cloud.r-project.org")
-    } else repos.list # if we find yaml, we'll assume all the dependencies have been installed
-    print(install.repos)
-
-    # Do the actual installation
-    suppressWarnings(
-      install.packages(
-        packageNames(VE.uninstalled.packages), # install by name
-        lib=lib.loc,
-        repos=install.repos,
-        dependencies=c("Depends", "Imports", "LinkingTo"), # Won't load "Suggests"
-        type=ve.env$installType,
-        INSTALL_opts="--no-test-load"
-      )
-    )
-    message("Done installing new packages")
-  } else message("No VE packages to install.\n")
-
-  # Update any existing packages with new versions
-  if ( isTRUE(update) ) {
-    # always check online for dependency updates on one of the CRAN mirrors
-    message("Checking for VisionEval and dependency updates")
-    update.repos <- unique(c(repos.list,"https://cloud.r-project.org"))
-    need.update <- old.packages.VE(lib.loc,repos.list=update.repos) # uses installType
-    if ( !is.null(need.update) ) {
-      message("Updating:")
-      print(packageNames(need.update))
-      # NOTE: the need.update structure is expected to include the repository location for the newer packages
-      suppressWarnings(
-        update.packages(need.update,repos=update.repos,type=ve.env$installType,ask=FALSE)
-      )
-    } else {
-      message("VisionEval installation is up to date")
-    }
-  }
-  return(ve.env$ve.runtime)
-}
-
