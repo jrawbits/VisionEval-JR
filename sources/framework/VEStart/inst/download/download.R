@@ -48,7 +48,13 @@ ve.select.installer <- function(downloads=list()) {
   pattern <- paste0("R",this.R)
   # cat("Pattern: '",pattern,"'\n",sep="")
   available <- sapply(downloads,function(d)d$file,simplify=TRUE)
-  filter <- grep(paste0("R",this.R),available)
+  # TODO: filter only .zip files, and only those that contain "Installer", and if they contain
+  # "Rx.y" than x.y must match this.R
+  # We want a Source installer or installers for the current R version
+  filter.this.R <- grepl(paste0("Installer.*_R",this.R,"_.*\\.zip$"),available)
+  filter.source <- grepl("Installer_Source_.*\\.zip$",available)
+  filter <- filter.this.R | filter.source
+
   # print(filter)
   downloads <- downloads[filter]
   available <- available[filter]
@@ -73,6 +79,11 @@ ve.fetch.installer <- function(item) {
 
 downloads <- ve.get.release()
 installer <- ve.select.installer(downloads)
-message("Retrieving download...")
+message("Retrieving installer: ",installer)
 retrieved <- ve.fetch.installer(installer)
 message("Retrieved: ", retrieved)
+
+# Next step is to unzip the download
+# Need to create the proper directory structure for a repository/contriburl
+# But could do that in the .zip file itself
+# Keep it simple. We do want a manifest, but we won't look at it.

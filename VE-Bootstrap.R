@@ -28,6 +28,7 @@ local(
         # If ve.env$ve.home is somewhere else than working directory, we presume it's because
         # the user previously did an end-user (VEStart) installation at that location
         # The working directory is the fresh source code location.
+        # We'll try to rebuild into the end-user location
         ve.env$ve.build.dir <- ve.env$ve.home
         ve.env$ve.home <- getwd()
       } else {

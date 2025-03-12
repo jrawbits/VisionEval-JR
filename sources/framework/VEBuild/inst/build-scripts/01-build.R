@@ -2,7 +2,7 @@
 
 # Author: Jeremy Raw
 
-script.contents <- c( "ve.build" ) # for "import" package to make a pseudo package
+script.contents <- c( "ve.build","ve.run" ) # for "import" package to make a pseudo package
 
 # TODO:
 #   - Add the installer interpretation
@@ -683,29 +683,7 @@ ve.build.one.package <- function(pkg,build.config,reset=FALSE,check=TRUE,debug=0
           stop("After copying, build/test environment is still older than package.paths")
         }
 
-        # Add Git information to DESCRIPTION if pkg.folder is in a Git repository
-        today <- date()
-        build.info <- if ( class(try(repo.info <- gert::git_info(pkg.folder))) != "try-error" ) {
-          c(
-            paste0("Date|",today),                                         # Date and time of build
-            paste0("Branch|",repo.info$shorthand),                         # Branch name
-            paste0("Commit|",gert::git_commit_id(repo=pkg.folder)),        # Commit ID
-            paste0("RemoteURL|",
-              gert::git_remote_info(repo.info$remote,repo=pkg.folder)$url, # URL for primary remote
-            paste0("UpstreamBranch|",repo.info$upstream),                  # Upstream branch on primary remote
-            paste0("LocalRepoPath|",repo.info$path)                        # Local path for repo clone
-          )
-        } else {
-          c(
-            paste0("Date|",today),                                         # Date and time of build
-            paste0("Branch|Not from Git repository"),                      # Warning message
-            paste0("Commit|NA"),                                           # Commit ID
-            paste0("RemoteURL|NA",                                         # URL for primary remote
-            paste0("UpstreamBranch|NA"),                                   # Upstream branch on primary remote
-            paste0("LocalRepoPath|",pkg.folder,                            # Directory path for package source
-          )
-        }
-        desc::desc_set_list("VEBuildID",list_value=build.info,file=file.path(pkg.src,"DESCRIPTION"),normalize=TRUE)
+        addGitInfo(from=pkg.folder,to=pkg.src)
       }
 
       # Step 4: Run devtools::document() separately to rebuild the /data directory
@@ -828,6 +806,26 @@ ve.build.one.package <- function(pkg,build.config,reset=FALSE,check=TRUE,debug=0
       return( package.installed ) # errors should be manifest in the console log
     }
   )
+}
+
+#' @param ve.runtime Directory to override standard runtime location search
+ve.run <- function(ve.runtime=NULL) {
+  if ( ! suppressMessages(require(VEStart,quietly=TRUE)) ) {
+    stop("VEStart is not available - have you run ve.build()?")
+  }
+  ve.env <- try( silent=TRUE, as.environment("ve.env") )
+  if ( ! is.environment(ve.env) ) stop("VisionEval environment is unavailable; please restart")
+  if ( missing(ve.runtime) || is.null(ve.runtime) ) {
+    if ( exists("ve.runtime",ve.env,inherits=FALSE) ) {
+      ve.runtime <- ve.env$ve.runtime
+    } else {
+      ve.runtime <- Sys.getenv("VE_RUNTIME",NA)
+      if ( is.na(ve.runtime) ) ve.runtime <- file.path(ve.env$ve.home,"runtime")
+    }
+  }
+  if ( ! dir.exists(ve.runtime) ) dir.create(ve.runtime,recursive=TRUE)
+  if ( dir.exists(ve.runtime) ) setwd(ve.runtime) else stop("Could not establish runtime at '",ve.runtime,"'")
+  startVisionEval(ve.env=ve.env)
 }
 
 #### Remainder of file contains helper functions
@@ -985,4 +983,32 @@ getPackageVersion <- function( package ) {
   # Eliminate package compression formats
   version <- sapply(strsplit(substr(package,1,regexpr(".(\\.tar\\.gz|\\.zip)",package)),"_"),FUN=function(x)x[2],simplify=TRUE)
   return( version )
+}
+
+addGitInfo <- function(from,to) {
+  # Add Git information to DESCRIPTION
+  today <- date()
+  build.info <- if ( class(try(repo.info <- gert::git_info(from))) != "try-error" ) {
+    # Package is in a Git repository
+    c(
+      paste0("Date|",today),                                   # Date and time of build
+      paste0("Branch|",repo.info$shorthand),                   # Branch name
+      paste0("Commit|",gert::git_commit_id(repo=from)),        # Commit ID
+      paste0("RemoteURL|",
+        gert::git_remote_info(repo.info$remote,repo=from)$url, # URL for primary remote
+        paste0("UpstreamBranch|",repo.info$upstream),            # Upstream branch on primary remote
+        paste0("LocalRepoPath|",repo.info$path)                  # Local path for repo clone
+      )
+    } else {
+    # Package is not within a Git repository
+    c(
+      paste0("Date|",today),                                   # Date and time of build
+      paste0("Branch|Not from Git repository"),                # Warning message
+      paste0("Commit|NA"),                                     # Commit ID
+      paste0("RemoteURL|NA",                                   # URL for primary remote
+        paste0("UpstreamBranch|NA"),                             # Upstream branch on primary remote
+        paste0("LocalRepoPath|",from,                            # Directory path for package source
+          )
+      }
+  desc::desc_set_list("VEBuildID",list_value=build.info,file=file.path(to,"DESCRIPTION"),normalize=TRUE)
 }
