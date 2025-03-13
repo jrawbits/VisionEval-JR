@@ -2,24 +2,33 @@
 
 # Author: Jeremy Raw
 
-script.contents <- c( "ve.build","ve.run" ) # for "import" package to make a pseudo package
+script.contents <- c( "ve.build","ve.run","ve.make.installer" ) # for "import" package to make a pseudo package
+
+getBuildEnvironment() {
+  if ( ! "ve.build.env" %in% search() ) {
+    attach(NULL,name="ve.build.env")
+  } else {
+    as.environment("ve.build.env")
+  }
+}
 
 # TODO:
-#   - Add the installer interpretation
-#     - Need to grab suitable versions of dependencies if doing offline
-#     - Need a repository for online VE packages themselves if we want to do online
-#     - handle installing from "repos" versus from "contriburl" in config
+#   - Add the installer manifest
+#     - Package type
+#     - subdirectory structure for "install" folder (e.g. contriburl, 4.x for Library)
+#     - Details on what was built
 #   - Document how to layer VEBuild or VEBootstrap.R on top of an existing VE_HOME
 #     - just need ve-lib and ve-build-config (but defaults should work)
 #     - will create ve-src plus the various package downloads (just for package
 #       being newly built)
 #     - need it to use the existing ve-lib from VE_HOME, so navigating ve-lib
 #       when we start up VEBuild and sticking with that will be important.
-#   - Install the packages
 #   - Make installers (ve.make.installer)
-#     - Library - fully installed win.binary
+#     - Library - fully installed win.binary, all packages - just zip up ve-lib
 #     - WinBinary
 #     - Source (packages) - do we also want SourceSource? (old version of SourcePackages)
+#     - files are always top-level in zip; manifest says how to situate them in sub-directories
+#       during extraction
 
 # IMPORTANT:
 #   Keep the documentation below in sync with the stub ve.build in VEBuild since
@@ -49,20 +58,21 @@ ve.build <- function(
   listtargets=FALSE
 ) {
 
-  build.config <- ve.build.config(config=config,debug=debug)
+  ve.build.config(config=config,debug=debug) # Loads "ve.build.env"
 
-  pkg.desc <- ve.get.targets(targets,build.config,debug=debug)
+  pkg.desc <- ve.get.targets(targets,debug=debug)
   if ( listtargets ) {
     return(pkg.desc)
   }
 
-  ve.load.dependencies(pkg.desc,build.config,debug=debug)
+  ve.load.dependencies(pkg.desc,debug=debug)
 
-  ve.build.packages(pkg.desc,build.config,reset=reset,check=check,debug=debug)
+  ve.build.packages(pkg.desc,reset=reset,check=check,debug=debug)
 }
 
 ve.build.config <- function(config=list(),debug=FALSE) {
   # Prepare Configuration and setup from ve-build-config.yml and update from config parameter
+  # Populate "ve.build.env" environment in search()
 
   # NOTE: this function expects ve.home, ve.build.dir, CRAN.mirror, and ve.lib set in "ve.env"
   # Usually ve.env$ve.lib will be the same location as ve.lib later set from configuration file; if
@@ -75,12 +85,11 @@ ve.build.config <- function(config=list(),debug=FALSE) {
     stop("VisionEval environment is unavailable. Use VE-Bootstrap.R to begin.", call. = FALSE)
   }
 
-  build.config <- list()
-  within( build.config,
+  within( getBuildEnvironment(),
     {
-      # ve.build.config returns a copy of build.config with elements added for each of the objects
-      # created in the expression block below, and accessible as e.g. build.config$config.file
-      # The build.config list is used later as an environment for the build sub-steps.
+      # ve.build.config returns the ve.build.env with elements added for each of the objects
+      # created in the expression block below, and accessible as e.g. as.environment('ve.build.env')$config.file
+      # The ve.build.env environment provides values later for the build sub-steps.
       cat("Loading Build environment...\n")
       build.type <- .Platform$pkgType
       if ( ! suppressWarnings(requireNamespace("yaml",quietly=TRUE)) ) {
@@ -144,11 +153,12 @@ ve.build.config <- function(config=list(),debug=FALSE) {
 
       # Construct actual directory names from Build-Targets
       this.R <- paste(c(R.version["major"],R.version["minor"]),collapse=".")
+      two.digit.R <- tools::file_path_sans_ext(this.R)
 
       # NOTE: this ve.lib may not be the same as ve.env$ve.lib
       # It won't matter if they differ, but there may be a few rendundant downloads
       # Put ve.lib in VE_HOME to interoperate between developer and end-user installations
-      ve.lib <- file.path(ve.env$ve.home,raw.config$BuildTargets["ve.lib"],tools::file_path_sans_ext(this.R))
+      ve.lib <- file.path(ve.env$ve.home,raw.config$BuildTargets["ve.lib"],two.digit.R)
       if ( ! dir.exists(ve.lib) ) dir.create(ve.lib,recursive=TRUE)
 
       # This is the location where the VE packages are built up prior to being built into R packages
@@ -202,14 +212,14 @@ ve.build.config <- function(config=list(),debug=FALSE) {
   )
 }
 
-ve.get.targets <- function(targets,build.config,debug=FALSE) {
+ve.get.targets <- function(targets,debug=FALSE) {
   # Determine the specific packages to build (from PackageSources)
   # Create pkg.desc as a named list of information about each package
   # The names are the base names of their folders, not the Package in DESCRIPTION
   # This function (or one of the later ones) will report mismatches (and duplicate Package names)
 
   with(
-    build.config,
+    getBuildEnvironment(),
     {
       all.packages <- dir(package.paths,pattern="^DESCRIPTION$",recursive=TRUE,full.name=TRUE)
       target.packages <- character(0)
@@ -252,11 +262,11 @@ ve.get.targets <- function(targets,build.config,debug=FALSE) {
   )
 }
 
-ve.load.dependencies <- function(pkg.desc,build.config,debug=FALSE) {
+ve.load.dependencies <- function(pkg.desc,debug=FALSE) {
   # Download and install the R package dependencies
   cat("\nLoading dependencies...\n")
   with(
-    build.config, # as an environment for these commands, providing configured locations
+    getBuildEnvironment(), # as an environment for these commands, providing configured locations
     {
       support.packages <- c("BiocManager","desc","devtools","dplyr","miniCRAN","rcmdcheck","roxygen2","withr","gert","yaml")
       # We'll get some of these now, and ther est later
@@ -362,7 +372,7 @@ ve.load.dependencies <- function(pkg.desc,build.config,debug=FALSE) {
   )
 }
 
-ve.build.packages <- function(pkg.desc,build.config,reset=FALSE,check=TRUE,debug=FALSE) {
+ve.build.packages <- function(pkg.desc,reset=FALSE,check=TRUE,debug=FALSE) {
   # Process pkg.desc so we cumulatively build VE packages that depend on earlier VE packages
 
   # Set up to return to original working directory and remove VE_BUILD_RUNNING semaphore
@@ -382,7 +392,7 @@ ve.build.packages <- function(pkg.desc,build.config,reset=FALSE,check=TRUE,debug
   while ( any( ! pkg.built ) ) {
     for ( i in seq_along(pkg.desc) ) {
       # Build each package one by one; will return FALSE if missing dependencies and will stop on build failure
-      pkg.built[i] <- ve.build.one.package(pkg.desc[[i]],build.config,reset=reset,check=check,debug=debug) # TRUE if it was built successfully
+      pkg.built[i] <- ve.build.one.package(pkg.desc[[i]],reset=reset,check=check,debug=debug) # TRUE if it was built successfully
     }
     built.this.time <- length(which(pkg.built))
     if ( built.this.time > last.pkg.built ) {
@@ -394,7 +404,7 @@ ve.build.packages <- function(pkg.desc,build.config,reset=FALSE,check=TRUE,debug
     }
   }
   # Finalize the ve.repository
-  with ( build.config,
+  with ( getBuildEnvironment(),
     {
       # Packages get built into a local repository; this step updates the Package index
       # so the repository stays well-formed.
@@ -405,15 +415,15 @@ ve.build.packages <- function(pkg.desc,build.config,reset=FALSE,check=TRUE,debug
 }
 
 # pkg is a description object from pkg.desc list
-# ve.src (from build.config) is where to assemble the package to build
+# ve.src (from ve.build.env) is where to assemble the package to build
 # ve.repository is the root of the CRAN-like repository to receive the built package
 # if reset is TRUE, blow away all traces of the package source before rebuilding
 # if check is TRUE, run R CMD Check
 # if debug is TRUE/greater than zero, produce more debugging information
-ve.build.one.package <- function(pkg,build.config,reset=FALSE,check=TRUE,debug=0) {
+ve.build.one.package <- function(pkg,reset=FALSE,check=TRUE,debug=0) {
   # ve.src,ve.repository,build.type="binary")
   with(
-    build.config,
+    getBuildEnvironment(),
     {
       # The folder containing the package
       pkg.folder <- pkg$Folder
@@ -681,7 +691,7 @@ ve.build.one.package <- function(pkg,build.config,reset=FALSE,check=TRUE,debug=0
           stop("After copying, build/test environment is still older than package.paths")
         }
 
-        addGitInfo(from=pkg.folder,to=pkg.src)
+        saveGitInfo(makeGitInfo(pkg.folder),pkg.src) # save to pkg.src/DESCRIPTION
       }
 
       # Step 4: Run devtools::document() separately to rebuild the /data directory
@@ -824,6 +834,68 @@ ve.run <- function(ve.runtime=NULL) {
   if ( ! dir.exists(ve.runtime) ) dir.create(ve.runtime,recursive=TRUE)
   if ( dir.exists(ve.runtime) ) setwd(ve.runtime) else stop("Could not establish runtime at '",ve.runtime,"'")
   startVisionEval(ve.env=ve.env)
+}
+
+ve.make.installer <- function(pkgType=.Platform$pkgType,debug=FALSE) {
+
+  # WARNING: currently does not allow override of ve-build-config.yml
+  if ( ! ve.home %in% ls(getBuildEnvironment()) ) ve.build.config(debug=debug)
+
+  # Helper function for consistent error messages
+  failure <- function(msg,pkgType) message(msg); stop("Invalid pkgType: ",pkgType,call.=FALSE)
+
+  # error check pkgType
+  # pkgType can be one of tolower(c("win.library","win.binary","source"))
+  if ( ! is.character(pkgType) ) failure("pkgType must be a character string",pkgType)
+  pkgType <- tolower(pkgType)
+  if ( ! pkgType %in% c("win.library","win.binary","source") ) {
+    failure("pkgType must be one of c('win.library','win.binary','source'",pkgType))
+  }
+  ve.install <- file.path(ve.home,"install")
+  if ( dir.exists(ve.install) ) unlink(ve.install,recursive=TRUE)
+  dir.create(ve.install)
+
+  # Create MANIFEST file
+  build.info <- list(
+    pkgType=pkgType,
+    BuildInfo=makeGitInfo(ve.home)
+  )
+
+  # Build Zip file with suitable name and contents
+
+  zipName <- function(zipname,folder=".") {
+    elements <- c(
+      "VE-Installer-",
+      zipname,
+      ".zip"
+    )
+    file.path(folder,paste(elements,collapse-""))
+  }
+
+  owd <- getwd()
+  zip.flags <- if (debug) "-r9X" else "-r9Xq" # quiet if not debugging
+  build.info[["pkgType"]] <- pkgType
+  if ( pkgType == "win.library" ) {
+    # zip ve-lib into ve.install
+    build.info[["Destination"]] <- "ve-lib"
+    zipfile <- zip.name("WinLibrary",ve.install)
+    try( setwd(ve.lib) )
+    if ( getwd() != ve.lib ) failure(paste0("Could not change to library ",ve.lib))
+    manifest <- saveGitInfo(build.info,".",filename="MANIFEST") # just put it in ve-lib
+  } else {
+    # get suitable repository contriburl for one of c("source","win.binary")
+    installType <- if ( pkgType=="win.binary" ) paste0("Windows-R",two.digit.R) else "Source"
+    contriburl <- contrib.url(ve.repository,pkgType) # source directory
+    contrib.dest <- sub(ve.repository,"",contriburl)
+    build.info[["Destination"]] <- contrib.dest
+    zipfile <- zip.name(installType,ve.install)
+    try( setwd(contriburl) )
+    if ( getwd() != contriburl ) failure(paste0("Could not change to contriburl ",contriburl))
+    manifest <- saveGitInfo(build.info,".",filename="MANIFEST") # just put it in contriburl
+  }
+  zip(zipfile,".",flags=zip.flags)
+  setwd(owd)
+  return(zipfile)
 }
 
 #### Remainder of file contains helper functions
@@ -983,7 +1055,8 @@ getPackageVersion <- function( package ) {
   return( version )
 }
 
-addGitInfo <- function(from,to) {
+makeGitInfo <- function(from) {
+
   # Add Git information to DESCRIPTION
   today <- date()
   build.info <- if ( class(try(repo.info <- gert::git_info(from))) != "try-error" ) {
@@ -993,20 +1066,34 @@ addGitInfo <- function(from,to) {
       paste0("Branch|",repo.info$shorthand),                   # Branch name
       paste0("Commit|",gert::git_commit_id(repo=from)),        # Commit ID
       paste0("RemoteURL|",
-        gert::git_remote_info(repo.info$remote,repo=from)$url, # URL for primary remote
-        paste0("UpstreamBranch|",repo.info$upstream),            # Upstream branch on primary remote
-        paste0("LocalRepoPath|",repo.info$path)                  # Local path for repo clone
-      )
-    } else {
+        gert::git_remote_info(repo.info$remote,repo=from)$url), # URL for primary remote
+      paste0("UpstreamBranch|",repo.info$upstream),            # Upstream branch on primary remote
+      paste0("LocalRepoPath|",repo.info$path)                  # Local path for repo clone
+    )
+  } else {
     # Package is not within a Git repository
     c(
       paste0("Date|",today),                                   # Date and time of build
       paste0("Branch|Not from Git repository"),                # Warning message
       paste0("Commit|NA"),                                     # Commit ID
-      paste0("RemoteURL|NA",                                   # URL for primary remote
-        paste0("UpstreamBranch|NA"),                             # Upstream branch on primary remote
-        paste0("LocalRepoPath|",from,                            # Directory path for package source
-          )
-      }
-  desc::desc_set_list("VEBuildID",list_value=build.info,file=file.path(to,"DESCRIPTION"),normalize=TRUE)
+      paste0("RemoteURL|NA"),                                        # URL for primary remote
+      paste0("UpstreamBranch|NA"),                           # Upstream branch on primary remote
+      paste0("LocalRepoPath|",from)"
+    )
+  }
+  return build.info
+}
+
+saveGitInfo <- function(info.list,to,filename="DESCRIPTION") {
+  # info.list is a names list of elements to 
+  nms <- names(info.list)
+  fn <- file.path(to,filename)
+  for ( info in seq_along(info.list) ) {
+    value <- info.list[[info]]
+    if ( length(value)>1 ) {
+      desc::desc_set_list(nms[info],list_value=value,file=fn,normalize=TRUE)
+    } else {
+      desc::desc_set(nms[info],value,file=fn,normalize=TRUE)
+    }
+  }
 }
