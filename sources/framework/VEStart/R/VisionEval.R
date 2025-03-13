@@ -88,7 +88,6 @@ getRuntimeEnvironment <- function() {
 #' @param ve.runtime Location for VE_RUNTIME where VisionEval will run ("models" directory)
 #' @param overwrite If TRUE, force rewrite of startup files in VE_RUNTIME, otherwise continue if they exist
 #' @param ve.lib.name Character string with name of ve-lib within VE_HOME (default "ve-lib")
-#' @param ve.pkg.name Character vector with names of optional local package repositories that may exist in VE_HOME
 #' @param ve.env an environment containing ve.home and ve.runtime, etc.
 #' @return location of VE_RUNTIME, invisibly
 #' @import utils tcltk
@@ -154,7 +153,6 @@ startVisionEval <- function(
   # Save the important parameters
   ve.env$ve.runtime <- ve.runtime
   ve.env$ve.home <- ve.home
-  ve.env$ve.repos.list.name = ve.repos.list.name # See VEStart::getRepositories function 
   Sys.setenv(VE_HOME=ve.home,VE_RUNTIME=ve.runtime) # Somewhat redundantly, also save to operating system environment
   # NOTE: ve.setup below will also save VE_HOME and VE_RUNTIME into the .Renviron startup file
 
