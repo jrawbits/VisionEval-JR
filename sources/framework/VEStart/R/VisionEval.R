@@ -88,15 +88,13 @@ getRuntimeEnvironment <- function() {
 #' @param ve.runtime Location for VE_RUNTIME where VisionEval will run ("models" directory)
 #' @param overwrite If TRUE, force rewrite of startup files in VE_RUNTIME, otherwise continue if they exist
 #' @param ve.lib.name Character string with name of ve-lib within VE_HOME (default "ve-lib")
-#' @param ve.env an environment containing ve.home and ve.runtime, etc.
 #' @return location of VE_RUNTIME, invisibly
 #' @import utils tcltk
 #' @export
 startVisionEval <- function(
   ve.home=NULL,ve.runtime=NULL,
   overwrite=FALSE,
-  ve.lib.name="ve-lib",
-  ve.env=NULL
+  ve.lib.name="ve-lib"
 ) {
   ve.pkg.repo <- "pkg-ve-repo" # from VEBuild - local set of packages
 
@@ -321,9 +319,10 @@ ve.setup <- function(ve.home,ve.runtime,setupHome=FALSE,overwrite=FALSE) {
     if ( file.exists(renv.file) ) file.copy(renv.file,file.path(location,"Previous.Renviron"))
     writeLines(renv.txt,renv.file)
 
-    # Write launch.bat, providing default R_HOME
+    # Write launch_Rx.y.bat, providing default R_HOME and encoding the R version in the batch name
+    this.R <- paste(c(R.version["major"],R.version["minor"]),collapse=".")
     launch.bat.template <- system.file("startup/launch.bat.template",package="VEStart",mustWork=TRUE)
-    launch.bat <- file.path(location,"launch.bat")
+    launch.bat <- file.path(location,paste0("launch_R",this.R,".bat"))
     launch.txt <- readLines(launch.bat.template)
     launch.txt <- gsub(pattern = "=R_HOME_DEFAULT", replacement = paste0("=",R.home()), x = launch.txt)
     writeLines(launch.txt, con = launch.bat)

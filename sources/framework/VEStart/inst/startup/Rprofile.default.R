@@ -49,11 +49,11 @@ if ( ! require(VEStart,,quietly=TRUE ) {
   
   # Get here with VEStart loaded
   .VEStart::ve.init())           # Force pre-defined VE_HOME or interact to set VE_HOME
-                                # If user is manually setting VE_HOME, do selection of VE_RUNTIME here
-                                # Add installed VE library to .libPaths and R_LIBS_USER
-                                # Respect VE_BUILD and VE_BRANCH to locate libraries (don't reinstall)
+                                 # If user is manually setting VE_HOME, do selection of VE_RUNTIME here
+                                 # Add installed VE library to .libPaths and R_LIBS_USER
+                                 # Respect VE_BUILD and VE_BRANCH to locate libraries (don't reinstall)
   VEStart::ve.setup()            # Force pre-defined VE_RUNTIME or use VE_HOME
-                                # Returns with working directory set to VE_RUNTIME
+                                 # Returns with working directory set to VE_RUNTIME
 
   # Clean up bootstrap installation of VEStart
   unloadNamespace(VEStart)
@@ -62,4 +62,4 @@ if ( ! require(VEStart,,quietly=TRUE ) {
 }
 require(VEModel,quietly=TRUE)
 VEStart::ve.init()               # Reload VE_HOME and VE_RUNTIME and set .libPaths()
-VEModel::initVisionEval(VEStart::getRuntimeEnvironment())
+VEModel::initVisionEval()        # Set up VEModel

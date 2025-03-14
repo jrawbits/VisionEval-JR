@@ -110,18 +110,17 @@ runtimeEnvironment <- function(ve.new.env=NULL) {
   ve.env
 }
 
-# NOTE: new.ve.env is probably obsolete since we're reaching for a shared attached environment
 # Initialize VEModel from external environment (probrably VEStart)
 #' Set up initial VEModel environment from VEStart
 #'
 #' @param new.ve.env An environment containing ve.home, ve.runtime and other setup variables
 #' @return None
 #' @export
-initVisionEval <- function(new.ve.env) {
+initVisionEval <- function() {
   message("Loading VisionEval 4.0!")
-  ve.env <- runtimeEnvironment(new.ve.env)             # point VEModel to the VEStart environment
-  getSetup(reload=TRUE)                  # reload global RunParam_ls; also will align with ve.env$ve.runtime
-  ModelRoot <- getModelDirectory()       # Full path built from ve.runtime and global visioneval.cnf model directory name
+  ve.env <- runtimeEnvironment()      # point VEModel to the VEStart environment
+  getSetup(reload=TRUE)               # reload global RunParam_ls; also will align with ve.env$ve.runtime
+  ModelRoot <- getModelDirectory()    # Full path built from ve.runtime and global visioneval.cnf model directory name
   if ( ! dir.exists(ModelRoot) ) {
     message("Creating runtime '",basename(ModelRoot),"' directory")
     dir.create(ModelRoot,recursive=TRUE,showWarnings=FALSE)

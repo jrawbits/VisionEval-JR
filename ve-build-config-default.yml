@@ -5,30 +5,18 @@
 #   - ve-src
 #   - ve-pkg-repo
 #   - dependencies-repo
-# # Identify repositories to clone / directories to visit to find VE to build
+# # Identify locations (folders) to search for packages to build and install
 #   - List of directories (relative to VE_HOME)
 #     - Will be searched recursively for DESCRIPTION files
 #   - Don't mess with having VE clone those
-# # Identify desired output:
-#   - Local Installation
-#   - Installer
-# # Identify installer type to build if any (using "installer" target)
-#   - Online Installer
-#   - Online Installer plus VE Packages
-#   - Offline Installer (VE Packages and Dependencies)
 
-Output : Build                # or Installer
-InstallerType: Online         # or VE-Offline or Offline (last implies dependencies are also offline)
 BuildTargets:                 # relative to Output
   ve.lib           : ve-lib
   ve.src           : ve-src
   ve.repository    : ve-pkg-repo
   ve.dependencies  : dependencies-repo
 PackageSources:               # absolute path or relative to VE_HOME
-  - sources/framework         # framework modules, relative to VE_HOME
-  - sources/modules           # core modules for VERSPM and VE-State
-  - sources/optional          # original VETravelDemandMM and VERPAT
-  # - external                  # originally empty sub-directory (could clone other git repos here)
-  # Extra packages; add as many of these as you want
-  # - C:/Git-Repos/VisionEval-extras # Will search folders within this one for packages
-  # - C:/Git-Repos/VisionEval-extras/VEPopulationSim # Or do individual packages (one line each)
+  - sources                   # name of sub-directory of VE_HOME
+  - external                  # originally empty sub-directory (could clone other git repos here)
+  # - optional                  # original VETravelDemandMM and VERPAT
+  # - C:/Git-Repos/VisionEval-extras  # Extra packages - everything under this directory
