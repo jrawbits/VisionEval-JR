@@ -109,7 +109,7 @@ setup.dialog <- function(max_width=800) {
     tkgrid(file_button, column = 0, row = 3, sticky = "e", padx = 5, pady = 5)
     tkgrid(directory_button, column = 0, row = 4, sticky = "e", padx = 5, pady = 5)
 
-    # Display the values set by the buttons
+    # Display the values set by the buttons in label widgets  
     message_frame <- tkframe(tt, borderwidth = 2, relief = "groove")
     message_label <- tklabel(message_frame,textvariable=message_text, justify="left")
     tkpack(message_label,anchor="w",padx=5,pady=5)
