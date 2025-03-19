@@ -5,6 +5,10 @@
 # library_Rx.y (extract contents into install/ve-lib/x.y)
 # winbinary_Rx.y (extract contents into install/contrib/x.y and use winbinary oncontriburl on install.packages
 # source (extract contents into install/contrib and use source contriburl)
+# fullbuild (identify new VE_HOME and unzip there
+#   Slightly tricky since the .zip includes a top-level subdirectory with the same name as the zip file.
+#   We could get the full list of files and extract them a block at a time to each subdirectory in turn
+#   That could be tediously slow...
 
 # store an entire repository tree branch starting at "install-temp"
 # add that ahead of the online repositories (perhaps from the manifest)
@@ -74,11 +78,12 @@ this.R <- paste(c(R.version["major"],R.version["minor"]),collapse=".") # used to
 two.digit.R <- tools::file_path_sans_ext(this.R)                       # two digits are the key for ve-lib etc
 minimal.ve <- c("VEStart","VEBuild","VEModel","visioneval")            # files suggesting an installation has happened
 ve.lib.name <- "ve-lib"                                                # Probably never gets changed
-ve.lib.base <- file.path(ve.lib.name,two.digit.R)                      # Prepend ve.hom to make ve-lib for this R version
+ve.lib.base <- file.path(ve.lib.name,two.digit.R)                      # Prepend ve.home to make ve-lib for this R version
 install.name <- "install"                                              # ve.home folder with extracted installer
-manifest.name <- "Manifest.txt"                                        # Manifest file describing installation file
+manifest.name <- "MANIFEST"                                            # Manifest file describing installation file
 
 # Make sure pattern fits with current installer naming convention
+# Need library accounted for as well.
 installer.pattern <- paste0(
 "VEInstaller_.*_", # .* will be the VE Version
 paste0("(Windows_R",two.digit.R,"|Source)"),
@@ -170,6 +175,7 @@ ve.install.type <- function() {
 
 set.ve.home <- function() {
   # Set ve.home somewhere else if desired
+  # TODO: Use a tk dialog directory chooser to locate VE_HOME
   ve.home <- getwd()
   repeat {
     # See if we can use ve.home
@@ -208,6 +214,7 @@ set.ve.home <- function() {
   setwd(ve.home)
 
   # Make sure ve.lib is present
+  # TODO: need to create current R version subdirectory if it doesn't exist
   ve.lib <- file.path(ve.home,ve.lib.base)
   if ( ! dir.exists(ve.lib) ) dir.create(ve.lib,recursive=TRUE)
   if ( ! ve.lib %in% .libPaths() ) .libPaths(c(ve.lib,.libPaths()))
