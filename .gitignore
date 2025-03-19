@@ -8,7 +8,5 @@ ve-build-config.yml
 ve-lib/
 runtime/
 built/
-build/*.make
-external/
-make*out
+sources/external/
 plan.txt
