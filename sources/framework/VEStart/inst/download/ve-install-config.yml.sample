@@ -1,0 +1,60 @@
+# Sample installation configuration
+# If you're having trouble getting the install script to work, populate
+#   the ve-install-config.yml file and put it in the directory that is
+#   current for your R version before pasting in the line to run the
+#   install script.
+# If ve-install-config.yml exists, installVisionEval() will not be run automatically
+#   Instead, the script will display the configuration and prompt you to run the function
+#   You can add function parameters (see the script source code and documentation) to
+#   indicate whether you want to launch a build enviroment
+
+# ve.home (VE_HOME in .Renviron) may be any directory
+# This folder must exist and be empty or a configured home (with ve-lib)
+#   If it is not valid, ve.home will default to the environment version (VE_HOME) or getwd() and
+#   installer will put up a dialog to create or select it.
+
+ve.home: C:/users/my.login/VisionEval/home
+
+# ve.runtime (VE_RUNTIME in .Renviron) may be any directory
+# You may, but do not need to, specify it here to save a step in the installation
+# It need not exist; it will be created if specified as VisionEval starts
+# Default is "ve.home/runtime"
+# You can always reset ve.runtime once VisionEval is started by running ve.setup()
+
+ve.runtime: C:/users/my.login/VisionEval/runtime
+
+# ve.distributions describes Github repositories that offer releases with VisionEval installers
+# Default for beta testing is to look for releases in jrawbits/visioneval-jr
+
+# Distribution descriptors are case-insensitive
+# The install script presents a dialog based on using the "latest" release, but there is a
+# radio button to show all releases with assets and to select the desired one.
+
+ve.distributions:
+  - visioneval:         # The user or organization
+    - visioneval-dev    # Another name
+    - visioneval-40
+  - jrawbits:
+    - visioneval-jr
+    - visioneval-40
+
+# 2025-03-20: ve.sources is currently unimplemented
+# The install script will let you choose end user or developer installations, and
+#   will use ve.sources (plus optionally ve.build) to select a developer installation
+#   packages
+# ve.sources says where to install branch or release source code for building
+# Default is ve.home/build-sources
+# ve.build identifies a repository branch to retrieve from their .zip files
+# If a build source is selected as the installer, a subdirectory will be created
+#   in ve.sources using the Github identifier as its name.
+# The VE_SOURCE environment variable will also be created and set to the installed
+#   location within ve.sources. That will be placed in ve.home/.Renviron
+# When VisionEval starts, if VE_SOURCE exists in the environment, any VE-Bootstrap found there will
+#   be run to start. VE_HOME will remain whatever you set. Packages located below VE_SOURCE will be
+#   built into VE_HOME/ve-lib.
+
+ve.sources: C:/users/my.login/VisionEval/build-sources
+ve.build: # You only get one of these to avoid complete chaos
+  user:       visioneval
+  repository: visioneval-40
+  branch:     main

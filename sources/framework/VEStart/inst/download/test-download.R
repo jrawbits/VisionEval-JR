@@ -1,8 +1,7 @@
 # Sample code to list out latest release assets at Github and select one for download.
 # The filter pattern will look for standard Installer URLs
 
-# TODO: integrate into install.R script that is downloaded as a one-liner from website for
-# installation.
+# TODO: integrate into VE4-install.R script that is downloaded as a one-liner from website
 if ( ! suppressWarnings(requireNamespace("rjson",quietly=TRUE)) ) {
   # Used to read configuration files - always get from online source
   utils::install.packages("rjson", lib=ve.env$ve.lib, repos=ve.env$CRAN.mirror, type=build.type, quiet=!debug )
@@ -33,10 +32,12 @@ ve.get.release <- function(user="visioneval",repository="visioneval-dev") {
         timeout = as.integer(round(a$size/750000,0)),
         url     = a$browser_download_url,
         file    = basename(a$browser_download_url)
-      )
+       )
     }
   )
-  return(downloads)
+  release <- list(timeout=1000,url=release$zipball_url,file=paste0(basename(release$zipball_url),".zip"))
+  downloads <- downloads[[length(downloads)+1]] <- release
+  return(list(downloads=downloads,release=release))
 }
 
 ve.select.installer <- function(downloads=list()) {
@@ -73,17 +74,26 @@ ve.select.installer <- function(downloads=list()) {
 ve.fetch.installer <- function(item) {
   options(timeout = max(item$timeout, getOption("timeout"))) # ten minute timeout; set dynamically based on reported file size?
   message("Timeout: ",getOption("timeout")," seconds")
-  download.file(item$url,destfile=item$file,method="auto",mode="wb")
+  download.file(item$url,destfile=item$file,method="libcurl",mode="wb") # use method=libcurl so it follows redirect links   
   invisible(item$file)
 }
 
 downloads <- ve.get.release()
-installer <- ve.select.installer(downloads)
-if ( is.list(installer) ) {
-  message("Retrieving installer: ",installer)
-  retrieved <- ve.fetch.installer(installer)
-  message("Retrieved: ", retrieved)
-}
+
+installer <- downloads$release
+message("Retrieving zipball: ")
+print(installer)
+retrieved <- ve.fetch.installer(installer)
+message("Retrieved: ", retrieved)
+
+# installer <- ve.select.installer(downloads)
+# if ( is.list(installer) ) {
+#   message("Retrieving installer: ",installer)
+#   retrieved <- ve.fetch.installer(installer)
+#   message("Retrieved: ", retrieved)
+# }
+
+
 
 # Next step is to unzip the download
 # Need to create the proper directory structure for a repository/contriburl

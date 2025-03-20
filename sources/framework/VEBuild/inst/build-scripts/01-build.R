@@ -799,7 +799,7 @@ ve.build.one.package <- function(pkg,reset=FALSE,check=TRUE,debug=0) {
     }, # we define no handlers: conditions are just passed through to the parent after calling finally
     finally = Sys.unsetenv("VE_BUILD_PHASE")
   )
-  return( package.installed ) # errors should be manifest in the console log
+  return( package.installed ) # errors should be visible in the console log; add logging option later
 }
 
 #' @param ve.runtime Directory to override standard runtime location search
@@ -839,6 +839,10 @@ ve.make.installer <- function(pkgType=.Platform$pkgType,debug=FALSE) {
     stop("Invalid pkgType: ",pkgType,call.=FALSE)
   }
 
+  if ( missing(pkgType) ) { # using default
+    message("Building ",pkgType," installer (default).")
+  }
+
   # error check pkgType
   # pkgType can be one of tolower(c("win.library","win.binary","source"))
   if ( ! is.character(pkgType) ) failure("pkgType must be a character string",pkgType)
@@ -852,7 +856,13 @@ ve.make.installer <- function(pkgType=.Platform$pkgType,debug=FALSE) {
   if ( ! dir.exists(ve.install) ) dir.create(ve.install)
   cat("Making",pkgType,"Installer in",ve.install,"\n")
 
-  # Zip file name
+  # Zipfile Naming Convention:
+  #   VE-Installer_<pkgType>_<Sys.Date()>.zip
+  # e.g.
+  #   VE-Installer_WinLibrary-R4.3_2025-03-20.zip
+  #   VE-Installer_WinBindary-R4.3_2025-03-20.zip
+  #   VE-Installer_SourcePkgs_2025-03-20.zip
+
   zipName <- function(zipname,folder=".") {
     elements <- c(
       "VE-Installer_",
@@ -880,7 +890,7 @@ ve.make.installer <- function(pkgType=.Platform$pkgType,debug=FALSE) {
   } else {
     # get suitable repository contriburl for one of c("source","win.binary")
     # zip the contriburl contents
-    installType <- if ( pkgType=="win.binary" ) paste0("Windows-R",bld.env$two.digit.R) else "Source"
+    installType <- if ( pkgType=="win.binary" ) paste0("Windows-R",bld.env$two.digit.R) else "SourcePkgs"
     contriburl <- utils::contrib.url(bld.env$ve.repository,pkgType) # source directory
     contrib.dest <- sub(bld.env$ve.repository,"",contriburl)
     build.info[["Destination"]] <- contrib.dest
