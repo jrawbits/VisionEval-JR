@@ -207,10 +207,10 @@ install.config <- if ( file.exists(config.file) ) {
   default.config
 }
 
-####### Installation driver file
+####### process the installation
 
 installVisionEval <- function(config=install.config) { # no function parameters right now
-  installer <- selectInstaller(config)
+  installer <- selectInstaller(config)   # pick an available installer
   retrieved <- fetchInstaller(installer) # confirms downloaded location and MANIFEST type
   launch    <- doInstallation(retrieved) # launch selects "end user" or "builder"
 }
@@ -223,6 +223,7 @@ if ( ! requireNamespace("rjson",lib.loc=ve.lib,quietly=TRUE) ) {
 }
 
 ####### Run tcltk dialog to select specific asset to install from releases
+# https://stackoverflow.com/questions/3482513/multiple-comboboxes-in-r-using-tcltk
 
 # getAllReleases <- function(user,repository) {
 # 
@@ -309,7 +310,7 @@ doInstallation <- function(retrieved) {
   #   startVisionEval()
   # Builder:
   #   source(file.path(retrieved,"VE-Bootstrap.R") # retrieved is the folder within ve.sources to launch
-launch <- installVisionEval(install.config) # Will run automatically if using defaults (already asked user earlier)
+launch <- installVisionEval(install.config) # Will run automatically if using defaults (asked user earlier)
 if ( ! is.function(launch) ) launch() else stop(call.=FALSE,"Installation failed. Please retry.")
 
 ####################

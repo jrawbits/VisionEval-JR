@@ -17,20 +17,6 @@
 #   - Online Installer plus VE Packages
 #   - Offline Installer (VE Packages and Dependencies)
 
-Output: Build                 # or Install; Build constructs ve-src, ve-lib and ve-pkg-repo
-                              # Install also constructs dependencies-repo and ve.installers in the
-                              # format called for by InstallerType
-InstallerType: Online         # or VE-Offline or Offline (last implies dependencies are also offline)
-                              # Online produces a VEBase bootstrap installer that installs
-                              # everything from online locations.
-                              # VE-Offline will install using built VE packages (either source or
-                              # binary) for the current R version only.
-                              # Offline will look for dependencies in the same place as the VE
-                              # packages.
-PackageType: Default          # or "Binary" or "Source" or "Both" - which repository branches to build
-                              # for dependencies or VE Packages. "Binary" will be silently converted
-                              # to "Source" for architectures like Unix which do not have binary R
-                              # repository support
 BuildTargets:                 # relative to Output - names of dependencies
   - ve.lib           : ve-lib
   - ve.src           : ve-src

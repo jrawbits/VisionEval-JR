@@ -2,8 +2,18 @@
 
 # Author: Jeremy Raw
 
-script.contents <- c( "ve.build","ve.run","ve.make.installer" ) # for "import" package to make a pseudo package
+script.contents <- c(
+  "ve.build",
+  "ve.run",
+  # the following are used by 02-install.R / ve.make.installer
+  "ve.build.config",
+  "getBuildEnvironment",
+  "makeGitInfo",
+  "saveGitInfo"
+)  # for "import" package to construct ve.builder pseudo-package
 
+# Create and return build environment (parameters for build)
+# @return the "ve.build.env" environment from the search path
 getBuildEnvironment <- function() {
   if ( ! "ve.build.env" %in% search() ) {
     attach(NULL,name="ve.build.env")
@@ -13,22 +23,12 @@ getBuildEnvironment <- function() {
 }
 
 # TODO:
-#   - Add the installer manifest
-#     - Package type
-#     - subdirectory structure for "install" folder (e.g. contriburl, 4.x for Library)
-#     - Details on what was built
 #   - Document how to layer VEBuild or VEBootstrap.R on top of an existing VE_HOME
 #     - just need ve-lib and ve-build-config (but defaults should work)
 #     - will create ve-src plus the various package downloads (just for package
 #       being newly built)
 #     - need it to use the existing ve-lib from VE_HOME, so navigating ve-lib
 #       when we start up VEBuild and sticking with that will be important.
-#   - Make installers (ve.make.installer)
-#     - Library - fully installed win.binary, all packages - just zip up ve-lib
-#     - WinBinary
-#     - Source (packages) - do we also want SourceSource? (old version of SourcePackages)
-#     - files are always top-level in zip; manifest says how to situate them in sub-directories
-#       during extraction
 
 # IMPORTANT:
 #   Keep the documentation below in sync with the stub ve.build in VEBuild since
@@ -70,6 +70,12 @@ ve.build <- function(
   ve.build.packages(pkg.desc,reset=reset,check=check,debug=debug)
 }
 
+# Build a configuration for building and installing VE, and load the contents into the
+# builder environment, which is used to build VE and make installers.
+# @param config a named list overriding defaults or contents of ve-build-config.yml
+# @param debug a logical; if TRUE, dish more information about the configuration
+# @param quite a logical; if TRUE, suppress some warning messages and other information
+# @return NULL
 ve.build.config <- function(config=list(),debug=FALSE, quiet=FALSE) {
   # Prepare Configuration and setup from ve-build-config.yml and update from config parameter
   # Populate "ve.build.env" environment in search()
@@ -192,9 +198,9 @@ ve.build.config <- function(config=list(),debug=FALSE, quiet=FALSE) {
     # retry package paths lokoing for subdirectories of ve.home explicitly
     bld.env$package.paths[missing.paths] <- file.path(ve.env$ve.home,raw.config$PackageSources[missing.paths])
   }
-  if ( any( missing.paths <- ! dir.exists(bld.env$package.paths) ) ) {
+  if ( !quiet && any( missing.paths <- ! dir.exists(bld.env$package.paths) ) ) {
     # Report failed paths as they appear in the ve-build-config.yml, not the expanded path
-    cat("Can't locate certain build paths. These will be ignored:")
+    cat("Can't locate certain build paths. These will be ignored:\n")
     print(raw.config$PackageSources[missing.paths])
   }
   if ( debug ) {
@@ -208,6 +214,7 @@ ve.build.config <- function(config=list(),debug=FALSE, quiet=FALSE) {
   bld.env$pkgs.installed <- pkgs.info[,"Package"] # list of installed package names (including dependencies)
   bld.env$pkgs.version <- pkgs.info[,"Version"]   # versions of the packages (only checked later for VE packages)
   rm(pkgs.info)
+  NULL
 }
 
 ve.get.targets <- function(targets,debug=FALSE) {
@@ -799,7 +806,7 @@ ve.build.one.package <- function(pkg,reset=FALSE,check=TRUE,debug=0) {
     }, # we define no handlers: conditions are just passed through to the parent after calling finally
     finally = Sys.unsetenv("VE_BUILD_PHASE")
   )
-  return( package.installed ) # errors should be visible in the console log; add logging option later
+  return( package.installed ) # errors should be manifest in the console log
 }
 
 #' @param ve.runtime Directory to override standard runtime location search
@@ -822,89 +829,52 @@ ve.run <- function(ve.runtime=NULL) {
   startVisionEval(ve.env=ve.env)
 }
 
-ve.make.installer <- function(pkgType=.Platform$pkgType,debug=FALSE) {
+# \code{makeGitInfo} gets Git repository information for folder \code{from} if that
+# is contained in a Git repository, otherwise limited information about the file folder itself.
+# @param from a directory path whose Git information is to be reported
+# @return a named list of information to pass on to saveGitInfo
+makeGitInfo <- function(from) {
 
-  ve.env <- try( silent=TRUE, as.environment("ve.env") )
-  if ( ! is.environment(ve.env) ) {
-    stop("VisionEval environment is unavailable. Use VE-Bootstrap.R or VEBuild to begin.", call. = FALSE)
-  }
-
-  # WARNING: currently does not allow override of ve-build-config.yml
-  bld.env <- getBuildEnvironment()
-  if ( ! "this.R" %in% ls(bld.env) ) ve.build.config(debug=debug,quiet=TRUE)
-
-  # Helper function for consistent error messages
-  failure <- function(msg,pkgType) {
-    message(msg)
-    stop("Invalid pkgType: ",pkgType,call.=FALSE)
-  }
-
-  if ( missing(pkgType) ) { # using default
-    message("Building ",pkgType," installer (default).")
-  }
-
-  # error check pkgType
-  # pkgType can be one of tolower(c("win.library","win.binary","source"))
-  if ( ! is.character(pkgType) ) failure("pkgType must be a character string",pkgType)
-  pkgType <- tolower(pkgType)
-  if ( ! pkgType %in% c("win.library","win.binary","source") ) {
-    failure("pkgType must be one of c('win.library','win.binary','source')",pkgType)
-  }
-
-  # install directory will hold the zipped results
-  ve.install <- file.path(ve.env$ve.build.dir,"install")
-  if ( ! dir.exists(ve.install) ) dir.create(ve.install)
-  cat("Making",pkgType,"Installer in",ve.install,"\n")
-
-  # Zipfile Naming Convention:
-  #   VE-Installer_<pkgType>_<Sys.Date()>.zip
-  # e.g.
-  #   VE-Installer_WinLibrary-R4.3_2025-03-20.zip
-  #   VE-Installer_WinBindary-R4.3_2025-03-20.zip
-  #   VE-Installer_SourcePkgs_2025-03-20.zip
-
-  zipName <- function(zipname,folder=".") {
-    elements <- c(
-      "VE-Installer_",
-      zipname,
-      "_",
-      as.character(Sys.Date()),
-      ".zip"
+  # Collect Git information for DESCRIPTION
+  today <- date()
+  build.info <- try(repo.info <- gert::git_info(from))
+  build.info <- if ( class(build.info) != "try-error" ) {
+    list(
+      VEBuildDate=today,
+      VEBranch=repo.info$shorthand,
+      VECommit=gert::git_commit_id(repo=from),  # perhaps we just need the last 8 digits?
+      VERemoteURL=gert::git_remote_info(repo.info$remote,repo=from)$url,
+      VEUpstreamBranch=repo.info$upstream,
+      VELocalRepoPath=repo.info$path
     )
-    file.path(folder,paste(elements,collapse=""))
-  }
-
-  # Basis for MANIFEST file (Git information)
-  build.info <- c(list(pkgType=pkgType),makeGitInfo(ve.env$ve.home))
-
-  #
-  owd <- getwd()
-  if ( pkgType == "win.library" ) {
-    # zip ve-lib including all dependencies
-    # Destination says where to unzip
-    build.info[["Destination"]] <- "ve-lib"
-    zipfile <- zipName(paste0("WinLibrary-R",bld.env$two.digit.R),ve.install)
-    try( setwd(bld.env$ve.lib) )
-    if ( getwd() != bld.env$ve.lib ) failure(paste0("Could not change to library ",bld.env$ve.lib))
-    manifest <- saveGitInfo(build.info,".",filename="MANIFEST") # just put it in ve-lib
   } else {
-    # get suitable repository contriburl for one of c("source","win.binary")
-    # zip the contriburl contents
-    installType <- if ( pkgType=="win.binary" ) paste0("Windows-R",bld.env$two.digit.R) else "SourcePkgs"
-    contriburl <- utils::contrib.url(bld.env$ve.repository,pkgType) # source directory
-    contrib.dest <- sub(bld.env$ve.repository,"",contriburl)
-    build.info[["Destination"]] <- contrib.dest
-    zipfile <- zipName(installType,ve.install)
-    try( setwd(contriburl) )
-    if ( getwd() != contriburl ) failure(paste0("Could not change to contriburl ",contriburl))
-    manifest <- saveGitInfo(build.info,".",filename="MANIFEST") # just put it in contriburl
+    list(
+      VEBuildDate=today,
+      VEBranch="Not from Git repository",
+      VELocalRepoPath=from
+    )
   }
-  zip.flags <- if (debug) "-r9X" else "-r9Xq" # quiet if not debugging, otherwise a full list of zipped files (warning: long!)
-  utils::zip(zipfile,c("."),flags=zip.flags)
-  setwd(owd)
-  cat("Zip Installer Created:\n")
-  cat(zipfile,"\n")
-  invisible(zipfile)
+  return(build.info)
+}
+
+# \code{saveGitInfo} places a list of information into a DCF file like DESCRIPTION or MANIFEST
+# It is used by the build process (adding Git info to package descriptions) and in the
+# make installer process to generate the MANIFEST describing the installer.
+# @param info.list a named list of entries to place in filename
+# @param filename a DCF file into which to append the list of values
+# @return NULL
+saveGitInfo <- function(info.list,to,filename="DESCRIPTION") {
+  # info.list is a names list of elements to place in filename
+  nms <- names(info.list)
+  fn <- file.path(to,filename)
+  if ( filename=="DESCRIPTION" ) {
+    for ( info in seq_along(info.list) ) {
+      # expecting info list to be a set of custom line items for the package DESCRIPTION
+      desc::desc_set(nms[info],info.list[[info]],file=fn,normalize=TRUE)
+    }
+  } else {
+    write.dcf(info.list,file=file.path(to,filename))
+  }
 }
 
 #### Remainder of file contains helper functions
@@ -1062,42 +1032,4 @@ getPackageVersion <- function( package ) {
   # Eliminate package compression formats
   version <- sapply(strsplit(substr(package,1,regexpr(".(\\.tar\\.gz|\\.zip)",package)),"_"),FUN=function(x)x[2],simplify=TRUE)
   return( version )
-}
-
-makeGitInfo <- function(from) {
-
-  # Collect Git information for DESCRIPTION
-  today <- date()
-  build.info <- try(repo.info <- gert::git_info(from))
-  build.info <- if ( class(build.info) != "try-error" ) {
-    list(
-      VEBuildDate=today,
-      VEBranch=repo.info$shorthand,
-      VECommit=gert::git_commit_id(repo=from),  # perhaps we just need the last 8 digits?
-      VERemoteURL=gert::git_remote_info(repo.info$remote,repo=from)$url,
-      VEUpstreamBranch=repo.info$upstream,
-      VELocalRepoPath=repo.info$path
-    )
-  } else {
-    list(
-      VEBuildDate=today,
-      VEBranch="Not from Git repository",
-      VELocalRepoPath=from
-    )
-  }
-  return(build.info)
-}
-
-saveGitInfo <- function(info.list,to,filename="DESCRIPTION") {
-  # info.list is a names list of elements to 
-  nms <- names(info.list)
-  fn <- file.path(to,filename)
-  if ( filename=="DESCRIPTION" ) {
-    for ( info in seq_along(info.list) ) {
-      # expecting info list to be a set of custom line items for the package DESCRIPTION
-      desc::desc_set(nms[info],info.list[[info]],file=fn,normalize=TRUE)
-    }
-  } else {
-    write.dcf(info.list,file=file.path(to,filename))
-  }
 }
