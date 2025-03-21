@@ -17,6 +17,6 @@ BuildTargets:                 # relative to Output
   ve.dependencies  : dependencies-repo
 PackageSources:               # absolute path or relative to VE_HOME
   - sources                   # name of sub-directory of VE_HOME
-  - external                  # originally empty sub-directory (could clone other git repos here)
-  # - optional                  # original VETravelDemandMM and VERPAT
+  - optional                  # Original MultiModal module plus VERPAT model package
   # - C:/Git-Repos/VisionEval-extras  # Extra packages - everything under this directory
+  # - C:/Git-Repos/OtherPackages/VEMultiModal2025 # Directory for an individual package
