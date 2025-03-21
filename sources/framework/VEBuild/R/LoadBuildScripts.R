@@ -10,6 +10,71 @@
 # In general, requiring VEBuild as a library will not be used to build VEBuild itself.
 # To rebuild from scratch, it is better to start VE from the Github root.
 
+loadRuntimeEnvironment <- function() { # Keep this synchronized with VE-Bootstrap.R environment setup
+  ve.env <- if ( ! "ve.env" %in% search() ) {
+    attach(NULL,name="ve.env")
+  } else {
+    as.environment("ve.env")
+  }
+
+  # Set up file locations and R version
+  ve.env$CRAN.mirror <- Sys.getenv("VE_CRAN_MIRROR","https://cloud.r-project.org")
+
+  # User-adjustable names and defauls
+  ve.env$build.config <- "ve-build-config.yml"
+  ve.env$ve.lib.name <- "ve-lib"
+  ve.env$ve.home <- normalizePath(Sys.getenv("VE_HOME",getwd()),winslash="/",mustWork=FALSE)
+  ve.env$ve.build.dir <- Sys.getenv("VE_BUILD",NA)
+  ve.env$ve.runtime <- Sys.getenv("VE_RUNTME",NA)
+  if ( is.na(ve.env$ve.build.dir) ) {
+    if ( getwd() != ve.env$ve.home ) {
+      # If ve.env$ve.home is somewhere else than working directory, we presume it's because
+      # the user previously did an end-user (VEStart) installation at that location
+      # The working directory is the fresh source code location.
+      # We'll try to rebuild into the end-user location
+      ve.env$ve.build.dir <- ve.env$ve.home
+      ve.env$ve.home <- getwd()
+    } else {
+      # Park the artifacts in "built" subdirectory
+      # ve-lib itself will go in ve.home
+      ve.env$ve.build.dir <- file.path(ve.env$ve.home,"built")
+    }
+  } else if ( is.na(ve.env$ve.runtime) ) {
+    if ( getwd() != ve.env$ve.home ) {
+      # If ve.env$ve.home is somewhere else than working directory, we presume we
+      # are in the runtime directory
+      ve.env$ve.runtime <- getwd()
+    } else {
+      ve.env$ve.runtime <- file.path(ve.env$ve.home,"runtime")
+    }
+  }
+  ve.env$ve.sources <- normalizePath(Sys.getenv("VE_SOURCE",file.path(ve.env$ve.build.dir,"sources")),winslash="/",mustWork=FALSE)
+
+  # ve.test() should be available in VEBuild after build ; provide a package name to search in src
+  #   folder and load from there to allow dynamic changes. Use pkgload as in current debug setup.
+  #   Aimed mostly at framework code - top-level estimation nonsense makes module packages
+  #   "inconvenient".
+
+  # Do the rest of the work reading sources etc from VE_HOME and putting build artifacts in VE_BUILD.
+  if ( ! dir.exists(ve.env$ve.runtime) ) dir.create(ve.env$ve.runtime,recursive=TRUE)
+  if ( ! dir.exists(ve.env$ve.build.dir) ) dir.create(ve.env$ve.build.dir,recursive=TRUE)
+
+  Sys.setenv(VE_BUILD=ve.env$ve.build.dir)
+  Sys.setenv(VE_RUNTIME=ve.env$ve.runtime)
+
+  # Construct a ve-lib in ve.build.dir
+  # These can be ignored/re-done when a full build happens, based on ve-build-config.yml
+  # Generally with the default names and locations, these will end up in the right place
+  this.R <- paste(c(R.version["major"],R.version["minor"]),collapse=".")
+  two.digit.R <- tools::file_path_sans_ext(this.R)
+  ve.env$ve.lib <- file.path(ve.env$ve.home,ve.lib.name,two.digit.R)
+  if ( ! dir.exists(ve.env$ve.lib) ) {
+    dir.create(ve.env$ve.lib,recursive=TRUE)
+    # if ( ! ve.env$ve.lib %in% .libPaths() ) .libPaths(ve.env$ve.lib,.libPaths())
+  }
+  return(ve.env)
+}
+
 .onAttach <- function(libname, pkgname) {
 
   # Load the ve.builder scripts so VEBuild itself can be unloaded and rebuilt
@@ -17,6 +82,7 @@
   if ( is.na(running) ) {
     # The build script loaded below will set and unset VE_BUILD_RUNNING during ve.build()
     packageStartupMessage("Bootstrapping VisionEval...")
+    loadRuntimeEnvironment()
     VEBuild.scripts <- system.file("build-scripts",package="VEBuild")
     build.loader <- file.path(VEBuild.scripts,"load-builder.R")
     if ( ! file.exists(build.loader) ) {

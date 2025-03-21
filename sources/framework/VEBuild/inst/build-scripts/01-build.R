@@ -88,7 +88,7 @@ ve.build.config <- function(config=list(),debug=FALSE, quiet=FALSE) {
 
   ve.env <- try( silent=TRUE, as.environment("ve.env") )
   if ( ! is.environment(ve.env) ) {
-    stop("VisionEval environment is unavailable. Use VE-Bootstrap.R to begin.", call. = FALSE)
+    stop("VisionEval environment is unavailable.\nUse VE-Bootstrap.R or require(VEBuild) to begin.", call. = FALSE)
   }
   
   # ve.build.config returns the ve.build.env with elements added for each of the objects
@@ -127,7 +127,7 @@ ve.build.config <- function(config=list(),debug=FALSE, quiet=FALSE) {
       ve.repository = "ve-pkg-repo",          # Repository for built packages (always source and binary)
       ve.dependencies = "dependencies-repo"   # Repository for dependencies (downloaded, only for platform package type)
     ),
-    PackageSources = c( "sources", "external" ) # Directories (absolute or relative to VE_HOME) with packages to build
+    PackageSources = c( "sources", "optional" ) # Directories (absolute or relative to VE_SOURCE) with packages to build
     # Can be a single package directory or the parent of many package
     # directories (sought recursively)
   )
@@ -191,12 +191,12 @@ ve.build.config <- function(config=list(),debug=FALSE, quiet=FALSE) {
   bld.env$CRAN.mirror <- raw.config$CRAN.mirror # to simplify access when we start downloading dependencies
 
   # Find the packages to build from within folders named in raw.config$PackageSources
-  # Start by looking for absolute paths or relative to getwd()
+  # Start by looking for absolute paths or relative to VE_SOURCE or ve.env$ve.sources
   # getwd() will be VE_BUILD and may differ from ve.home(aka VE_HOME)
   bld.env$package.paths <- normalizePath(raw.config$PackageSources,winslash="/",mustWork=FALSE)
   if ( any( missing.paths <- ! dir.exists(bld.env$package.paths) ) ) {
-    # retry package paths lokoing for subdirectories of ve.home explicitly
-    bld.env$package.paths[missing.paths] <- file.path(ve.env$ve.home,raw.config$PackageSources[missing.paths])
+    # retry package paths lokoing for subdirectories of ve.sources explicitly
+    bld.env$package.paths[missing.paths] <- file.path(ve.env$ve.sources,raw.config$PackageSources[missing.paths])
   }
   if ( !quiet && any( missing.paths <- ! dir.exists(bld.env$package.paths) ) ) {
     # Report failed paths as they appear in the ve-build-config.yml, not the expanded path

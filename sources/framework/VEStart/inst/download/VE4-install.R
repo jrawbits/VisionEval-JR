@@ -134,6 +134,10 @@ require(tcltk,quietly=TRUE)
 
 ####### Establish working environment
 
+# Note that this differs in subtle but important ways (notably ve.sources) from the working
+#   environment set up in VEBuild::LoadBuildScripts or in VE-Bootstrap.R. It's bare bones
+#   and just enough to situate the installer.
+
 ve.env <- if ( ! "ve.env" %in% search() ) {
   attach(NULL,name="ve.env")
 } else {
@@ -142,15 +146,16 @@ ve.env <- if ( ! "ve.env" %in% search() ) {
 
 ve.env.list <- ls(ve.env)
 ve.home    <- if ( ! "ve.home" %in% ve.envlist ) {
-  ve.env$ve.home <- Sys.getenv("VE_HOME",getwd())
+  ve.env$ve.home <- Sys.getenv("VE_HOME",getwd()) # Generally won't be set for a new installation
 } else {
   ve.env$ve.home
 }
-ve.sources <- if ( ! "ve.sources" %in% ve.env.list ) {
-  ve.env$ve.sources <- Sys.getenv("VE_SOURCE",file.path(ve.home,"build-source"))
-} else {
-  ve.env$ve.sources
-}
+ve.env$ve.sources <- file.path(ve.home,"build-source")
+# Force ve.sources since it will be receiving downloads
+# ve.sources is the directory containing an unzipped Git repository with VE-Bootstrap.R
+#   to use for a "Builder" installation
+# We'll unzip into a subdirectory of build-source, then go into that looking for VE-Boostrap.R
+# If no Bootstrap.R is found, that's a builder error
 
 ve.env$this.R <- paste(c(R.version["major"],R.version["minor"]),collapse=".")
 ve.env$two.digit.R <- tools::file_path_sans_ext(this.R)
@@ -225,6 +230,7 @@ if ( ! requireNamespace("rjson",lib.loc=ve.lib,quietly=TRUE) ) {
 ####### Run tcltk dialog to select specific asset to install from releases
 # https://stackoverflow.com/questions/3482513/multiple-comboboxes-in-r-using-tcltk
 
+# TODO: the following is working example code to incorporate in release selection
 # getAllReleases <- function(user,repository) {
 # 
 #   # Use the Github API to list releases and their properties
@@ -253,26 +259,36 @@ if ( ! requireNamespace("rjson",lib.loc=ve.lib,quietly=TRUE) ) {
 # }
 
 selectInstaller <- function(config) {
-  # TODO: loop over the configurd ve.distributions in config
+  # TODO: loop over the ve.distributions in config
   if ( ! requireNamespace("rjson",lib.loc=ve.lib,quietly=TRUE) ) {
     install.packages("rjson",repos="https://cloud.r-project.org",lib=ve.lib)
     requireNamespace("rjson",lib.loc=ve.lib,quietly=TRUE)
   }
-  # TODO: iterate over all distributions; keep track of distribution each release belongs to
+  # TODO: iterate over all distributions; keep track of the distribution each release belongs to
   all.releases <- rjson::fromJSON(file=paste0("https://api.github.com/repos/",user,"/",repository,"/releases"))
 
-  # TODO: may want to consider VE_BUILD and "installer" folder there (see ve.make.installer in
-  # VEBuild/inst/build-scripts/01-build.R)
+  # TODO: may want to consider VE_BUILD and "install" folder there (see ve.make.installer in
+  # VEBuild/inst/build-scripts/01-build.R) so we can do local installations
 
   # Run the dialog to pick a release
   #   Radio Button for end user (default) / builder
-  #   Checkbox (default: unchecked) See All Releases
+  #   Warn the builder (if they check that) that the download will only let them build VE.
+  #     and if they plan to contribute changes back, they should clone the Github externaly
+  #     and source VE-Bootstrap.R from the root of their clone.
+  #   List box (or choices) for distribution (alternate Githubs or locations)
+  #     Only show if more than one distribution is configured - if only one, consider it selected
+  #   TODO: do we also want to allow a zipball for a particular repository branch rather than a
+  #     Release? How to usefully set up ve.distributions...
+  #   Checkbox "See All Releases" (if unchecked - default - , only latest release in each
+  #     distribution, and if no releases and builder, then zipball for distribution branch
+  #     (default: main)
   #   Selection window showing all releases by Github name
   #   Selection window showing all usable assets in the release
   #     - maybe just one (the zipball) if "builder"
   #     - otherwise, possible WinLibrary or WinBinary for Rx.y , or any R version Source
+  #   Everything boils down to selecting a descriptor for a single installer
 
-  # Return value is a list information for downloading the installer (timeout, url, filename, pkgType)
+  # Return value is a list of information for downloading the selected installer (timeout, url, filename, pkgType)
 }
 
 ####### Download the installer and report what was retrieved (or if it failed)
@@ -300,6 +316,8 @@ doInstallation <- function(retrieved) {
   # Zipball
     # Unzip into ve.sources
     # Load VE-Bootstrap.R, with ve.build.sources set to the unzipped zipball
+  # Return a function to launch VE (bootstrap or load VEStart)
+  # Return a text error message if install failed.
 }
 
 ####### Run the configured installation
@@ -311,7 +329,7 @@ doInstallation <- function(retrieved) {
   # Builder:
   #   source(file.path(retrieved,"VE-Bootstrap.R") # retrieved is the folder within ve.sources to launch
 launch <- installVisionEval(install.config) # Will run automatically if using defaults (asked user earlier)
-if ( ! is.function(launch) ) launch() else stop(call.=FALSE,"Installation failed. Please retry.")
+if ( is.function(launch) ) launch() else stop(call.=FALSE,"Installation failed:\n",as.character(launch),"\nPlease retry.")
 
 ####################
 ####################

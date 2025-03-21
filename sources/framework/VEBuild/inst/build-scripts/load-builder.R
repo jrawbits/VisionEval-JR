@@ -20,11 +20,13 @@ load.builder <- function(ve.scripts) {
     CRAN.mirror <- Sys.getenv("VE_CRAN_MIRROR","https://cloud.r-project.org")
   } else {
     ve.lib <- get0("ve.lib",envir=ve.env,ifnotfound=.libPaths()[1])
+    # TODO: make sure ve.lib exists so we can isntall into it below
     CRAN.mirror <- get0("CRAN.mirror",envir=ve.env,ifnotfound="https://cloud.r-project.org")
   }
 
   if ( ! suppressWarnings(requireNamespace("import",quietly=TRUE)) ) {
     utils::install.packages("import", lib=ve.lib, repos=CRAN.mirror, type=.Platform$pkgType )
+    requireNamespace("import",quietly=TRUE)
   }
 
   script.files <- file.path(ve.scripts,dir(ve.scripts,pattern="\\.R$"),fsep="/")
