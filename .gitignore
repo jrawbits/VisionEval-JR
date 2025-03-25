@@ -5,8 +5,10 @@
 .Ruserdata
 *.bak
 ve-build-config.yml
+ve-install-config.yml
 ve-lib/
 runtime/
-built/
+/built/
+/download/
 sources/external/
 plan.txt
