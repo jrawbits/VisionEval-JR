@@ -134,9 +134,9 @@ require(tcltk,quietly=TRUE)
 
 ####### Establish working environment
 
-# Note that this differs in subtle but important ways (notably ve.sources) from the working
-#   environment set up in VEBuild::LoadBuildScripts or in VE-Bootstrap.R. It's bare bones
-#   and just enough to situate the installer.
+# Note that this differs in subtle but important ways from the working environment set up in
+#   VEBuild::LoadBuildScripts or in VE-Bootstrap.R. It's bare bones and just enough to situate the
+#   installer.
 
 ve.env <- if ( ! "ve.env" %in% search() ) {
   attach(NULL,name="ve.env")
@@ -144,27 +144,51 @@ ve.env <- if ( ! "ve.env" %in% search() ) {
   as.environment("ve.env")
 }
 
+# Allow user to pre-select ve.home rather than go through the dialog below
+# If VE_INSTALL is set, we'll go do our work there rather than VE_HOME (for testing the script)
 ve.env.list <- ls(ve.env)
-ve.home    <- if ( ! "ve.home" %in% ve.env.list ) {
-  ve.env$ve.home <- Sys.getenv("VE_HOME",getwd()) # Generally won't be set for a new installation
+ve.home     <- if ( ! "ve.home" %in% ve.env.list ) {
+  ve.env$ve.home <- Sys.getenv(
+    "VE_INSTALL",Sys.getenv("VE_HOME",getwd()) # VE_INSTALL can be used for testing
+  )
 } else {
   ve.env$ve.home
 }
-ve.env$ve.sources <- file.path(ve.home,"build-source")
-# Force ve.sources since it will be receiving downloads
-# ve.sources is the directory containing an unzipped Git repository with VE-Bootstrap.R
-#   to use for a "Builder" installation
-# We'll unzip into a subdirectory of build-source, then go into that looking for VE-Boostrap.R
-# If no Bootstrap.R is found, that's a builder error
+if ( ! dir.exists(ve.home) ) dir.create(ve.home,recursive=TRUE)
+setwd(ve.home)
+
+if ( length(dir(ve.home)) > 0 ) {
+  confirm <- tkmessageBox(
+    title = "Invalid VE_HOME Directory", icon = "warning", type = "yesno",
+    message = "The working directory is not empty. Would you like to find or create a different one?"
+    )
+  if ( as.character(response) != "yes" ) {
+    stop("Please start the VisionEval installation again in an empty folder.",call.=FALSE)
+  }
+  caption <- "Select installation directory (VE_HOME)"
+  ve.home <- if (exists('utils::choose.dir')) { # Won't exist on non-Windows platforms
+    utils::choose.dir(default=ve.home,caption = caption)
+  } else {
+    tcltk::tk_choose.dir(default=ve.home,caption = caption)
+  }
+  if ( is.na(ve.home) || ! dir.exists(ve.home) ) {
+    message("Please select (or create) an empty VE_HOME directory for installation")
+    stop("Installation cancelled.",call.=FALSE)
+  }
+}
 
 ve.env$this.R <- paste(c(R.version["major"],R.version["minor"]),collapse=".")
 ve.env$two.digit.R <- tools::file_path_sans_ext(this.R)
 
-ve.lib     <- if ( ! "ve.lib" %in% ve.env.list || basename(ve.env$ve.lib) != ve.env$two.digit.R ) {
-  ve.env$ve.lib <- file.path(ve.home,"ve-lib",ve.env$two.digit.R)
-} else {
-  ve.env$ve.lib
-}
+# Set ve-lib installation location
+ve.env$ve.lib <- file.path(ve.home,"ve-lib",ve.env$two.digit.R)
+if ( ! dir.exists(ve.env$ve.lib) ) dir.create(ve.env$ve.lib,recursive=TRUE)
+if ( ! ve.lib %in% .libPaths() ) .libPaths(c(ve.lib,.libPaths()))
+
+# Create another library for instalation packages (yaml, rjson, BiocManager)
+inst.lib <- file.path(ve.home,"ve-inst-lib (remove)",ve.env$two.digit.R)
+if ( ! dir.exists(inst.lib) ) dir.create(inst.lib,recursive=TRUE)
+if ( ! inst.lib %in% .libPaths() ) .libPaths(c(inst.lib,.libPaths()))
 
 ####### Load Configuration File
 
@@ -177,15 +201,15 @@ default.ve.repository <- list(
 )
 
 install.config <- if ( file.exists(config.file) ) {
-  if ( ! requireNamespace("yaml",lib.loc=ve.lib,quietly=TRUE) ) {
-    install.packages("yaml",repos="https://cloud.r-project.org",lib=ve.lib)
-    requireNamespace("yaml",lib.loc=ve.lib,quietly=TRUE)
+  if ( ! requireNamespace("yaml",lib.loc=inst.lib,quietly=TRUE) ) {
+    install.packages("yaml",repos="https://cloud.r-project.org",lib=inst.lib)
+    requireNamespace("yaml",lib.loc=inst.lib,quietly=TRUE)
   }
   load.config <- try( silent=TRUE, yaml::yaml.load_file(config.file) ) # will throw error if file is improperly configured
   if ( is.list(load.config) ) {
     # Confirm use of custom destination
     cat("Install Configuration from ve-install-config.yml:\n")
-    print(load.config)
+    cat(yaml::as.yaml(load.config))
     response <- tkmessageBox(
       title = "Use Loaded Configuration?", icon = "question", type = "yesno",
       message = "Do you want to use the displayed configuration?"
@@ -201,7 +225,7 @@ install.config <- if ( file.exists(config.file) ) {
     # ve.build=list(user="visioneval",repository="visioneval-40",branch="development")
   )
   cat("Default configuration:\n")
-  print(default.config)
+  cat(yaml::as.yaml(load.config))
   response <- tkmessageBox(
     title = "Install Defaults?", icon = "question", type = "yesno",
     message = paste0(
@@ -209,7 +233,7 @@ install.config <- if ( file.exists(config.file) ) {
       "You haven't set up ve-install-config.yml yet.\n\n",
       "Do you want to install VisionEval using these defaults?")
   )
-  if ( as.character(response) != "yes" ) stop(call.=FALSE,"Installation cancelled.")
+  if ( as.character(response) != "yes" ) stop(call.=FALSE,"Installation cancelled; please edit ve-install-config.yml")
   default.config
 }
 
@@ -223,43 +247,14 @@ installVisionEval <- function(config=install.config) { # no function parameters 
 
 ####### getAllReleases from distributions (plus local built if any)
 
-####### Run tcltk dialog to select specific asset to install from releases
-# https://stackoverflow.com/questions/3482513/multiple-comboboxes-in-r-using-tcltk
-
-# TODO: the following is working example code to incorporate in release selection
-# getAllReleases <- function(user,repository) {
-# 
-#   # Use the Github API to list releases and their properties
-#   # NOTE: all.releases appears to be in descending date-time order, so the first should always be
-#   # the latest release.
-#   all.releases <- rjson::fromJSON(file=paste0("https://api.github.com/repos/",user,"/",repository,"/releases"))
-#   latest <- if ( length(all.releases)>0 ) all.releases[1] else NA # reduce to a list of one
-#   if ( ! is.list(latest) ) {
-#     return( list() ) # no assets: empty list
-#   }
-#   release <- latest[[1]] # Get the object from the release list of 1
-# 
-#   downloads <- lapply(
-#     release$assets,
-#     function(a) {
-#       list(
-#         timeout = as.integer(round(a$size/750000,0)),
-#         url     = a$browser_download_url,
-#         file    = basename(a$browser_download_url)
-#        )
-#     }
-#   )
-#   release <- list(timeout=1000,url=release$zipball_url,file=paste0(basename(release$zipball_url),".zip"))
-#   downloads <- downloads[[length(downloads)+1]] <- release
-#   return(list(downloads=downloads,release=release))
-# }
-
 # Test file names for installer.pattern
 # files <- c(
 #   "VE-Installer_Source_2025-03-21.zip",
 #   "VE-Installer_Windows-R4.4_2025-03-21.zip",
 #   "VE-Installer_WinLibrary-R4.4_2025-03-21.zip"
 # )
+# Repository ZipBall for building comes as "Build_Source_207439148.zip"
+#   where the gaggle of numbers is the Github release ID
 
 installer.pattern <- paste0(
   "VE-Installer_",                                          # .* will be the VE Version
@@ -271,12 +266,13 @@ isVEInstaller <- function(filename) all(grepl(installer.pattern,filename))
 
 getReleases <- function(config) {
   # Configured for testing so as not to hit Github API over and over (they are rate limited)
-  if ( ! requireNamespace("rjson",lib.loc=ve.lib,quietly=TRUE) ) {
-    install.packages("rjson",repos="https://cloud.r-project.org",lib=ve.lib)
-    requireNamespace("rjson",lib.loc=ve.lib,quietly=TRUE)
+  if ( ! requireNamespace("rjson",lib.loc=inst.lib,quietly=TRUE) ) {
+    install.packages("rjson",repos="https://cloud.r-project.org",lib=inst.lib)
+    requireNamespace("rjson",lib.loc=inst.lib,quietly=TRUE)
   }
   if ( file.exists(test.file<-"Test-Skip-Download.json") ) {
-    # NOTE: uncomment lines to save JSON locally for testing
+    # NOTE: uncomment lines below to save JSON locally for testing
+    # You don't want to do that generally since it will block release updates.
     all.releases <- rjson::fromJSON(file=test.file,simplify=FALSE)
     message("\n##### USING TEST FILE !!! #####")
   } else {
@@ -305,7 +301,10 @@ getReleases <- function(config) {
             date=r$published_at,
             id=r$id
           )
-          zbname <- paste0("Source_code_",r$id,".zip")
+          # The zipball is the complete snapshot of the repository tag
+          # that was built into the release. You can use that to set up
+          # a VisionEval ve.build() installation without messing with Git.
+          zbname <- paste0("Build_Source_",r$id,".zip")
           zipball <- list()
           zipball[[zbname]] <- list(
             timeout = 1200,
@@ -354,19 +353,14 @@ getReleases <- function(config) {
         }
       }
     }
-# NOTE: Save JSON locally when testing (Github API is rate-limited)
-#     message("Saving test file")
-#     writeLines(rjson::toJSON(all.releases,indent=2),con=test.file)
+    # NOTE: Save JSON locally when testing (Github API is rate-limited)
+    #   message("Saving test file")
+    #   writeLines(rjson::toJSON(all.releases,indent=2),con=test.file)
   }
   return(all.releases)
 }
 
-############ Dialog to pick an installer from among available
-
-# TODO: may want to add "local" assets (in VE_BUILD/install) for testing purposes
-
-# Load the tcltk package
-require(tcltk,quietly=TRUE)
+############ Dialog to pick an installer from among those available
 
 # Setup dialog navigates all.releases to select an installer to download and install
 setup.dialog <- function(all.releases,max_width=800) {
@@ -397,10 +391,6 @@ setup.dialog <- function(all.releases,max_width=800) {
     }
     tclvalue(runtime) <- pick
     tclvalue(installer) <- names(all.releases[[tclvalue(repository)]][[tclvalue(release)]][[getAssetType()]])[1]
-    print(names(all.releases[[tclvalue(repository)]][[tclvalue(release)]]))
-    print(all.releases[[tclvalue(repository)]][[tclvalue(release)]])
-    message("Asset Type: ",getAssetType())
-    message("New installer: ",tclvalue(installer))
   }
 
   # Our own listbox function to pick from a list
@@ -557,26 +547,6 @@ selectInstaller <- function(config) {
   all.releases <- getReleases(config)
   selected <- setup.dialog(all.releases)
 
-#   if (FALSE ) {
-#     # Select runtime installation by default
-#     runtime.installation <- TRUE
-# 
-#     # Filter available releases for R version and 4.x+ installer
-#     repos.list <- names(all.releases)   # List of repositories with releases
-# 
-#     # Select first repository
-#     repo <- repos.list[1] # default repository user/name
-# 
-#     # Select first (latest) release
-#     releases <- all.releases[[repo]] # List of releases in selected repository
-#     release <- releases[[1]]         # list of release properties (release, date, assets)
-# 
-#     # Put assets into priority order and select the first one
-#     assets <- release$assets
-#     installer <- assets[[1]] # list of default asset properties (file,size,url)
-#   } else {
-
-  print(selected)
   if ( selected$DoIt != "Install" ) {
     stop("Installation cancelled from installer selection dialog",call.=FALSE)
   }
@@ -597,29 +567,48 @@ selectInstaller <- function(config) {
 
 ####### Download the installer and report what was retrieved (or if it failed)
 
-pkgTypeOf <- function(retrieved) { # retrieved is a file name
+installTypes <- data.frame(
+  pattern = c(
+    "WinLibrary_R",
+    "Windows_R",
+    "^Build_Source_",
+    "_Source_"
+  ),
+  type = c(
+    "WinLibrary",
+    "Windows",
+    "BuildSource",
+    "Source"
+  )
+)
+
+installTypeOf <- function(retrieved) { # retrieved is a file name
+  for ( p in 1:nrow(installTypes) ) {
+    if ( grepl(installTypes$pattern[p],basename(retrieved)) ) return(installTypes$type[p])
+  }
   return("Unknown")
 }
 
 fetchInstaller <- function(installer) {
-  # Place downloaded file in ve.home/download
-  # return downloaded file name
-  # File name has attribute distinguishing VE Installer from Github snapshot
-  # (Source Code)
+  # Place downloaded files in ve.home/download
+  # return downloaded file name and type of installation expected
+  # File name has attribute distinguishing VE Installer from Github snapshot (Source Code)
   download <- file.path(ve.home,"download")
   if ( ! dir.exists( download ) ) dir.create(download,recursive=TRUE)
-  if ( ! installer$file %in% dir(download) ) {
-    options(timeout = max(installer$timeout, getOption("timeout"))) # ten minute timeout; set dynamically based on reported file size?
+  if ( ! installer$file %in% dir(download) ) { # Shorten restart if there was a previous download
+    options(timeout = max(installer$timeout, getOption("timeout")))
     message("Timeout: ",getOption("timeout")," seconds")
     destfile <- file.path(download,installer$file)
-    download.file(installer$url,destfile=destfile,method="libcurl",mode="wb") # use method=libcurl so it follows redirect links
+    download.file(installer$url,destfile=destfile,method="libcurl",mode="wb")
+    # use method=libcurl so download.file follows redirect links
   } else {
     message("Installer has already been downloaded.")
     message("Install is ",download)
     message("installer$file is ",installer$file)
+    message("For a clean install, remove the downloads directory in VE_HOME")
   }
   retrieved <- dir(download,full.names=TRUE,pattern=installer$file)
-  attr(retrieved,"InstallType") <- pkgTypeOf(retrieved)
+  attr(retrieved,"InstallType") <- installTypeOf(retrieved)
   invisible(retrieved) # name of downloaded file with attribute stating "Runtime" or "Build" install type
 }
 
@@ -641,15 +630,96 @@ doInstallation <- function(retrieved) {
     #   - Set up so the repository list can find needed files in CRAN or BioConductor
     # return launch function loading VEStart or VE-Bootstrap.R as desired
   # Source Code Zipball 
-    # Unzip into ve.sources Location (git-sources)
-    # Load VE-Bootstrap.R, with ve.build.sources set to the unzipped zipball
+    # Unzip into build-source Location
+    # Load VE-Bootstrap.R, with ve.sources set to the unzipped zipball
     # VE_HOME can stay the same, VE_BUILD created within VE_HOME, VE_SOURCE set to
-    #   unzipped source tree.
+    #   absolute path of "sources" subfolder in unzipped source tree.
+    # When VE-Bootstrap.R does ve.build() it saves VE_SOURCE to .Renviron
   # Return a function to launch VE (bootstrap or load VEStart)
   # Return a text error message if install failed.
-  message("Would unzip: ",retrieved)
-  # TODO: sort out the unzip strategy; read the MANIFEST, etc
-  message("Then process as ",attr(retrieved,"InstallType"))
+  installType <- attr(retrieved,"InstallType")
+  if ( installType %in% c("WinLibrary","Windows","Source") ) {
+    if ( installType == "WinLibrary" ) {
+      # This is a pre-installed WinBinary, with all dependencies (like VE installers before 4.0)
+      # Unzip directly into ve.lib
+      lst <- unzip(retrieved,list=TRUE)
+      # Find any packages already in ve.lib and remove those
+      # NOTE: some removals may fail for packages loaded while running this script (e.g. rjson or yaml)
+      # startVisionEval may try to update those
+      replacements <- file.path(ve.lib,sub("/$","",lst[grep("^[^/]+/$",lst$Name),"Name"]))
+      replacements <- replacements[dir.exists(replacements)]
+      if ( length(replacements) > 0 ) {
+        message("Would remove:")
+        print(replacements)
+        # unlink(replacements,recursive=TRUE)
+      }
+      # Unzip the replacement packages straight into ve.lib
+      message("Would unzip: ",retrieved)
+      message("Into       : ",ve.lib)
+      # unzip(retrieved,exdir=ve.lib) # simply extract the download back into ve-lib
+    } else {
+      # Ensure presence of needed packages
+      if ( ! requireNamespace("BiocManager",lib.loc=inst.lib,quietly=TRUE) ) {
+        install.packages("BiocManager",repos="https://cloud.r-project.org",lib=inst.lib)
+        requireNamespace("BiocManager",lib.loc=inst.lib,quietly=TRUE)
+      }
+      # unzip the single MANIFEST file
+      manifest <- read.dcf(unz("VE-Installer_Windows-R4.4_2025-03-21.zip","MANIFEST","r"))
+      manifest <- manifest[1,] # turn matrix into named character vector
+      pkgType <- manifest["pkgType"]
+      destination <- sub("/","",manifest["Destination"])
+      ve.repos <- dir.name(retrieved)
+      exdir <- file.path(ve.repos,destination)
+      message("Would unzip: ",retrieved)
+      message("Into       : ",exdir)
+      unzip(retrieved,exdir=exdir)
+      # Now install those packages plus dependencies online that may be needed
+      install.contriburl <-contrib.url(paste0("file:///",ve.repos),type=pkgType),
+      all.contriburl <- c(
+        install.contrburl,
+        contrib.url(BiocManager::repositories(),type=pkgType) # includes https://cran.r-project.org
+      )
+      Message("install.packages from these locations:")
+      print(contriburl)
+      available <- available.packages(contriburl=install.contriburl,type=pkgType)
+      # install.packages(available,contriburl=all.contriburl,lib=ve.lib,type=pkgType)
+    }
+    return(
+      function() {
+        message("Would require VEStart, then startVisionEval")
+#         if ( ! require(VEStart,quietly=TRUE) ) stop("Installation failed: could not load VEStart")
+#         startVisionEval()
+      }
+    )
+  } else if ( installType == "BuildSource" ) {
+    # Unzip to downloads (zip will have an inner top directory)
+    message("Would unzip: ",retrieved)
+    exdir <- dirname(retrieved)
+    message("Into:        ",exdir)
+    exname <- sub("/$","",unzip(retrieved,list=TRUE)[1,"Name"])
+
+    # Unzip the build source distribution (may take a while!)
+    ve.source.root <- file.path(ve.home,"build-source")
+    if ( dir.exists(ve.source.root) ) {
+      message("build-source directory already exists.")
+      stop("Please remove ",ve.source.root," and try install again")
+    }
+    # unzip(retrieved,exdir=exdir) # creates exname subdirectory
+    file.rename(file.path(exdir,exname),ve.source.root)
+
+    # Point VE-Bootstrap.R to the right stuff
+    Sys.setenv(VE_SOURCE=file.path(ve.source.root,"sources"))
+    
+    return(
+      function() {
+        message("Would source this file to Bootstrap VE:)
+        message(bootstrap <- file.path(ve.source.root,"VE-Bootstrap.R")
+#         bootstrap <- file.path(ve.source.root,"VE-Bootstrap.R")
+#         if ( ! file.exists(bootstrap) ) stop("Installation failed: could not load VE-Bootstrap.R")
+#         source(bootstrap)
+      }
+    )
+  }
   return( function() { message("The installation did not finish properly. Please retry.") } )
 }
 

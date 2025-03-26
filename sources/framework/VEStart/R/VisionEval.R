@@ -103,26 +103,32 @@ startVisionEval <- function(
 
   # Identify location for VE_HOME (contains ve-lib, and optionally ve-pkg for local repository installation)
   if ( missing(ve.home) || is.null(ve.home) ) {
-    if ( exists(ve.home,ve.env,inherits=FALSE) ) {
+    if ( exists("ve.home",ve.env,inherits=FALSE) ) {
       ve.home <- ve.env$ve.home
     } else {
       ve.home <- Sys.getenv("VE_HOME",getwd())
     }
   }
-  if ( exists(ve.build.dir,ve.env,inherits=FALSE) ) {
+  if ( exists("ve.build.dir",ve.env,inherits=FALSE) ) {
     # VE_BUILD is the target location for VEBuild, where VE_HOME is the location of the buildable
     # source code - usually set up through VE_Bootstrap.R
     ve.build.dir <- ve.env$ve.build.dir
   } else {
     ve.build.dir <- Sys.getenv("VE_BUILD",file.path(ve.home,"built")) # Just in case we're loading from a build environment
   }
-
-  # set up VE_RUNTIME
-  if ( missing(ve.runtime) || is.null(ve.runtime) ) {
-    if ( exists(ve.runtime,ve.env,inherits=FALSE) ) {
-      ve.runtime <- ve.env$ve.runtime
+  if ( exists("ve.build.dir",ve.env,inherits=FALSE) ) {
+    # VE_BUILD is the target location for VEBuild, where VE_HOME is the location of the buildable
+    # source code - usually set up through VE_Bootstrap.R
+    ve.build.dir <- ve.env$ve.build.dir
+  } else {
+    ve.build.dir <- Sys.getenv("VE_BUILD",file.path(ve.home,"built")) # Just in case we're loading from a build environment
+  }
+  # set up VE_SOURCE (only used when building, but we want to preserve it in .Renviron)
+  if ( missing(ve.sources) || is.null(ve.sources) ) {
+    if ( exists("ve.sources",ve.env,inherits=FALSE) ) {
+      ve.sources <- ve.env$ve.sources
     } else {
-      ve.runtime <- Sys.getenv("VE_RUNTIME",as.character(NA))
+      ve.sources <- Sys.getenv("VE_SOURCE",as.character(NA))
     }
   }
   if ( is.na(ve.runtime) ) {
@@ -136,9 +142,9 @@ startVisionEval <- function(
   if ( ! home.as.runtime  ) {
     caption <- "Select directory for VisionEval 'models' folder (VE_RUNTIME)"
     ve.runtime <- if (exists('utils::choose.dir')) { # Won't exist on non-Windows platforms
-      utils::choose.dir(default=ve.home,caption = caption)
+      utils::choose.dir(default=ve.runtime,caption = caption)
     } else {
-      tcltk::tk_choose.dir(default=ve.home,caption = caption)
+      tcltk::tk_choose.dir(default=ve.runtime,caption = caption)
     }
     if ( is.na(ve.runtime) || ! dir.exists(ve.runtime) ) {
       message("Please select a suitable VisionEval VE_RUNTIME directory for 'models'")
@@ -147,6 +153,7 @@ startVisionEval <- function(
   } else ve.runtime <- ve.home
 
   message("Setting up VE_RUNTIME as ",ve.runtime)
+  message("You will want to start VisionEval from that folder.")
 
   # Save the important parameters
   ve.env$ve.runtime <- ve.runtime

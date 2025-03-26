@@ -44,7 +44,7 @@ loadRuntimeEnvironment <- function() { # Keep this synchronized with VE-Bootstra
       ve.env$ve.runtime <- file.path(ve.env$ve.home,"runtime")
     }
   }
-  ve.env$ve.sources <- normalizePath(Sys.getenv("VE_SOURCE",file.path(ve.env$ve.build.dir,"sources")),winslash="/",mustWork=FALSE)
+  ve.env$ve.sources <- normalizePath(Sys.getenv("VE_SOURCE",file.path(ve.env$ve.home,"sources")),winslash="/",mustWork=FALSE)
 
   # ve.test() should be available in VEBuild after build ; provide a package name to search in src
   #   folder and load from there to allow dynamic changes. Use pkgload as in current debug setup.
