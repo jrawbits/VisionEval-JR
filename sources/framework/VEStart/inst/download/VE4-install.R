@@ -147,22 +147,28 @@ ve.env <- if ( ! "ve.env" %in% search() ) {
 # Allow user to pre-select ve.home rather than go through the dialog below
 # If VE_INSTALL is set, we'll go do our work there rather than VE_HOME (for testing the script)
 ve.env.list <- ls(ve.env)
-ve.home     <- if ( ! "ve.home" %in% ve.env.list ) {
-  ve.env$ve.home <- Sys.getenv(
-    "VE_INSTALL",Sys.getenv("VE_HOME",getwd()) # VE_INSTALL can be used for testing
-  )
-} else {
-  ve.env$ve.home
+ve.home <- Sys.getenv("VE_INSTALL",NA)  # VE_INSTALL can be used as a bare VE_HOME for testing
+if ( is.na(ve.home) ) {
+  ve.home <- if ( ! "ve.home" %in% ve.env.list ) {
+    ve.env$ve.home <- Sys.getenv("VE_HOME",getwd())
+  } else {
+    ve.env$ve.home
+  }
 }
+
 if ( ! dir.exists(ve.home) ) dir.create(ve.home,recursive=TRUE)
 setwd(ve.home)
 
 if ( length(dir(ve.home)) > 0 ) {
   confirm <- tkmessageBox(
     title = "Invalid VE_HOME Directory", icon = "warning", type = "yesno",
-    message = "The working directory is not empty. Would you like to find or create a different one?"
+    message = paste(
+      "The VE_HOME directory for installation is not empty:\n",
+      ve.home,"\n\n",
+      "Would you like to find or create a different one?"
     )
-  if ( as.character(response) != "yes" ) {
+  )
+  if ( as.character(confirm) != "yes" ) {
     stop("Please start the VisionEval installation again in an empty folder.",call.=FALSE)
   }
   caption <- "Select installation directory (VE_HOME)"
@@ -183,12 +189,11 @@ ve.env$two.digit.R <- tools::file_path_sans_ext(this.R)
 # Set ve-lib installation location
 ve.env$ve.lib <- file.path(ve.home,"ve-lib",ve.env$two.digit.R)
 if ( ! dir.exists(ve.env$ve.lib) ) dir.create(ve.env$ve.lib,recursive=TRUE)
-if ( ! ve.lib %in% .libPaths() ) .libPaths(c(ve.lib,.libPaths()))
+if ( ! ve.lib %in% .libPaths() ) .libPaths(c(ve.lib)) # will remove extra libraries
 
 # Create another library for instalation packages (yaml, rjson, BiocManager)
 inst.lib <- file.path(ve.home,"ve-inst-lib (remove)",ve.env$two.digit.R)
 if ( ! dir.exists(inst.lib) ) dir.create(inst.lib,recursive=TRUE)
-if ( ! inst.lib %in% .libPaths() ) .libPaths(c(inst.lib,.libPaths()))
 
 ####### Load Configuration File
 
@@ -200,11 +205,12 @@ default.ve.repository <- list(
   list(user="visioneval",repository=c("visioneval-dev","visioneval-40"))  # public repository
 )
 
+if ( ! requireNamespace("yaml",lib.loc=inst.lib,quietly=TRUE) ) {
+install.packages("yaml",repos="https://cloud.r-project.org",lib=inst.lib)
+requireNamespace("yaml",lib.loc=inst.lib,quietly=TRUE)
+}
+
 install.config <- if ( file.exists(config.file) ) {
-  if ( ! requireNamespace("yaml",lib.loc=inst.lib,quietly=TRUE) ) {
-    install.packages("yaml",repos="https://cloud.r-project.org",lib=inst.lib)
-    requireNamespace("yaml",lib.loc=inst.lib,quietly=TRUE)
-  }
   load.config <- try( silent=TRUE, yaml::yaml.load_file(config.file) ) # will throw error if file is improperly configured
   if ( is.list(load.config) ) {
     # Confirm use of custom destination
@@ -220,18 +226,17 @@ install.config <- if ( file.exists(config.file) ) {
 } else {
   default.config <- list(
     default.config=TRUE,
-    ve.distributions=default.ve.repository,
-    ve.build=list(user="jrawbits",repository="visioneval=jr",branch="VE-4.0")
-    # ve.build=list(user="visioneval",repository="visioneval-40",branch="development")
+    ve.distributions=default.ve.repository
   )
-  cat("Default configuration:\n")
-  cat(yaml::as.yaml(load.config))
+  config.txt <- yaml::as.yaml(default.config)
   response <- tkmessageBox(
     title = "Install Defaults?", icon = "question", type = "yesno",
     message = paste0(
       "Installing VisionEval in '",ve.home,"'\n\n",
       "You haven't set up ve-install-config.yml yet.\n\n",
-      "Do you want to install VisionEval using these defaults?")
+      "Do you want to install VisionEval using these defaults?\n\n",
+      config.txt
+    )
   )
   if ( as.character(response) != "yes" ) stop(call.=FALSE,"Installation cancelled; please edit ve-install-config.yml")
   default.config
@@ -341,9 +346,7 @@ getReleases <- function(config) {
             r.temp$assets <- installers
             release.data[[length(release.data)+1]] <- r.temp
             # message("Release: ",r.temp$release)
-          } else {
-            stop("No installers found in release ",r$name,call.=FALSE)
-          }
+          } # else silently skip releases that do not have VE40 installers
         }
         if ( length(release.data) > 0 ) {
           names(release.data) <- sapply( release.data,function(r) paste0(r$release,":",r$date) )
@@ -354,8 +357,8 @@ getReleases <- function(config) {
       }
     }
     # NOTE: Save JSON locally when testing (Github API is rate-limited)
-    #   message("Saving test file")
-    #   writeLines(rjson::toJSON(all.releases,indent=2),con=test.file)
+    message("Saving test file")
+    writeLines(rjson::toJSON(all.releases,indent=2),con=test.file)
   }
   return(all.releases)
 }
@@ -526,6 +529,10 @@ setup.dialog <- function(all.releases,max_width=800) {
     tkgrid(cancel_button, column = 1, sticky="w", row = 5, pady = 10)
     tkgrid.columnconfigure(tt, 1, weight = 1) #Make the second column expandable.
 
+    tkbind(tt, "<Return>", function() {
+      tkinvoke(ok_button, "command") #invokes the command assigned to the button.
+    })
+
     tkwait.window(tt) # Run the dialog
     
     return( # Relay tclVar variables back out to calling environment
@@ -569,8 +576,8 @@ selectInstaller <- function(config) {
 
 installTypes <- data.frame(
   pattern = c(
-    "WinLibrary_R",
-    "Windows_R",
+    "WinLibrary-R",
+    "Windows-R",
     "^Build_Source_",
     "_Source_"
   ),
@@ -603,12 +610,13 @@ fetchInstaller <- function(installer) {
     # use method=libcurl so download.file follows redirect links
   } else {
     message("Installer has already been downloaded.")
-    message("Install is ",download)
+    message("Install can be found in ",download)
     message("installer$file is ",installer$file)
     message("For a clean install, remove the downloads directory in VE_HOME")
   }
   retrieved <- dir(download,full.names=TRUE,pattern=installer$file)
   attr(retrieved,"InstallType") <- installTypeOf(retrieved)
+  message("InstallType is ",attr(retrieved,"InstallType"))
   invisible(retrieved) # name of downloaded file with attribute stating "Runtime" or "Build" install type
 }
 
@@ -638,6 +646,18 @@ doInstallation <- function(retrieved) {
   # Return a function to launch VE (bootstrap or load VEStart)
   # Return a text error message if install failed.
   installType <- attr(retrieved,"InstallType")
+  confirm <- tkmessageBox(
+    title = "Complete Installation?", icon = "question", type = "yesno",
+    message = paste(
+      "Ready to install:\n\n",retrieved,
+      "\nInstallation Type: ",installType,  
+      "\n\nWould you like to proceed?"
+    )
+  )
+  if ( as.character(confirm) != "yes" ) {
+    stop("Installation cancelled. Restart to try again.",call.=FALSE)
+  }
+
   if ( installType %in% c("WinLibrary","Windows","Source") ) {
     if ( installType == "WinLibrary" ) {
       # This is a pre-installed WinBinary, with all dependencies (like VE installers before 4.0)
@@ -664,25 +684,26 @@ doInstallation <- function(retrieved) {
         requireNamespace("BiocManager",lib.loc=inst.lib,quietly=TRUE)
       }
       # unzip the single MANIFEST file
-      manifest <- read.dcf(unz("VE-Installer_Windows-R4.4_2025-03-21.zip","MANIFEST","r"))
+      mfc<-unz(retrieved,"MANIFEST","r")
+      manifest <- read.dcf(mfc)
+      close(mfc)
       manifest <- manifest[1,] # turn matrix into named character vector
       pkgType <- manifest["pkgType"]
       destination <- sub("/","",manifest["Destination"])
-      ve.repos <- dir.name(retrieved)
+      ve.repos <- dirname(retrieved)
       exdir <- file.path(ve.repos,destination)
-      message("Would unzip: ",retrieved)
-      message("Into       : ",exdir)
+      message("Unzipping : ",retrieved)
+      message("Into      : ",exdir)
       unzip(retrieved,exdir=exdir)
       # Now install those packages plus dependencies online that may be needed
-      install.contriburl <-contrib.url(paste0("file:///",ve.repos),type=pkgType),
-      all.contriburl <- c(
-        install.contrburl,
-        contrib.url(BiocManager::repositories(),type=pkgType) # includes https://cran.r-project.org
+      install.repos <-paste0("file:///",ve.repos)
+      all.repos <- c(
+        install.repos,
+        BiocManager::repositories() # includes https://cran.r-project.org
       )
-      Message("install.packages from these locations:")
-      print(contriburl)
-      available <- available.packages(contriburl=install.contriburl,type=pkgType)
-      # install.packages(available,contriburl=all.contriburl,lib=ve.lib,type=pkgType)
+      available <- available.packages(repos=install.repos,type=pkgType)
+      packages <- available[,"Package"]
+      install.packages(pkgs=packages,repos=all.repos,lib=ve.lib,type=pkgType)
     }
     return(
       function() {
@@ -712,9 +733,9 @@ doInstallation <- function(retrieved) {
     
     return(
       function() {
-        message("Would source this file to Bootstrap VE:)
-        message(bootstrap <- file.path(ve.source.root,"VE-Bootstrap.R")
-#         bootstrap <- file.path(ve.source.root,"VE-Bootstrap.R")
+        bootstrap <- file.path(ve.source.root,"VE-Bootstrap.R")
+        message("Would source this file to Bootstrap VE:")
+        message(bootstrap)
 #         if ( ! file.exists(bootstrap) ) stop("Installation failed: could not load VE-Bootstrap.R")
 #         source(bootstrap)
       }
