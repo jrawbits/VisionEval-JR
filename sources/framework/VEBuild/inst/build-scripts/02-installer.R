@@ -22,12 +22,19 @@ ve.make.installer <- function(pkgType=.Platform$pkgType,debug=FALSE) {
   }
 
   # error check pkgType
-  legalTypes <- tolower(c("win.library","win.binary","source"))
+  legalTypes <- tolower(c("win.binary","source","win.library"))
   if ( ! is.character(pkgType) ) failure("pkgType must be a character string",pkgType)
   pkgType <- tolower(pkgType)
-  if ( ! pkgType %in% legalTypes ) {
-    failure("pkgType must be one of ",legalTypes,"\nYou selected '",pkgType,"'")
+  if ( pkgType == "all" ) {
+    pkgType <- legalTypes
+  } else if ( ! pkgType %in% legalTypes ) {
+    failure("pkgType must be one of ",legalTypes,"or the shortcut 'all'\nYou selected '",pkgType,"'")
   }
+
+  for ( pt in pkgType ) buildOneInstaller(pt,bld.env,debug)
+}
+
+buildOneInstaller <- function(pkgType,bld.env,debug) {
 
   # install directory will hold the zipped results
   ve.install <- file.path(ve.env$ve.build.dir,"install")
