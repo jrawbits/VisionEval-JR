@@ -664,19 +664,15 @@ doInstallation <- function(retrieved) {
       # Unzip directly into ve.lib
       lst <- unzip(retrieved,list=TRUE)
       # Find any packages already in ve.lib and remove those
-      # NOTE: some removals may fail for packages loaded while running this script (e.g. rjson or yaml)
-      # startVisionEval may try to update those
       replacements <- file.path(ve.lib,sub("/$","",lst[grep("^[^/]+/$",lst$Name),"Name"]))
       replacements <- replacements[dir.exists(replacements)]
       if ( length(replacements) > 0 ) {
-        message("Would remove:")
-        print(replacements)
-        # unlink(replacements,recursive=TRUE)
+        unlink(replacements,recursive=TRUE)
       }
       # Unzip the replacement packages straight into ve.lib
-      message("Would unzip: ",retrieved)
-      message("Into       : ",ve.lib)
-      # unzip(retrieved,exdir=ve.lib) # simply extract the download back into ve-lib
+      message("Unzipping : ",retrieved)
+      message("Into      : ",ve.lib)
+      unzip(retrieved,exdir=ve.lib) # simply extract the download back into ve-lib
     } else {
       # Ensure presence of needed packages
       if ( ! requireNamespace("BiocManager",lib.loc=inst.lib,quietly=TRUE) ) {
@@ -706,10 +702,12 @@ doInstallation <- function(retrieved) {
       install.packages(pkgs=packages,repos=all.repos,lib=ve.lib,type=pkgType)
     }
     return(
+      # TODO: this appears to be using an earlier VE_HOME setup if that was hanging out
+      # in the environment. Need to push our own notion of ve.home back through Sys.setenv
+      # so we get the right ve-lib.
       function() {
-        message("Would require VEStart, then startVisionEval")
-#         if ( ! require(VEStart,quietly=TRUE) ) stop("Installation failed: could not load VEStart")
-#         startVisionEval()
+        if ( ! require(VEStart,quietly=TRUE) ) stop("Installation failed: could not load VEStart")
+        startVisionEval()
       }
     )
   } else if ( installType == "BuildSource" ) {
@@ -725,7 +723,7 @@ doInstallation <- function(retrieved) {
       message("build-source directory already exists.")
       stop("Please remove ",ve.source.root," and try install again")
     }
-    # unzip(retrieved,exdir=exdir) # creates exname subdirectory
+    unzip(retrieved,exdir=exdir) # creates exname subdirectory
     file.rename(file.path(exdir,exname),ve.source.root)
 
     # Point VE-Bootstrap.R to the right stuff
@@ -734,10 +732,8 @@ doInstallation <- function(retrieved) {
     return(
       function() {
         bootstrap <- file.path(ve.source.root,"VE-Bootstrap.R")
-        message("Would source this file to Bootstrap VE:")
-        message(bootstrap)
-#         if ( ! file.exists(bootstrap) ) stop("Installation failed: could not load VE-Bootstrap.R")
-#         source(bootstrap)
+        if ( ! file.exists(bootstrap) ) stop("Installation failed: could not load VE-Bootstrap.R")
+        source(bootstrap)
       }
     )
   }
