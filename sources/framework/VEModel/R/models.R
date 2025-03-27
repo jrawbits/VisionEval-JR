@@ -2929,6 +2929,8 @@ installStandardModel <- function( modelName, variant="base", modelPath=NULL, con
 #' @export
 installModel <- function(modelName=NULL, variant="base", modelPath=NULL, confirm=TRUE, overwrite=FALSE, private=FALSE, log="warn") {
   # Load system model configuration (clear the log status)
+  message("Installing into getwd: ",getwd())
+  message("VE_RUNTIME: ",runtimeEnvironment()$ve.runtime)
   initLog(Save=FALSE,Threshold=log, envir=new.env())
   model <- installStandardModel(modelName, modelPath, confirm=confirm, overwrite=overwrite, private=private, variant=variant)
   if ( ! is.data.frame(model) ) { # returns a list if we found a model

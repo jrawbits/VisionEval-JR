@@ -124,13 +124,13 @@ startVisionEval <- function(
     ve.build.dir <- Sys.getenv("VE_BUILD",file.path(ve.home,"built")) # Just in case we're loading from a build environment
   }
   # set up VE_SOURCE (only used when building, but we want to preserve it in .Renviron)
-  if ( missing(ve.sources) || is.null(ve.sources) ) {
-    if ( exists("ve.sources",ve.env,inherits=FALSE) ) {
-      ve.sources <- ve.env$ve.sources
-    } else {
-      ve.sources <- Sys.getenv("VE_SOURCE",as.character(NA))
-    }
+  if ( exists("ve.sources",ve.env,inherits=FALSE) ) {
+    ve.sources <- ve.env$ve.sources
+  } else {
+    ve.sources <- Sys.getenv("VE_SOURCE",as.character(NA))
   }
+
+  ve.runtime <- Sys.getenv("VE_RUNTIME",as.character(NA))
   if ( is.na(ve.runtime) ) {
     home.as.runtime <- askYesNo(paste("Install VisionEval 'models' folder in",ve.home,"?"))
     if ( is.na(home.as.runtime) ) {
@@ -204,6 +204,8 @@ startVisionEval <- function(
     message("Could not load VEModel.")
     message("Please check VE_HOME location and re-install there if needed.")
     stop(call.=FALSE,"Failed to start VisionEval")
+  } else {
+    VEModel::initVisionEval() # should setwd to ve.env$ve.runtime
   }
 
   # Return runtime location, invisibly
@@ -307,8 +309,8 @@ ve.setup <- function(ve.home,ve.runtime,setupHome=FALSE,overwrite=FALSE) {
   )
   if ( length(setup.locations) == 0 ) return(invisible(ve.runtime)) # Not an error - just means setup files are already up to date
 
-  message("Setup locations:")
-  print(setup.locations)
+#   message("Setup locations:")
+#   print(setup.locations)
   for ( location in setup.locations ) {
     message("Adding startup files to ",location)
 

@@ -126,6 +126,7 @@ initVisionEval <- function() {
     dir.create(ModelRoot,recursive=TRUE,showWarnings=FALSE)
   }
   message("Running in ",ve.env$ve.runtime)
+  setwd(ve.env$ve.runtime)
   NULL
 }
 

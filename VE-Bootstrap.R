@@ -122,7 +122,7 @@ local(
     message("Edit ve-build-config.yml to set locations of package files that might reside")
     message("  outside the VE_HOME directory tree.\n")
     message("ve.build() to build a full VisionEval installation.\n")
-    if ( suppressPackageStartupMessages(require("VEStart",lib.loc=ve.env$ve.lib,quietly=TRUE)) ) {
+    if ( "VEStart" %in% utils::installed.packages(lib.loc=ve.env$ve.lib)[,"Package"] ) {
       message("ve.run() to start VisionEval.\n")
     }
   }

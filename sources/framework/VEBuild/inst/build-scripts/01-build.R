@@ -841,8 +841,9 @@ ve.run <- function(ve.runtime=NULL) {
     }
   }
   if ( ! dir.exists(ve.runtime) ) dir.create(ve.runtime,recursive=TRUE)
-  if ( dir.exists(ve.runtime) ) setwd(ve.runtime) else stop("Could not establish runtime at '",ve.runtime,"'")
-  startVisionEval(ve.env=ve.env)
+  if ( ! dir.exists(ve.runtime) ) stop("Could not establish runtime at '",ve.runtime,"'")
+
+  VEStart::startVisionEval()
 }
 
 # \code{makeGitInfo} gets Git repository information for folder \code{from} if that
