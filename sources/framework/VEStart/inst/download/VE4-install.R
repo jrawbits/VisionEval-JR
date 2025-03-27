@@ -473,7 +473,7 @@ setup.dialog <- function(all.releases,max_width=800) {
 
       # If release changes, change the installer to the default one.
       select_from_list(tt,release,release_list) # will update repository variable
-      inst_list <- all.releases[[tclvalue(repository)]][[tclvalue(release)]][[getAssetType]]
+      inst_list <- all.releases[[tclvalue(repository)]][[tclvalue(release)]][[getAssetType()]]
       tclvalue(installer) <- names(inst_list)[1]
     })
 

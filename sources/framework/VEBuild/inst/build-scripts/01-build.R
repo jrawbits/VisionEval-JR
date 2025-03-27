@@ -172,6 +172,7 @@ ve.build.config <- function(config=list(),debug=FALSE, quiet=FALSE) {
   bld.env$ve.src <- file.path(ve.env$ve.build.dir,raw.config$BuildTargets["ve.src"])
   if ( ! dir.exists(bld.env$ve.src) ) dir.create(bld.env$ve.src)
 
+  # Set up the local repositories (basis for later installation)
   bld.env$ve.repository <- file.path(ve.env$ve.build.dir,raw.config$BuildTargets["ve.repository"])
   if ( ! dir.exists(bld.env$ve.repository) ) dir.create(bld.env$ve.repository)
   bld.env$ve.repository.url <- paste0("file:///",bld.env$ve.repository)
@@ -180,10 +181,12 @@ ve.build.config <- function(config=list(),debug=FALSE, quiet=FALSE) {
   if ( ! dir.exists(bld.env$build.contriburl) ) dir.create(bld.env$build.contriburl,recursive=TRUE)
   if ( ! dir.exists(bld.env$build.contriburl.src) ) dir.create(bld.env$build.contriburl.src,recursive=TRUE)
 
-  bld.env$ve.dependencies <- file.path(ve.env$ve.build.dir,raw.config$BuildTargets["ve.dependencies"])
-  if ( ! dir.exists(bld.env$ve.dependencies) ) dir.create(bld.env$ve.dependencies)
-  bld.env$ve.dependencies.url <- paste0("file:///",bld.env$ve.dependencies)
-  bld.env$dependencies.contriburl <- utils::contrib.url(bld.env$ve.dependencies, bld.env$build.type)
+#   TODO: trying to do without this download
+#   # Local version of dependencies
+#   bld.env$ve.dependencies <- file.path(ve.env$ve.build.dir,raw.config$BuildTargets["ve.dependencies"])
+#   if ( ! dir.exists(bld.env$ve.dependencies) ) dir.create(bld.env$ve.dependencies)
+#   bld.env$ve.dependencies.url <- paste0("file:///",bld.env$ve.dependencies)
+#   bld.env$dependencies.contriburl <- utils::contrib.url(bld.env$ve.dependencies, bld.env$build.type)
 
   # Obscure error message if ve.lib is already in .libPaths() so we need to test
   if ( ! bld.env$ve.lib %in% .libPaths() ) .libPaths(c(bld.env$ve.lib,.libPaths())) # add ve.lib to front of .libPaths() if not present
@@ -319,16 +322,20 @@ ve.load.dependencies <- function(pkg.desc,debug=FALSE) {
     }
   }        
 
-  # Prepare to copy dependencies into a local repository
-  # We do it this way to make it easier later to build an offline installer where all the
-  # downloaded dependency packages get zipped up with the VE stuff
-
-  # Build local repository file tree if not present to receive packages
-  if ( ! dir.exists(bld.env$dependencies.contriburl) ) {
-    # Grab the build support packages as the basis for the repository since they are needed
-    # independently of any particular VE package dependencies.
-    miniCRAN::makeRepo(support.packages, path = ve.dependencies, repos=repos.online, type=bld.env$build.type)
-  }
+  # Install VE package dependencies
+# TODO: trying to do without this step
+#   # Prepare to copy dependencies into a local repository
+#   # We do it this way to make it easier later to build an offline installer where all the
+#   # downloaded dependency packages get zipped up with the VE stuff
+#   # TODO: in practice, we're only zipping up ve-lib, rather than providing installable dependencies
+#   # So this may be overkill
+# 
+#   # Build local repository file tree if not present to receive packages
+#   if ( ! dir.exists(bld.env$dependencies.contriburl) ) {
+#     # Grab the build support packages as the basis for the repository since they are needed
+#     # independently of any particular VE package dependencies.
+#     miniCRAN::makeRepo(support.packages, path = ve.dependencies, repos=repos.online, type=bld.env$build.type)
+#   }
 
   # Remove from pkg.deps any that are installed.
   # If a dependency was installed or built outside the current request, we're okay with that.
@@ -340,34 +347,39 @@ ve.load.dependencies <- function(pkg.desc,debug=FALSE) {
   # This makes a loooong list...
   if ( length(pkg.deps) > 0 ) {
     expanded.deps <- miniCRAN::pkgDep( pkg.deps, repos=repos.online, suggests=FALSE)
-    missing.packages <- findMissingPackages(expanded.deps, repos=ve.dependencies.url, repo.type=bld.env$build.type )
   } else {
-    missing.packages <- character(0)
     expanded.deps <- character(0)
   }
 
-  # Make sure the repository is complete (and if it is, try updating it)
-  if ( length(missing.packages) > 0 ) {
-    miniCRAN::addPackage(missing.packages, path=ve.dependencies, repos=repos.online, type=bld.env$build.type, deps=TRUE)
-  } else if ( length(expanded.deps) > 0 ) {
-    miniCRAN::updatePackages(oldPkgs=expanded.deps, path=ve.dependencies, repos=repos.online, type=bld.env$build.type, ask=FALSE)
-  }
+# TODO: Don't bother saving downloaded dependency packages - just install them directly into ve-lib
+#   # Make sure the repository is complete (and if it is, try updating it)
+#   # TODO: Maybe we just want to install these in ve-lib rather than saving a full repository
+#   if ( length(missing.packages) > 0 ) {
+#     miniCRAN::addPackage(missing.packages, path=ve.dependencies, repos=repos.online, type=bld.env$build.type, deps=TRUE)
+#   } else if ( length(expanded.deps) > 0 ) {
+#     miniCRAN::updatePackages(oldPkgs=expanded.deps, path=ve.dependencies, repos=repos.online, type=bld.env$build.type, ask=FALSE)
+#   }
 
-  # Complete installing those downloaded packages into ve-lib for runtime use
+  # Install dependencies into ve-lib for runtime use
+  # TODO: just do the installation directly from repos.online without saving the packages
   deps.missing <- pkg.deps[ ! pkg.deps %in% inst.pkgs ]
   if ( length(deps.missing) > 0 ) {
     cat("Installing missing dependencies...\n")
     print(deps.missing)
-    utils::install.packages(deps.missing, lib=ve.lib, contriburl=paste0("file:///",bld.env$dependencies.contriburl),type=bld.env$build.type )
+#     utils::install.packages(deps.missing, lib=ve.lib, contriburl=paste0("file:///",bld.env$dependencies.contriburl),type=bld.env$build.type )
+    utils::install.packages(deps.missing, lib=ve.lib, repos=repos.online,type=bld.env$build.type )
   }
 
-  # Now load the remaining support packages (needed for doing the package build)
-  for ( pkg in support.packages ) {
-    if ( ! suppressWarnings(requireNamespace(pkg,quietly=TRUE)) ) {
-      utils::install.packages(pkg, lib=ve.lib, contriburl=paste0("file:///",bld.env$dependencies.contriburl), type=bld.env$build.type )
-      suppressWarnings(requireNamespace(pkg,quietly=TRUE))
-    }
-  }
+# TODO: the following is overkill - we incorporated support.packages into pkg.deps earlier
+#   # Install the remaining support packages (needed for doing the package build)
+#   
+#   for ( pkg in support.packages ) {
+#     if ( ! suppressWarnings(requireNamespace(pkg,quietly=TRUE)) ) {
+# #       utils::install.packages(pkg, lib=ve.lib, contriburl=paste0("file:///",bld.env$dependencies.contriburl), type=bld.env$build.type )
+#       utils::install.packages(pkg, lib=ve.lib, repos=repos.online, type=bld.env$build.type )
+#       suppressWarnings(requireNamespace(pkg,quietly=TRUE))
+#     }
+#   }
 }
 
 ve.build.packages <- function(pkg.desc,reset=FALSE,check=TRUE,debug=FALSE) {
@@ -406,8 +418,12 @@ ve.build.packages <- function(pkg.desc,reset=FALSE,check=TRUE,debug=FALSE) {
   bld.env <- getBuildEnvironment()
   # Packages get built into a local repository; this step updates the Package index
   # so the repository stays well-formed.
+  # We'll always rewrite the PACKAGES file even if nothing got built.
   cat("\nFinalizing VisionEval package bundle.\n")
   tools::write_PACKAGES(bld.env$build.contriburl, type=bld.env$build.type)
+  if ( bld.env$build.type != "source" ) {
+    tools::write_PACKAGES(bld.env$build.contriburl.src, type="source")
+  }
 }
 
 # pkg is a description object from pkg.desc list
