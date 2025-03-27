@@ -94,7 +94,8 @@ getRuntimeEnvironment <- function() {
 startVisionEval <- function(
   ve.home=NULL,ve.runtime=NULL,
   overwrite=FALSE,
-  ve.lib.name="ve-lib"
+  ve.lib.name="ve-lib",
+  debug=FALSE
 ) {
   ve.pkg.repo <- "pkg-ve-repo" # from VEBuild - local set of packages
 
@@ -109,20 +110,7 @@ startVisionEval <- function(
       ve.home <- Sys.getenv("VE_HOME",getwd())
     }
   }
-  if ( exists("ve.build.dir",ve.env,inherits=FALSE) ) {
-    # VE_BUILD is the target location for VEBuild, where VE_HOME is the location of the buildable
-    # source code - usually set up through VE_Bootstrap.R
-    ve.build.dir <- ve.env$ve.build.dir
-  } else {
-    ve.build.dir <- Sys.getenv("VE_BUILD",file.path(ve.home,"built")) # Just in case we're loading from a build environment
-  }
-  if ( exists("ve.build.dir",ve.env,inherits=FALSE) ) {
-    # VE_BUILD is the target location for VEBuild, where VE_HOME is the location of the buildable
-    # source code - usually set up through VE_Bootstrap.R
-    ve.build.dir <- ve.env$ve.build.dir
-  } else {
-    ve.build.dir <- Sys.getenv("VE_BUILD",file.path(ve.home,"built")) # Just in case we're loading from a build environment
-  }
+  message("launch ve.home: ",ve.home)
   # set up VE_SOURCE (only used when building, but we want to preserve it in .Renviron)
   if ( exists("ve.sources",ve.env,inherits=FALSE) ) {
     ve.sources <- ve.env$ve.sources
@@ -130,7 +118,9 @@ startVisionEval <- function(
     ve.sources <- Sys.getenv("VE_SOURCE",as.character(NA))
   }
 
-  ve.runtime <- Sys.getenv("VE_RUNTIME",as.character(NA))
+  # ve.runtime can be made non-missing by providing an existing directory or setting it to NA
+  # (it defaults when missing to NULL)
+  message("Launched runtime: ",ve.runtime)
   if ( is.na(ve.runtime) ) {
     home.as.runtime <- askYesNo(paste("Install VisionEval 'models' folder in",ve.home,"?"))
     if ( is.na(home.as.runtime) ) {
@@ -151,6 +141,7 @@ startVisionEval <- function(
       stop("Installation cancelled.")
     }
   } else ve.runtime <- ve.home
+  message("Selected runtime: ",ve.runtime)
 
   message("Setting up VE_RUNTIME as ",ve.runtime)
   message("You will want to start VisionEval from that folder.")
@@ -181,22 +172,18 @@ startVisionEval <- function(
   if ( ! dir.exists(ve.env$ve.lib) ) dir.create(ve.env$ve.lib,recursive=TRUE)
   .libPaths(ve.env$ve.lib)
 
-#   # Initialize the VE installed package library
-#   # TODO: do we want to do package updates or launch a re-install from here?
-#   # Note that VEStart won't update until we re-run the standard .Rprofile that ve.setup installs
-#   ve.init(lib.loc=ve.env$ve.lib,repos=repos,update=update)
-
   # The following is key for setting up the basic operation
   # NOTE: if VE_HOME is a Github clone, we don't want to mess with the .Rprofile
   # Check and construct startup files in VE_RUNTIME and (optionally) VE_HOME if the latter is different from VE_RUNTIME
   # Configure ve.runtime (.Renviron etc.)
+  # TODO: this setup isn't working on a VE4-install.
   ve.setup(ve.home,ve.runtime,overwrite=overwrite)
 
   # Make installed library path active (set VE_HOME, with ve.env$ve.lib in .Renviron
   if ( ! ve.env$ve.lib %in% .libPaths() ) {
     # This will crap out for some reason if we try to add ve.lib and it's already there
     # That's a bug in R circa 4.4.x
-    .libPaths(ve.env$ve.lib) # Update .libPaths
+    .libPaths(ve.env$ve.lib) # Update .libPaths # Also gets rid of other non-base paths
   }
 
   # Load VEModel
