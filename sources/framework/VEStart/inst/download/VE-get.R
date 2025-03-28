@@ -1,9 +1,10 @@
-# This "script" is a one-liner that can be copied from the website to
-# the user's R in order to start using VisionEval. See install.R for
+# This "script" is a one-liner that can be modified and placed on the website to
+# the user's R in order to start using VisionEval. See VE4-install.R for
 # what happens after that.
 
-# The website has the following code, and the script lives in
-# visioneval.github.io/assets/install
-# source("https://visioneval.github.io/assets/install/VE4-install.R")
+# To test the installation function locally, use ve.test.install() from within VE-Bootstrap.R
+# (or after loading the VEBuild package).
 
-source(file="file:///C:/Git-Repos/VisionEval-dev-VE40/sources/framework/VEStart/inst/download/VE4-install.R")
+# The website has the following code, and the script lives in visioneval.github.io/assets/install
+# Keep the assets/install version of VE4-install.R up to date with this file in VEStart/inst/download
+source("https://visioneval.github.io/assets/install/VE4-install.R")

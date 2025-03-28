@@ -132,6 +132,10 @@
 
 require(tcltk,quietly=TRUE)
 
+cache.releases <- FALSE
+# remove comment on the following to cache online release information (Warning: won't update)
+# cache.releases <- TRUE
+
 ####### Establish working environment
 
 # Note that this differs in subtle but important ways from the working environment set up in
@@ -150,40 +154,80 @@ ve.env.list <- ls(ve.env)
 ve.home <- Sys.getenv("VE_INSTALL",NA)  # VE_INSTALL can be used as a bare VE_HOME for testing
 if ( is.na(ve.home) ) {
   ve.home <- if ( ! "ve.home" %in% ve.env.list ) {
-    ve.env$ve.home <- Sys.getenv("VE_HOME",getwd())
+    ve.env$ve.home <- Sys.getenv("VE_HOME",NA)
+    if ( is.na(ve.home) ) {
+      ve.home <- getwd()
+    } else home.from <- "VE_HOME"
   } else {
+    home.from("Existing ve.env")
     ve.env$ve.home
   }
 } else {
-  Sys.setenv(VE_HOME=ve.home) # override VE_HOME with VE_INSTALL just for testing
+  home.from <- "VE_INSTALL"
+  Sys.setenv(VE_HOME=ve.home) # override VE_HOME with VE_INSTALL for the remainder of testing
 }
 
-if ( ! dir.exists(ve.home) ) dir.create(ve.home,recursive=TRUE)
-setwd(ve.home)
+# Confirm installation location
 
-if ( length(dir(ve.home)) > 0 ) {
-  confirm <- tkmessageBox(
-    title = "Invalid VE_HOME Directory", icon = "warning", type = "yesno",
-    message = paste(
-      "The VE_HOME directory for installation is not empty:\n",
-      ve.home,"\n\n",
-      "Would you like to find or create a different one?"
+select.ve.home.dialog <- function(ve.home) {
+  
+  tt <- tktoplevel()
+  tkwm.title(tt, "Select installation directory (VE_HOME)")
+  tkwm.maxsize(tt, 800, 10000) # we don't expect to expand vertically
+
+  tcl_original_VE_HOME <- tclVar(ve.home)
+  tcl_VE_HOME          <- tclVar(ve.home)
+
+  select_directory <- function() {
+    dir_path <- tclvalue(tkchooseDirectory(initialdir=ve.home,title="Select VE_HOME"))
+    tclvalue(tcl_VE_HOME) <- if (dir_path != "") {
+      dir_path
+    } else {
+      getwd()
+    }
+  }
+
+  directory_button <- tkbutton(tt, text = "Change VE_HOME", command = select_directory)
+  tkgrid(directory_button, column = 0, row = 0, sticky = "e", padx = 5, pady = 5)
+
+  directory_frame <- tkframe(tt, borderwidth = 2, relief = "groove")
+  directory_label <- tklabel(directory_frame,textvariable=tcl_VE_HOME, justify="left")
+  tkpack(directory_label,anchor="w",padx=5,pady=5) # pack inside frame
+
+  tkgrid(directory_frame, column = 1, row = 0, sticky="ew", padx = 5, pady = 5)
+
+  VE_Instructions <- tclVar(
+    paste0(
+      "VE_HOME is the directory where VisionEval will be installed."
     )
   )
-  if ( as.character(confirm) != "yes" ) {
-    stop("Please start the VisionEval installation again in an empty folder.",call.=FALSE)
+
+  instructions <- tklabel(tt,textvariable=VE_Instructions,justify="left")
+  tkgrid(instructions, column=1, row=1, padx = 5, pady = 5, sticky="ew")
+
+  # OK and Cancel buttons
+  onOK <- function() {
+    tkdestroy(tt)
   }
-  caption <- "Select installation directory (VE_HOME)"
-  ve.home <- if (exists('utils::choose.dir')) { # Won't exist on non-Windows platforms
-    utils::choose.dir(default=ve.home,caption = caption)
-  } else {
-    tcltk::tk_choose.dir(default=ve.home,caption = caption)
-  }
-  if ( is.na(ve.home) || ! dir.exists(ve.home) ) {
-    message("Please select (or create) an empty VE_HOME directory for installation")
-    stop("Installation cancelled.",call.=FALSE)
-  }
+
+  ok_button <- tkbutton(tt, text = "Done", command = onOK)
+
+  tkgrid(ok_button, column = 0, row = 2, sticky="e", padx = 5, pady = 5)
+
+  tkgrid.columnconfigure(tt, 1, weight = 1) #Make the second column expandable.
+
+  tkbind(tt, "<Return>", function() {
+    onOK()
+  })
+
+  tkwait.window(tt)
+
+  return( if ( tclvalue(tcl_VE_HOME) != ve.home ) tclvalue(tcl_VE_HOME) else ve.home )
 }
+
+ve.home <- select.ve.home.dialog(ve.home)
+
+if ( dir.exists(ve.home) ) setwd(ve.home) else stop(call.=FALSE,"Installation Cancelled. VE_HOME directory does not exist")
 
 ve.env$this.R <- paste(c(R.version["major"],R.version["minor"]),collapse=".")
 ve.env$two.digit.R <- tools::file_path_sans_ext(this.R)
@@ -203,51 +247,50 @@ config.file <- file.path(ve.home,"ve-install-config.yml")
 
 # Default repository list for releases
 default.ve.repository <- list(
-  list(user="jrawbits",repository=c("visioneval-jr","visioneval-40")),   # test repository
-  list(user="visioneval",repository=c("visioneval-dev","visioneval-40"))  # public repository
+  list(user="jrawbits",repository=c("visioneval-jr")),   # test repository
+  list(user="visioneval",repository=c("visioneval-40"))  # public repository
 )
 
 if ( ! requireNamespace("yaml",lib.loc=inst.lib,quietly=TRUE) ) {
-install.packages("yaml",repos="https://cloud.r-project.org",lib=inst.lib)
-requireNamespace("yaml",lib.loc=inst.lib,quietly=TRUE)
+  install.packages("yaml",repos="https://cloud.r-project.org",lib=inst.lib)
+  requireNamespace("yaml",lib.loc=inst.lib,quietly=TRUE)
 }
 
 install.config <- if ( file.exists(config.file) ) {
   load.config <- try( silent=TRUE, yaml::yaml.load_file(config.file) ) # will throw error if file is improperly configured
   if ( is.list(load.config) ) {
-    # Confirm use of custom destination
-    cat("Install Configuration from ve-install-config.yml:\n")
-    cat(yaml::as.yaml(load.config))
-    response <- tkmessageBox(
-      title = "Use Loaded Configuration?", icon = "question", type = "yesno",
-      message = "Do you want to use the displayed configuration?"
-    )
-    if ( as.character(response) != "yes" ) stop(call.=FALSE,"Installation cancelled: Edit ve-install-config.yml.")
+#     # Confirm use of custom destination
+#     cat("Install Configuration from ve-install-config.yml:\n")
+#     cat(yaml::as.yaml(load.config))
+#     response <- tkmessageBox(
+#       title = "Use Loaded Configuration?", icon = "question", type = "yesno",
+#       message = "Do you want to use the displayed configuration?"
+#     )
+#     if ( as.character(response) != "yes" ) stop(call.=FALSE,"Installation cancelled: Edit ve-install-config.yml.")
   } else message("Failed to load configuration from:\n",config.file)
   load.config
 } else {
   default.config <- list(
-    default.config=TRUE,
     ve.distributions=default.ve.repository
   )
-  config.txt <- yaml::as.yaml(default.config)
-  response <- tkmessageBox(
-    title = "Install Defaults?", icon = "question", type = "yesno",
-    message = paste0(
-      "Installing VisionEval in '",ve.home,"'\n\n",
-      "You haven't set up ve-install-config.yml yet.\n\n",
-      "Do you want to install VisionEval using these defaults?\n\n",
-      config.txt
-    )
-  )
-  if ( as.character(response) != "yes" ) stop(call.=FALSE,"Installation cancelled; please edit ve-install-config.yml")
+#   config.txt <- yaml::as.yaml(default.config)
+#   response <- tkmessageBox(
+#     title = "Install Defaults?", icon = "question", type = "yesno",
+#     message = paste0(
+#       "Installing VisionEval in '",ve.home,"'\n\n",
+#       "You haven't set up ve-install-config.yml yet.\n\n",
+#       "Do you want to install VisionEval using these defaults?\n\n",
+#       config.txt
+#     )
+#   )
+#   if ( as.character(response) != "yes" ) stop(call.=FALSE,"Installation cancelled; please edit ve-install-config.yml")
   default.config
 }
 
 ####### process the installation
 
-installVisionEval <- function(config=install.config) { # no function parameters right now
-  installer <- selectInstaller(config)   # pick an available installer
+installVisionEval <- function(config=install.config,cache=cache.releases) { # no function parameters right now
+  installer <- selectInstaller(config,cache=cache)   # pick an available installer
   retrieved <- fetchInstaller(installer) # confirms downloaded location and MANIFEST type
   launch    <- doInstallation(retrieved) # launch selects "end user" or "builder"
 }
@@ -271,8 +314,8 @@ installer.pattern <- paste0(
 
 isVEInstaller <- function(filename) all(grepl(installer.pattern,filename))
 
-getReleases <- function(config) {
-  # Configured for testing so as not to hit Github API over and over (they are rate limited)
+getReleases <- function(config,cache=FALSE) {
+  # Option to cach results during testing so as not to hit Github API over and over (they are rate limited)
   if ( ! requireNamespace("rjson",lib.loc=inst.lib,quietly=TRUE) ) {
     install.packages("rjson",repos="https://cloud.r-project.org",lib=inst.lib)
     requireNamespace("rjson",lib.loc=inst.lib,quietly=TRUE)
@@ -299,9 +342,10 @@ getReleases <- function(config) {
           next
         }
         releases <- rjson::fromJSON(file=paste0(repo.addr,"/releases"))
-#         TODO: Uncomment the above to save release data for later review
-#         writeLines(rjson::toJSON(releases,indent=2),con="Raw-release.json")
-
+        if ( cache ) {
+          # Cache results during testing
+          writeLines(rjson::toJSON(releases,indent=2),con="Raw-release.json")
+        }
         release.data <- list()
         for ( r in releases ) {
           r.temp <- list(
@@ -359,9 +403,45 @@ getReleases <- function(config) {
         }
       }
     }
-    # NOTE: Save JSON locally when testing (Github API is rate-limited)
-#     message("Saving test file")
-#     writeLines(rjson::toJSON(all.releases,indent=2),con=test.file)
+    if ( ! is.na(ve.build <- Sys.getenv("VE_BUILD",NA) ) ) {
+      if ( dir.exists(local.installers <- file.path(ve.build,"install") ) ) { # Locally built installers
+        local.installers <- rev(dir(local.installers,full.names=TRUE))
+        local.installers <- local.installers [ # put them in order of desirability
+          grepout <- c(
+            grep("Windows",local.installers),
+            grep("WinLibrary",local.installers),
+            grep("Source",local.installers)
+          )
+        ]
+        local.files <- list()
+        for ( file in local.installers ) {
+          if( isVEInstaller(file) ) {
+            local.files[[basename(file)]] <- list(
+              timeout = 0,
+              url     = "file",
+              file    = file
+            )
+          }
+        }
+        if ( length(local.files) > 0 ) {
+          r.temp <- list(
+            release="Locally Built Installers",
+            date=as.character(Sys.Date()),
+            id=0,
+            assets=local.files
+          )
+          release.data <- list()
+          release.data[["Local Installers"]] <- r.temp
+          all.releases[["Local Installers"]] <- release.data
+        } else stop(call.=FALSE,"No local installers have been built for ",this.R)
+      }
+    }
+    if ( cache ) {
+      # Cache release results for use during testing
+      message("Saving test file")
+      writeLines(rjson::toJSON(all.releases,indent=2),con=test.file)
+      stop(call.=FALSE,"Stop to review all.releases")
+    }
   }
   return(all.releases)
 }
@@ -415,9 +495,7 @@ setup.dialog <- function(all.releases,max_width=800) {
 
     tkgrid(lb1,row=0,column=0,padx=5,pady=5,sticky="ew")
     tkgrid.columnconfigure(lb.frame,0,weight=1)
-    message(length(items)," items to insert.")
     for (item in items) {
-      message("inserting ",item)
       tkinsert(lb1, "end", item)
     }
     tkselection.set(lb1,0)
@@ -446,6 +524,8 @@ setup.dialog <- function(all.releases,max_width=800) {
 
     tkgrid.columnconfigure(tt, 0, weight = 1)
     tkgrid.rowconfigure(tt, 0, weight = 1)
+
+    tkwait.window(tt) # Run the dialog
   }
 
   # Here's the GUI driver that shows what has been selected to install and allows
@@ -463,6 +543,7 @@ setup.dialog <- function(all.releases,max_width=800) {
 
       # Run the selection dialog, then look up the selected release and choose the
       # default installer from that release.
+      message("Selecting new repository")
       select_from_list(tt,repository,repos.list) # will update repository variable
       release_list <- all.releases[[tclvalue(repository)]]
       tclvalue(release) <- names(release_list)[1] # reset to first release
@@ -477,6 +558,8 @@ setup.dialog <- function(all.releases,max_width=800) {
       # If release changes, change the installer to the default one.
       select_from_list(tt,release,release_list) # will update repository variable
       inst_list <- all.releases[[tclvalue(repository)]][[tclvalue(release)]][[getAssetType()]]
+      message("Updating installer list for ",tclvalue(release))
+      print(inst_list)
       tclvalue(installer) <- names(inst_list)[1]
     })
 
@@ -533,9 +616,13 @@ setup.dialog <- function(all.releases,max_width=800) {
     tkgrid.columnconfigure(tt, 1, weight = 1) #Make the second column expandable.
 
     tkbind(tt, "<Return>", function() {
-      tkinvoke(ok_button, "command") #invokes the command assigned to the button.
+      onOK()
     })
-
+    tkbind(tt, "i", function() {
+      onOK()
+    })
+    
+    tkfocus(tt)
     tkwait.window(tt) # Run the dialog
     
     return( # Relay tclVar variables back out to calling environment
@@ -552,9 +639,9 @@ setup.dialog <- function(all.releases,max_width=800) {
   return( create_dialog(max_width=max_width) )
 }
 
-selectInstaller <- function(config) {
+selectInstaller <- function(config,cache=FALSE) {
 
-  all.releases <- getReleases(config)
+  all.releases <- getReleases(config,cache=cache)
   selected <- setup.dialog(all.releases)
 
   if ( selected$DoIt != "Install" ) {
@@ -605,19 +692,23 @@ fetchInstaller <- function(installer) {
   # File name has attribute distinguishing VE Installer from Github snapshot (Source Code)
   download <- file.path(ve.home,"download")
   if ( ! dir.exists( download ) ) dir.create(download,recursive=TRUE)
-  if ( ! installer$file %in% dir(download) ) { # Shorten restart if there was a previous download
-    options(timeout = max(installer$timeout, getOption("timeout")))
-    message("Timeout: ",getOption("timeout")," seconds")
-    destfile <- file.path(download,installer$file)
-    download.file(installer$url,destfile=destfile,method="libcurl",mode="wb")
-    # use method=libcurl so download.file follows redirect links
+  if ( ! basename(installer$file) %in% dir(download) ) { # Shorten restart if there was a previous download
+    if ( installer$url == "file" ) {
+      file.copy(installer$file, download) # Copy local installer
+    } else { # need to download it
+      options(timeout = max(installer$timeout, getOption("timeout")))
+      message("Timeout: ",getOption("timeout")," seconds")
+      destfile <- file.path(download,installer$file)
+      download.file(installer$url,destfile=destfile,method="libcurl",mode="wb")
+      # use method=libcurl so download.file follows redirect links
+    }
   } else {
     message("Installer has already been downloaded.")
     message("Install can be found in ",download)
     message("installer$file is ",installer$file)
     message("For a clean install, remove the downloads directory in VE_HOME")
   }
-  retrieved <- dir(download,full.names=TRUE,pattern=installer$file)
+  retrieved <- dir(download,full.names=TRUE,pattern=basename(installer$file))
   attr(retrieved,"InstallType") <- installTypeOf(retrieved)
   message("InstallType is ",attr(retrieved,"InstallType"))
   invisible(retrieved) # name of downloaded file with attribute stating "Runtime" or "Build" install type
