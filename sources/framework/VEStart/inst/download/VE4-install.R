@@ -167,6 +167,19 @@ if ( is.na(ve.home) ) {
   Sys.setenv(VE_HOME=ve.home) # override VE_HOME with VE_INSTALL for the remainder of testing
 }
 
+# Helper function for making an info button
+question_button_font <- tkfont.create(size = 11)
+info_button <- function(parent.frame,popup.text) {
+  # Use \u2753 Unicode character for question mark
+  tkbutton(
+    parent.frame,
+    text = "\u2753", font = question_button_font, fg="green",
+    command = function() {
+      tkmessageBox(message = popup.text, icon = "info")
+    }
+  )
+}
+
 # Confirm installation location
 
 select.ve.home.dialog <- function(ve.home) {
@@ -196,26 +209,27 @@ select.ve.home.dialog <- function(ve.home) {
 
   tkgrid(directory_frame, column = 1, row = 0, sticky="ew", padx = 5, pady = 5)
 
-  VE_Instructions <- tclVar(
-    paste0(
-      "VE_HOME is the directory where VisionEval will be installed."
-    )
+  tkgrid(
+    info_button(tt,
+      paste(sep="",
+        "VE_HOME is the directory where VisionEval will be installed. ",
+        "This home directory should ideally be empty before you continue the installation.\n\n",
+        "The default is the directory from which you started R. ",
+        "You can use the 'Change VE_HOME' button to pick a different directory (or create a new on) for your installation.\n\n",
+        "After the installation is finished, you can set a separate directory to hold your VisionEval models (VE_RUNTIME)."
+      )
+    ), column=2,row=0,padx=5,pady=5
   )
-
-  instructions <- tklabel(tt,textvariable=VE_Instructions,justify="left")
-  tkgrid(instructions, column=1, row=1, padx = 5, pady = 5, sticky="ew")
 
   # OK and Cancel buttons
   onOK <- function() {
     tkdestroy(tt)
   }
 
-  ok_button <- tkbutton(tt, text = "Done", command = onOK)
-
-  tkgrid(ok_button, column = 0, row = 2, sticky="e", padx = 5, pady = 5)
+  ok_button <- tkbutton(tt, text = "Select", command = onOK)
+  tkgrid(ok_button, column = 1, row = 1, sticky="w", padx = 5, pady = 5)
 
   tkgrid.columnconfigure(tt, 1, weight = 1) #Make the second column expandable.
-
   tkbind(tt, "<Return>", function() {
     onOK()
   })
@@ -248,7 +262,7 @@ config.file <- file.path(ve.home,"ve-install-config.yml")
 # Default repository list for releases
 default.ve.repository <- list(
   list(user="jrawbits",repository=c("visioneval-jr")),   # test repository
-  list(user="visioneval",repository=c("visioneval-40"))  # public repository
+  list(user="visioneval",repository=c("visioneval-dev"))  # public repository
 )
 
 if ( ! requireNamespace("yaml",lib.loc=inst.lib,quietly=TRUE) ) {
@@ -259,31 +273,12 @@ if ( ! requireNamespace("yaml",lib.loc=inst.lib,quietly=TRUE) ) {
 install.config <- if ( file.exists(config.file) ) {
   load.config <- try( silent=TRUE, yaml::yaml.load_file(config.file) ) # will throw error if file is improperly configured
   if ( is.list(load.config) ) {
-#     # Confirm use of custom destination
-#     cat("Install Configuration from ve-install-config.yml:\n")
-#     cat(yaml::as.yaml(load.config))
-#     response <- tkmessageBox(
-#       title = "Use Loaded Configuration?", icon = "question", type = "yesno",
-#       message = "Do you want to use the displayed configuration?"
-#     )
-#     if ( as.character(response) != "yes" ) stop(call.=FALSE,"Installation cancelled: Edit ve-install-config.yml.")
   } else message("Failed to load configuration from:\n",config.file)
   load.config
 } else {
   default.config <- list(
     ve.distributions=default.ve.repository
   )
-#   config.txt <- yaml::as.yaml(default.config)
-#   response <- tkmessageBox(
-#     title = "Install Defaults?", icon = "question", type = "yesno",
-#     message = paste0(
-#       "Installing VisionEval in '",ve.home,"'\n\n",
-#       "You haven't set up ve-install-config.yml yet.\n\n",
-#       "Do you want to install VisionEval using these defaults?\n\n",
-#       config.txt
-#     )
-#   )
-#   if ( as.character(response) != "yes" ) stop(call.=FALSE,"Installation cancelled; please edit ve-install-config.yml")
   default.config
 }
 
@@ -293,6 +288,124 @@ installVisionEval <- function(config=install.config,cache=cache.releases) { # no
   installer <- selectInstaller(config,cache=cache)   # pick an available installer
   retrieved <- fetchInstaller(installer) # confirms downloaded location and MANIFEST type
   launch    <- doInstallation(retrieved) # launch selects "end user" or "builder"
+}
+
+# TclTk dialog to present a list box with choices
+# Used to select repositories (if more than one configured), releases, and installers
+
+select.from.list <- function(parent_window, dest_var, items, title="Make a Selection") {
+  tt <- tktoplevel(parent = parent_window)
+  tkwm.title(tt, title)
+
+  original_var <- tclVar(tclvalue(dest_var))
+
+  Instructions <- tklabel(tt,text=title,justify="center")
+  tkgrid(Instructions, row=0, column=0, sticky="ew",pady=5)
+
+  lb.frame <- tkframe(tt,borderwidth=2,relief="solid")
+  lb1 <- tklistbox(lb.frame, selectmode = "single", height=0, width=0)
+
+  tkgrid(lb1,row=0,column=0,padx=5,pady=5,sticky="ew")
+  tkgrid.columnconfigure(lb.frame,0,weight=1)
+  for (item in items) {
+    tkinsert(lb1, "end", item)
+  }
+  tkselection.set(lb1,0)
+  tkgrid(lb.frame, row = 1, column = 0, sticky = "ew", padx=5, pady=5)
+
+  onOK <- function() {
+    selection <- as.integer(tcl(lb1, "curselection")) + 1
+    if (length(selection) > 0) {
+      tclvalue(dest_var) <- items[selection]
+    }
+    tkdestroy(tt)
+  }
+
+  onCancel <- function() { # leave dest_var unchanged
+    tclvalue(dest_var) <- tclvalue(original_var)
+    tkdestroy(tt)
+  }
+
+  button.frame <- tkframe(tt)
+  ok_button <- tkbutton(button.frame, text = "OK", command = onOK)
+  cancel_button <- tkbutton(button.frame, text = "Cancel", command = onCancel)
+
+  tkgrid(ok_button, row = 0, column = 0, padx = 5, pady = 5,sticky="e")
+  tkgrid(cancel_button, row = 0, column = 1, padx = 5, pady = 5,sticky="w")
+  tkgrid(button.frame,row=2,column=0)
+
+  tkgrid.columnconfigure(tt, 0, weight = 1)
+  tkgrid.rowconfigure(tt, 0, weight = 1)
+
+  tkwait.window(tt) # Run the dialog
+}
+
+# Helper dialog for selecting installer type (for which releases will be offered)
+
+get.buildtype.dialog <- function() {
+  # Dialog values to update
+  # Keep track of whether we're doing a runtime or build installation
+  # And which repository, release and installer we've selected
+
+  tt <- tktoplevel()
+  tkwm.title(tt, "Set up Installation")
+
+  build.type <- tclVar("Release")                 # Options: Release, Build Release Snapshot, Build Local Clone
+
+  options = c("Release","Build Release Snapshot", "Build Local Clone")
+
+  # Build Type Selector
+  combo <- tklistbox(tt, height = length(options), selectmode = "single", exportselection = FALSE)
+  for (option in options) {
+    tkinsert(combo, "end", option)
+  }
+
+  # Installation Type Dialog
+
+  radio_frame <- tkframe(tt)
+  radio1 <- tkradiobutton(radio_frame, text = "Pre-Built Release (recommended)", variable = build.type, value = options[1])
+  radio2 <- tkradiobutton(radio_frame, text = "Build from Release Code", variable = build.type,         value = options[2])
+  radio3 <- tkradiobutton(radio_frame, text = "Build from Local Clone", variable = build.type,          value = options[3])
+
+  tkgrid(radio1,row=0,column=0,padx=5,pady=2,sticky="w")
+  tkgrid(radio2,row=1,column=0,padx=5,pady=2,sticky="w")
+  tkgrid(radio3,row=2,column=0,padx=5,pady=2,sticky="w")
+  tkgrid(radio_frame,row=0,column=0,padx=5,pady=5,sticky="w")
+
+  instructions <- paste(sep="",
+    "Select how you would like to install VisionEval.\n\n",
+    "* Pre-Built Release, the recommend choice, will show available VisionEval releases for your version of R.\n\n",
+    "* Build from Release Code will let you select a (very large) release zip file and run its build script.\n\n",
+    "* Build from Local Clone is the preferred way to build VisionEval from the ground up.",
+    "You will need to install Git, clone the repository, and check out the branch you would like to build",
+    " before re-running this installation script.\n\n",
+    "Building from a Local Clone is recommended",
+    " if you are planning to make code changes you would like to save or to contribute back to the VisionEval project.\n\n",
+    "NOTE: If there is not a pre-built release for your version of R or your operating system, you can still select 'Pre-Built Release' ",
+    " but it will require you to build the VisionEval packages.\n\n",
+    "For any of the build options on Windows, or if there is no pre-built release available, you will need to have installed RTools.",
+    "See the VisionEval online documentation for information on obtaining RTools. Mac OS and Linux usually already have the required tools."
+  )
+
+  onOK <- function() tkdestroy(tt)
+  onCancel <- function() {
+    tclvalue(build.type) <- "Cancel"
+    tkdestroy(tt)
+  }
+
+  button_frame <- tkframe(tt)
+  ok_button <- tkbutton(button_frame, text = "OK", command = onOK)
+  cancel_button <- tkbutton(button_frame, text = "Cancel", command = onCancel)
+  tkgrid(ok_button, row = 0, column = 0, padx = 5, pady = 5, sticky="w")
+  tkgrid(cancel_button, row = 0, column = 1, padx = 5, pady = 5, sticky="w")
+  tkgrid(info_button(button_frame,instructions), row = 0, column = 2, padx = 5, pady = 10, sticky="e")
+  tkgrid.columnconfigure(button_frame,2,weight = 1)
+  tkgrid(button_frame,row=1,column=0,padx=5,pady=5,sticky="ew")
+  tkgrid.columnconfigure(tt, 0, weight = 1)
+
+  tkwait.window(tt) # Run the dialog
+
+  return( tclvalue(build.type) )
 }
 
 ####### getAllReleases from distributions (plus local built if any)
@@ -314,22 +427,29 @@ installer.pattern <- paste0(
 
 isVEInstaller <- function(filename) all(grepl(installer.pattern,filename))
 
-getReleases <- function(config,cache=FALSE) {
+getReleases <- function(build.type,config,cache=FALSE) {
   # Option to cach results during testing so as not to hit Github API over and over (they are rate limited)
   if ( ! requireNamespace("rjson",lib.loc=inst.lib,quietly=TRUE) ) {
     install.packages("rjson",repos="https://cloud.r-project.org",lib=inst.lib)
     requireNamespace("rjson",lib.loc=inst.lib,quietly=TRUE)
   }
-  if ( file.exists(test.file<-"Test-Skip-Download.json") ) {
+  if ( file.exists(test.file<-paste0("Test-Skip-Download-",build.type,".json")) ) {
     # NOTE: uncomment lines below to save JSON locally for testing
     # You don't want to do that generally since it will block release updates.
     all.releases <- rjson::fromJSON(file=test.file,simplify=FALSE)
-    message("\n##### USING TEST FILE !!! #####")
+    message("\n##### USING TEST FILE for ",build.type," !!! #####")
   } else {
+    # Gather information about Releases
+    # 1. Pre-built release (download) "Release"
+    # 2. Snapshot of a release (download) "Build Release Snapshot" - skips installer selection and returns zipball
+    # 3. Repository clone (already present) "Build Local Clone" - returns empty all.releases
     all.releases <- list()
+    if ( build.type == "Build Local Clone" ) {
+      all.releases <- ve.env$ve.home
+      return(all.releases) # no releases: hunt for local github clone with a VE-Bootstrap.R
+    }
     for ( distro in config$ve.distributions) {
       dist.user <- distro$user
-      message("Github user: ",dist.user)
       for ( repo in distro$repository ) {
         repo.name <- paste(dist.user,repo,sep="/")
         # message("Processing ",repo.name)
@@ -343,7 +463,7 @@ getReleases <- function(config,cache=FALSE) {
         }
         releases <- rjson::fromJSON(file=paste0(repo.addr,"/releases"))
         if ( cache ) {
-          # Cache results during testing
+          # Cache results during testing (only saves one; use for inspecting structure)
           writeLines(rjson::toJSON(releases,indent=2),con="Raw-release.json")
         }
         release.data <- list()
@@ -356,44 +476,51 @@ getReleases <- function(config,cache=FALSE) {
           # The zipball is the complete snapshot of the repository tag
           # that was built into the release. You can use that to set up
           # a VisionEval ve.build() installation without messing with Git.
-          zbname <- paste0("Build_Source_",r$id,".zip")
-          zipball <- list()
-          zipball[[zbname]] <- list(
-            timeout = 1200,
-            url     = r$zipball_url,
-            file    = zbname
-          )
-          r.temp$zipball <- zipball
-
-          # message("Processing release: ",r$name)
-          installers <- list()
-          for ( a in r$assets ) {
-            a.temp <- list(
-              timeout = as.integer(round(a$size/750000,0)),
-              url     = a$browser_download_url,
-              file    = basename(a$browser_download_url)
+          if (build.type == "Build Release Snapshot" ) {
+            installers <- list()
+            zbname <- paste0("Build_Source_",r$id,".zip")
+            zipball <- list()
+            zipball[[zbname]] <- list(
+              timeout = 1200,
+              url     = r$zipball_url,
+              file    = zbname
             )
-            if ( isVEInstaller( a.temp$file ) ) {
-              # message(a.temp$file," IS an installer")
-              installers[[length(installers)+1]] <- a.temp
-            } else {
-              # message(a.temp$file," is NOT an installer (",installer.pattern,")")
-            }
-          }
-          if ( length(installers) > 0 ) { # got a valid release
-            installer.names <- sapply( installers,function(i) i$file )
-            installers <- installers [ # put them in order of desirability
-              c(
-                grep("Windows",installer.names),
-                grep("WinLibrary",installer.names),
-                grep("Source",installer.names)
-              )
-            ]
-            names(installers) <- sapply( installers,function(i) i$file )
-            r.temp$assets <- installers
+            installers[[zbname]] <- zipball
+            r.temp$assets <- zipball
             release.data[[length(release.data)+1]] <- r.temp
-            # message("Release: ",r.temp$release)
-          } # else silently skip releases that do not have VE40 installers
+          } else {
+            # Full list of release assets
+
+            # message("Processing release: ",r$name)
+            installers <- list()
+            for ( a in r$assets ) {
+              a.temp <- list(
+                timeout = as.integer(round(a$size/750000,0)),
+                url     = a$browser_download_url,
+                file    = basename(a$browser_download_url)
+              )
+              if ( isVEInstaller( a.temp$file ) ) {
+                # message(a.temp$file," IS an installer")
+                installers[[length(installers)+1]] <- a.temp
+              } # else {
+                #   message(a.temp$file," is NOT an installer (",installer.pattern,")")
+                # }
+            }
+            if ( length(installers) > 0 ) { # got a valid release
+              installer.names <- sapply( installers,function(i) i$file )
+              installers <- installers [ # put them in order of desirability
+                c(
+                  grep("Windows",installer.names),
+                  grep("WinLibrary",installer.names),
+                  grep("Source",installer.names)
+                )
+              ]
+              names(installers) <- sapply( installers,function(i) i$file )
+              r.temp$assets <- installers
+              release.data[[length(release.data)+1]] <- r.temp
+              # message("Release: ",r.temp$release)
+            } # else silently skip releases that do not have VE40 installers
+          }
         }
         if ( length(release.data) > 0 ) {
           names(release.data) <- sapply( release.data,function(r) paste0(r$release,":",r$date) )
@@ -403,37 +530,45 @@ getReleases <- function(config,cache=FALSE) {
         }
       }
     }
-    if ( ! is.na(ve.build <- Sys.getenv("VE_BUILD",NA) ) ) {
-      if ( dir.exists(local.installers <- file.path(ve.build,"install") ) ) { # Locally built installers
-        local.installers <- rev(dir(local.installers,full.names=TRUE))
-        local.installers <- local.installers [ # put them in order of desirability
-          grepout <- c(
-            grep("Windows",local.installers),
-            grep("WinLibrary",local.installers),
-            grep("Source",local.installers)
-          )
-        ]
-        local.files <- list()
-        for ( file in local.installers ) {
-          if( isVEInstaller(file) ) {
-            local.files[[basename(file)]] <- list(
-              timeout = 0,
-              url     = "file",
-              file    = file
+    # If we're doing standard releases, create a virtual release for installers we may have built
+    # locally. This is intended for testing the install script with updated local intallers.
+    if ( build.type == "Release" && ! is.na(ve.build <- Sys.getenv("VE_BUILD",NA) ) ) {
+      if ( dir.exists(local.releases <- file.path(ve.build,"install") ) ) { # Locally built installers
+        release.data <- list()
+        for ( release.name in dir(local.releases,full.names=TRUE) ) {
+          if ( ! dir.exists(release.name) ) next # may be a file not a folder
+          local.installers <- rev(dir(release.name,full.names=TRUE))
+          local.installers <- local.installers [ # put them in order of desirability
+            c(
+              grep("Windows",local.installers),
+              grep("WinLibrary",local.installers),
+              grep("Source",local.installers)
             )
+          ]
+          local.files <- list()
+          for ( file in local.installers ) {
+            if( isVEInstaller(file) ) {
+              local.files[[basename(file)]] <- list(
+                timeout = 0,
+                url     = "file",
+                file    = file
+              )
+            }
+          }
+          if ( length(local.files) > 0 ) {
+            release.name <- basename(release.name)
+            r.temp <- list( 
+              release=release.name,
+              date=as.character(Sys.Date()),
+              id=0,
+              assets=local.files
+            )
+            release.data[[release.name]] <- r.temp
           }
         }
-        if ( length(local.files) > 0 ) {
-          r.temp <- list(
-            release="Locally Built Installers",
-            date=as.character(Sys.Date()),
-            id=0,
-            assets=local.files
-          )
-          release.data <- list()
-          release.data[["Local Installers"]] <- r.temp
-          all.releases[["Local Installers"]] <- release.data
-        } else stop(call.=FALSE,"No local installers have been built for ",this.R)
+        if ( length(release.data) > 0 ) {
+          all.releases[["Locally Built Installers"]] <- release.data
+        } else message("No local installers have been built for ",this.R)
       }
     }
     if ( cache ) {
@@ -443,111 +578,66 @@ getReleases <- function(config,cache=FALSE) {
       stop(call.=FALSE,"Stop to review all.releases")
     }
   }
+    
   return(all.releases)
 }
 
 ############ Dialog to pick an installer from among those available
 
 # Setup dialog navigates all.releases to select an installer to download and install
-setup.dialog <- function(all.releases,max_width=800) {
+setup.dialog <- function(build.type,all.releases,max_width=800) {
   # Dialog values to update
-  # Keep track of whether we're doing a runtime or build installation
+  # different dialog structure depending on build.type
+  # "Release" - the classic dialog, presenting repository, release and installer
+  # "Build Release Snapshot" - Will work the same, but the installer will the source code zipball
+  # "Build Local Clone" - will just run a directory chooser dialog and complain if the directory
+  #    does not have a VE-Bootstrap.R script in it.
+  # The buttons at the bottom of this dialog should be "Install", "Cancel", and "?" for help
+  # The change build type row just presents the selected build type, and picking its button
+  #   actually cancels this dialog and returns "TryAgain" in the selected$DoIt element
+
   # And which repository, release and installer we've selected
-  runtime <- tclVar("Runtime")                                  # Checkbox selector from "Runtime" or "Build"
-  repository <- tclVar(names(all.releases)[1])                  # List box selector from names(all.releases)
-  release <- tclVar(names(all.releases[[1]])[1])                # List box selector from names(all.releases[[repository]])
-  doit <- tclVar("No")                                          # Change this if user chooses "Install"
+  repository <- tclVar("No Repository")  # List box selector from names(all.releases)
+  release <- tclVar("No Release")        # List box selector from names(all.releases[[repository]])
+  installer <- tclVar("No Installer")    # List box selector for default installer
+  doit <- tclVar("No")                   # Change this if user chooses "Install"
 
-  # Quick way to look at different runtime or build installers
-  # The build installer downloads the source code from which the release was built
-  getAssetType <- function() {
-    if ( tclvalue(runtime)=="Runtime" ) "assets" else "zipball"
-  }
-  installer <- tclVar(names(all.releases[[1]][[1]][[getAssetType()]])[1])  # List box selector for default installer
-
-  # Installation Type Dialog
-  # Runtime installs build packages, Build Installation will download a snapshot of the release
-  # soruce code, from which VE-Bootstrap.R / VEBuild can be run.
-  select_runtime <- function() {
-    pick <- tkmessageBox(title = "Install Type", message = "Build Installation?", icon = "question", type = "yesno")
-    if (as.character(pick) == "yes") {
-      pick <- "Build"
-    } else {
-      pick <- "Runtime"
-    }
-    tclvalue(runtime) <- pick
-    tclvalue(installer) <- names(all.releases[[tclvalue(repository)]][[tclvalue(release)]][[getAssetType()]])[1]
-  }
-
-  # Our own listbox function to pick from a list
-  # Used to select repositories (if more than one configured), releases, and installers
-  select_from_list <- function(parent_window, dest_var, items, title="Make a Selection") {
-    tt <- tktoplevel(parent = parent_window)
-    tkwm.title(tt, title)
-
-    original_var <- tclVar(tclvalue(dest_var))
-
-    Instructions <- tklabel(tt,text=title,justify="center")
-    tkgrid(Instructions, row=0, column=0, sticky="ew",pady=5)
-
-    lb.frame <- tkframe(tt,borderwidth=2,relief="solid")
-    lb1 <- tklistbox(lb.frame, selectmode = "single", height=0, width=0)
-
-    tkgrid(lb1,row=0,column=0,padx=5,pady=5,sticky="ew")
-    tkgrid.columnconfigure(lb.frame,0,weight=1)
-    for (item in items) {
-      tkinsert(lb1, "end", item)
-    }
-    tkselection.set(lb1,0)
-    tkgrid(lb.frame, row = 1, column = 0, sticky = "ew", padx=5, pady=5)
-
-    onOK <- function() {
-      selection <- as.integer(tcl(lb1, "curselection")) + 1
-      if (length(selection) > 0) {
-        tclvalue(dest_var) <- items[selection]
-      }
-      tkdestroy(tt)
-    }
-
-    onCancel <- function() { # leave dest_var unchanged
-      tclvalue(dest_var) <- tclvalue(original_var)
-      tkdestroy(tt)
-    }
-
-    button.frame <- tkframe(tt)
-    ok_button <- tkbutton(button.frame, text = "OK", command = onOK)
-    cancel_button <- tkbutton(button.frame, text = "Cancel", command = onCancel)
-
-    tkgrid(ok_button, row = 0, column = 0, padx = 5, pady = 5,sticky="e")
-    tkgrid(cancel_button, row = 0, column = 1, padx = 5, pady = 5,sticky="w")
-    tkgrid(button.frame,row=2,column=0)
-
-    tkgrid.columnconfigure(tt, 0, weight = 1)
-    tkgrid.rowconfigure(tt, 0, weight = 1)
-
-    tkwait.window(tt) # Run the dialog
+  VEValidClone <- function(dir_path) {
+    exists <- dir.exists(dir_path) && length ( dir(dir.path,pattern="VE-Bootstrap.R") ) > 0
   }
 
   # Here's the GUI driver that shows what has been selected to install and allows
   # the user to pick something different.
-  create_dialog <- function(max_width=400) {
-    tt <- tktoplevel()
-    tkwm.title(tt, "Select Installer")
-    tkwm.maxsize(tt, max_width, 10000) # we don't expect to expand vertically
+  tt <- tktoplevel()
+  tkwm.title(tt, "Select Installer")
+  tkwm.maxsize(tt, max_width, 10000) # we don't expect to expand vertically
 
-    # Actions to gather information
-    runtime_button <- tkbutton(tt, text = "Installation Type", command = select_runtime)
+  # Actions to gather information
+  runtime_button <- tkbutton(tt, text = "Change Installation Type", command = function() {
+    tclvalue(doit) <- "TryAgain"
+    tkdestroy(tt)
+  })
+  tkgrid(runtime_button, column = 0, row = 0, sticky = "e", padx = 5, pady = 5)
+  runtime_frame <- tkframe(tt, borderwidth = 2, relief = "groove")
+  runtime_label <- tklabel(runtime_frame,text=build.type, justify="left")
+  tkpack(runtime_label,anchor="w",padx=5,pady=5)
+  tkgrid(runtime_frame, column = 1, row = 0, sticky="ew", padx = 5, pady = 5)
+
+  if ( build.type != "Local Clone" ) {
+    # Classic Dialog
+    tclvalue(repository) <- names(all.releases)[1]
+    tclvalue(release) <- names(all.releases[[1]])[1]
+    tclvalue(installer) <- names(all.releases[[1]][[1]][["assets"]])[1]
     repos_button <- tkbutton(tt, text = "Repository", command = function() {
       repos.list <- names(all.releases)
       if ( length(repos.list) < 2 ) return() # Button does nothing if not enough items
 
       # Run the selection dialog, then look up the selected release and choose the
       # default installer from that release.
-      message("Selecting new repository")
-      select_from_list(tt,repository,repos.list) # will update repository variable
+      select.from.list(tt,repository,repos.list) # will update repository variable
       release_list <- all.releases[[tclvalue(repository)]]
       tclvalue(release) <- names(release_list)[1] # reset to first release
-      inst_list <- release_list[[tclvalue(release)]][[getAssetType()]]
+      inst_list <- release_list[[tclvalue(release)]][["assets"]]
       tclvalue(installer) <- names(inst_list)[1]
     })
 
@@ -556,32 +646,25 @@ setup.dialog <- function(all.releases,max_width=800) {
       if ( length(release_list) < 2 ) return() # Do nothing if too few items
 
       # If release changes, change the installer to the default one.
-      select_from_list(tt,release,release_list) # will update repository variable
-      inst_list <- all.releases[[tclvalue(repository)]][[tclvalue(release)]][[getAssetType()]]
-      message("Updating installer list for ",tclvalue(release))
-      print(inst_list)
+      select.from.list(tt,release,release_list) # will update repository variable
+      inst_list <- all.releases[[tclvalue(repository)]][[tclvalue(release)]][["assets"]]
       tclvalue(installer) <- names(inst_list)[1]
     })
 
     installer_button <- tkbutton(tt, text = "Installer", state="normal", command = function() {
-      installer_list <- names(all.releases[[tclvalue(repository)]][[tclvalue(release)]][[getAssetType()]])
+      installer_list <- names(all.releases[[tclvalue(repository)]][[tclvalue(release)]][["assets"]])
       if ( length(installer_list) < 2 ) return() # Do nothing if there are too few installers
-      select_from_list(tt,installer,installer_list) # will update installer variable
+      select.from.list(tt,installer,installer_list) # will update installer variable
     })
 
     # Display the buttons
-    tkgrid(runtime_button, column = 0, row = 0, sticky = "e", padx = 5, pady = 5)
     tkgrid(repos_button, column = 0, row = 1, sticky = "e", padx = 5, pady = 5)
     tkgrid(release_button, column = 0, row = 2, sticky = "e", padx = 5, pady = 5)
     tkgrid(installer_button, column = 0, row = 3, sticky = "e", padx = 5, pady = 5)
+    button_row = 4
 
     # Display the values set by the buttons in label widgets
     # Put the widgets in frames so they resize nicely
-    runtime_frame <- tkframe(tt, borderwidth = 2, relief = "groove")
-    runtime_label <- tklabel(runtime_frame,textvariable=runtime, justify="left")
-    tkpack(runtime_label,anchor="w",padx=5,pady=5)
-    tkgrid(runtime_frame, column = 1, row = 0, sticky="ew", padx = 5, pady = 5)
-
     repos_frame <- tkframe(tt, borderwidth = 2, relief = "groove")
     repos_label <- tklabel(repos_frame,textvariable=repository, justify="left")
     tkpack(repos_label,anchor="w",padx=5,pady=5)
@@ -597,68 +680,102 @@ setup.dialog <- function(all.releases,max_width=800) {
     tkpack(installer_label,anchor="w",padx=5,pady=5)
     tkgrid(installer_frame, column = 1, row = 3, sticky="ew", padx = 5, pady = 5)
 
-    # OK and Cancel buttons
-    onOK <- function() {
-      tclvalue(doit) <- "Install"
-      tkdestroy(tt)
+    instructions <- if ( build.type == "Release" ) {
+      "Release instructions"
+    } else {
+      "Build Release Snapshot instructions"
     }
-
-    onCancel <- function() {
-      tclvalue(doit) <- "Cancel"
-      tkdestroy(tt)
-    }
-
-    ok_button <- tkbutton(tt, text = "Install", command = onOK)
-    cancel_button <- tkbutton(tt, text = "Cancel", command = onCancel)
-
-    tkgrid(ok_button, column = 0, row = 5, pady = 10)
-    tkgrid(cancel_button, column = 1, sticky="w", row = 5, pady = 10)
-    tkgrid.columnconfigure(tt, 1, weight = 1) #Make the second column expandable.
-
-    tkbind(tt, "<Return>", function() {
-      onOK()
+  } else { # Build Local Clone
+    tclvalue(repository) <- all.releases[[1]] # set in getReleases to ve.home
+    repos_button <- tkbutton(tt, text = "Repository Clone Directory", command = function() {
+      dir_path <- tclvalue(tkchooseDirectory())
+      tclvalue(repository) <- if ( VEValidClone(dir_path) ) paste(dir_path,"(Not a clone)") else dir_path
     })
-    tkbind(tt, "i", function() {
-      onOK()
-    })
-    
-    tkfocus(tt)
-    tkwait.window(tt) # Run the dialog
-    
-    return( # Relay tclVar variables back out to calling environment
-      list(
-        Runtime=tclvalue(runtime),
-        Repos=tclvalue(repository),
-        Release=tclvalue(release),
-        Installer=tclvalue(installer),
-        DoIt=tclvalue(doit)
-      )
-    )
+    tkgrid(repos_button, column = 0, row = 1, sticky = "e", padx = 5, pady = 5)
+
+    repos_frame <- tkframe(tt, borderwidth = 2, relief = "groove")
+    repos_label <- tklabel(repos_frame,textvariable=repository, justify="left")
+    tkpack(repos_label,anchor="w",padx=5,pady=5)
+    tkgrid(repos_frame, column = 1, row = 1, sticky="ew", padx = 5, pady = 5)
+
+    button_row <- 2
+    instructions <- "Local clone instructions"
   }
-  # Run the GUI
-  return( create_dialog(max_width=max_width) )
+
+  # OK and Cancel buttons
+  onOK <- function() {
+    if ( build.type == "Build Local Clone" && ! VEValidClone(tclvalue(repository)) ) {
+      tclvalue(doit) <- "TryAgain"
+    } else {
+      tclvalue(doit) <- "Install"
+    }
+    tkdestroy(tt)
+  }
+
+  onCancel <- function() {
+    tclvalue(doit) <- "Cancel"
+    tkdestroy(tt)
+  }
+
+  button_frame <- tkframe(tt)
+  ok_button <- tkbutton(button_frame, text = "Install", command = onOK)
+  cancel_button <- tkbutton(button_frame, text = "Cancel", command = onCancel)
+
+  tkgrid(ok_button, row = 0, column = 0, padx = 5, pady = 5, sticky="w")
+  tkgrid(cancel_button, row = 0, column = 1, padx = 5, pady = 5, sticky="w")
+  tkgrid(info_button(button_frame,instructions), row = 0, column = 2, padx = 5, pady = 10, sticky="e")
+  tkgrid.columnconfigure(button_frame,2,weight = 1)
+  tkgrid(button_frame,row=button_row,column=0,padx=5,pady=5,sticky="ew")
+
+  tkgrid.columnconfigure(tt, 1, weight = 1) #Make the second column in the main frame expandable.
+
+  # These will only work if the focus is on the TK dialog (which doesn't seem to be able to happen
+  # without clicking into the dialog window).
+  tkbind(tt, "<Return>", function() {
+    onOK()
+  })
+  tkbind(tt, "i", function() {
+    onOK()
+  })
+
+  tkfocus(tt)
+  tkwait.window(tt) # Run the dialog
+
+  return( # Relay tclVar variables back out to calling environment
+    list(
+      Runtime=build.type,
+      Repos=tclvalue(repository),
+      Release=tclvalue(release),      # Ignored for Build Local Clone
+      Installer=tclvalue(installer),  # Ignored for Build Local Clone
+      DoIt=tclvalue(doit)
+    )
+  )
 }
 
 selectInstaller <- function(config,cache=FALSE) {
 
-  all.releases <- getReleases(config,cache=cache)
-  selected <- setup.dialog(all.releases)
-
-  if ( selected$DoIt != "Install" ) {
-    stop("Installation cancelled from installer selection dialog",call.=FALSE)
+  repeat {
+    build.type <- get.buildtype.dialog()
+    if ( is.na(build.type) ) stop(call.=FALSE,"Installation cancelled.")
+    all.releases <- getReleases(build.type,config,cache=cache)
+    selected <- setup.dialog(build.type,all.releases) # different dialog versions depending on release type
+    if ( ! selected$DoIt == "TryAgain") {
+      if ( selected$DoIt != "Install" ) stop(call.=FALSE,"Installation cancelled from installer selection dialog")
+      break
+    }
   }
 
-  runtime.installation <- selected$Runtime == "Runtime"
-  assetType <- if(runtime.installation) "assets" else "zipball"
-  repo <- selected$Repos
-  release <- selected$Release
-  installer <- all.releases[[repo]][[release]][[assetType]][[selected$Installer]]
-
-  installer$installType <- if ( runtime.installation ) "Runtime" else "Build"
-  cat("Installation:",installer$installType,"\n")
-  cat("Repository:",repo,"of",length(names(all.releases)),"\n")
-  cat("Release:",release,"of",length(names(all.releases[[repo]])),"\n")
-  cat("Installer:",installer$file,"of",length(names(all.releases[[repo]][[release]][[assetType]])),"\n")
+  # TODO: this will get a little more elaborate with different build.types
+  if ( selected$Runtime != "Build Local Clone" ) {
+    repo <- selected$Repos
+    release <- selected$Release
+    installer <- all.releases[[repo]][[release]][["assets"]][[selected$Installer]]
+  } else {
+    installer <- list(
+      Repos <- selected$Repos
+    )
+  }
+  installer$installType <- selected$Runtime
   return(installer)
 }
 
@@ -690,26 +807,31 @@ fetchInstaller <- function(installer) {
   # Place downloaded files in ve.home/download
   # return downloaded file name and type of installation expected
   # File name has attribute distinguishing VE Installer from Github snapshot (Source Code)
-  download <- file.path(ve.home,"download")
-  if ( ! dir.exists( download ) ) dir.create(download,recursive=TRUE)
-  if ( ! basename(installer$file) %in% dir(download) ) { # Shorten restart if there was a previous download
-    if ( installer$url == "file" ) {
-      file.copy(installer$file, download) # Copy local installer
-    } else { # need to download it
-      options(timeout = max(installer$timeout, getOption("timeout")))
-      message("Timeout: ",getOption("timeout")," seconds")
-      destfile <- file.path(download,installer$file)
-      download.file(installer$url,destfile=destfile,method="libcurl",mode="wb")
-      # use method=libcurl so download.file follows redirect links
-    }
+  if ( installer$installType == "Build Local Clone" ) {
+    retrieved <- installer$Repos
+    attr(retrieved,"InstallType") <- "LocalClone"
   } else {
-    message("Installer has already been downloaded.")
-    message("Install can be found in ",download)
-    message("installer$file is ",installer$file)
-    message("For a clean install, remove the downloads directory in VE_HOME")
+    download <- file.path(ve.home,"download")
+    if ( ! dir.exists( download ) ) dir.create(download,recursive=TRUE)
+    if ( ! basename(installer$file) %in% dir(download) ) { # Shorten restart if there was a previous download
+      if ( installer$url == "file" ) {
+        file.copy(installer$file, download) # Copy local installer
+      } else { # need to download it
+        options(timeout = max(installer$timeout, getOption("timeout")))
+        message("Timeout: ",getOption("timeout")," seconds")
+        destfile <- file.path(download,installer$file)
+        download.file(installer$url,destfile=destfile,method="libcurl",mode="wb")
+        # use method=libcurl so download.file follows redirect links
+      }
+    } else {
+      message("Installer has already been downloaded.")
+      message("Install can be found in ",download)
+      message("installer$file is ",installer$file)
+      message("For a clean install, remove the downloads directory in VE_HOME")
+    }
+    retrieved <- dir(download,full.names=TRUE,pattern=basename(installer$file))
+    attr(retrieved,"InstallType") <- installTypeOf(retrieved)
   }
-  retrieved <- dir(download,full.names=TRUE,pattern=basename(installer$file))
-  attr(retrieved,"InstallType") <- installTypeOf(retrieved)
   message("InstallType is ",attr(retrieved,"InstallType"))
   invisible(retrieved) # name of downloaded file with attribute stating "Runtime" or "Build" install type
 }
@@ -718,25 +840,26 @@ fetchInstaller <- function(installer) {
 
 doInstallation <- function(retrieved) {
   # Dispatch based on retrieved$localfile and InstallType attribute
+  # LocalClone just launches VE-Bootstrap.R from the local clone directory
   # VE built installers:
-    # WinLibrary replaces corresponding ve-lib packages with packages from installer
-    #   - Remove them first based on folder names
-    #   - Then copy the entire new package into palce
-    # WinBinary always installs ve-lib with binary packages it contains
-    #   - Update existing packages from CRAN and BioConductor
-    #   - Just install directly (will overwrite any package already there)
-    #   - Set up so the repository list can find needed files in CRAN or BioConductor
-    # Source always installs ve-lib with source packages it contains
-    #   - Update existing packages from CRAN and BioConductor
-    #   - Just install directly (will overwite any package already there)
-    #   - Set up so the repository list can find needed files in CRAN or BioConductor
-    # return launch function loading VEStart or VE-Bootstrap.R as desired
+  # WinLibrary replaces corresponding ve-lib packages with packages from installer
+  #   - Remove them first based on folder names
+  #   - Then copy the entire new package into place
+  # WinBinary always installs ve-lib with binary packages it contains
+  #   - Update existing packages from CRAN and BioConductor
+  #   - Just install directly (will overwrite any package already there)
+  #   - Set up so the repository list can find needed files in CRAN or BioConductor
+  # Source always installs ve-lib with source packages it contains
+  #   - Update existing packages from CRAN and BioConductor
+  #   - Just install directly (will overwite any package already there)
+  #   - Set up so the repository list can find needed files in CRAN or BioConductor
+  # return launch function loading VEStart or VE-Bootstrap.R as desired
   # Source Code Zipball 
-    # Unzip into build-source Location
-    # Load VE-Bootstrap.R, with ve.sources set to the unzipped zipball
-    # VE_HOME can stay the same, VE_BUILD created within VE_HOME, VE_SOURCE set to
-    #   absolute path of "sources" subfolder in unzipped source tree.
-    # When VE-Bootstrap.R does ve.build() it saves VE_SOURCE to .Renviron
+  # Unzip into build-source Location
+  # Load VE-Bootstrap.R, with ve.sources set to the unzipped zipball
+  # VE_HOME can stay the same, VE_BUILD created within VE_HOME, VE_SOURCE set to
+  #   absolute path of "sources" subfolder in unzipped source tree.
+  # When VE-Bootstrap.R does ve.build() it saves VE_SOURCE to .Renviron
   # Return a function to launch VE (bootstrap or load VEStart)
   # Return a text error message if install failed.
   installType <- attr(retrieved,"InstallType")
@@ -752,84 +875,97 @@ doInstallation <- function(retrieved) {
     stop("Installation cancelled. Restart to try again.",call.=FALSE)
   }
 
-  if ( installType %in% c("WinLibrary","Windows","Source") ) {
-    if ( installType == "WinLibrary" ) {
-      # This is a pre-installed WinBinary, with all dependencies (like VE installers before 4.0)
-      # Unzip directly into ve.lib
-      lst <- unzip(retrieved,list=TRUE)
-      # Find any packages already in ve.lib and remove those
-      replacements <- file.path(ve.lib,sub("/$","",lst[grep("^[^/]+/$",lst$Name),"Name"]))
-      replacements <- replacements[dir.exists(replacements)]
-      if ( length(replacements) > 0 ) {
-        unlink(replacements,recursive=TRUE)
-      }
-      # Unzip the replacement packages straight into ve.lib
-      message("Unzipping : ",retrieved)
-      message("Into      : ",ve.lib)
-      unzip(retrieved,exdir=ve.lib) # simply extract the download back into ve-lib
-    } else {
-      # Ensure presence of needed packages
-      if ( ! requireNamespace("BiocManager",lib.loc=inst.lib,quietly=TRUE) ) {
-        install.packages("BiocManager",repos="https://cloud.r-project.org",lib=inst.lib)
-        requireNamespace("BiocManager",lib.loc=inst.lib,quietly=TRUE)
-      }
-      # unzip the single MANIFEST file
-      mfc<-unz(retrieved,"MANIFEST","r")
-      manifest <- read.dcf(mfc)
-      close(mfc)
-      manifest <- manifest[1,] # turn matrix into named character vector
-      pkgType <- manifest["pkgType"]
-      destination <- sub("/","",manifest["Destination"])
-      ve.repos <- dirname(retrieved)
-      exdir <- file.path(ve.repos,destination)
-      message("Unzipping : ",retrieved)
-      message("Into      : ",exdir)
-      unzip(retrieved,exdir=exdir)
-      # Now install those packages plus dependencies online that may be needed
-      install.repos <-paste0("file:///",ve.repos)
-      all.repos <- c(
-        install.repos,
-        BiocManager::repositories() # includes https://cran.r-project.org
-      )
-      available <- available.packages(repos=install.repos,type=pkgType)
-      packages <- available[,"Package"]
-      install.packages(pkgs=packages,repos=all.repos,lib=ve.lib,type=pkgType)
-    }
-    return(
-      # TODO: this appears to be using an earlier VE_HOME setup if that was hanging out
-      # in the environment. Need to push our own notion of ve.home back through Sys.setenv
-      # so we get the right ve-lib.
-      function() {
-        if ( ! require(VEStart,quietly=TRUE) ) stop("Installation failed: could not load VEStart")
-        startVisionEval(ve.runtime=NA) # ve.runtime=NA says to ignore any VE_RUNTIME set in environment
-      }
-    )
-  } else if ( installType == "BuildSource" ) {
-    # Unzip to downloads (zip will have an inner top directory)
-    message("Would unzip: ",retrieved)
-    exdir <- dirname(retrieved)
-    message("Into:        ",exdir)
-    exname <- sub("/$","",unzip(retrieved,list=TRUE)[1,"Name"])
-
-    # Unzip the build source distribution (may take a while!)
-    ve.source.root <- file.path(ve.home,"build-source")
-    if ( dir.exists(ve.source.root) ) {
-      message("build-source directory already exists.")
-      stop("Please remove ",ve.source.root," and try install again")
-    }
-    unzip(retrieved,exdir=exdir) # creates exname subdirectory
-    file.rename(file.path(exdir,exname),ve.source.root)
-
-    # Point VE-Bootstrap.R to the right stuff
-    Sys.setenv(VE_SOURCE=file.path(ve.source.root,"sources"))
-    
+  if ( installType == "LocalClone" ) {
+    # LocalClone is just looking at a directory containing VE-Bootstrap.R
+    # Point VE_SOURCE at it, then run its VE_Bootstrap.R
+    Sys.setenv(VE_SOURCE=retrieved)
     return(
       function() {
-        bootstrap <- file.path(ve.source.root,"VE-Bootstrap.R")
-        if ( ! file.exists(bootstrap) ) stop("Installation failed: could not load VE-Bootstrap.R")
+        bootstrap <- file.path(retrieved,"VE-Bootstrap.R")
+        if ( ! file.exists(bootstrap) ) stop("Installation failed: could not load ", bootstrap)
         source(bootstrap)
       }
     )
+  } else {
+    if ( installType %in% c("WinLibrary","Windows","Source") ) {
+      if ( installType == "WinLibrary" ) {
+        # This is a pre-installed WinBinary, with all dependencies (like VE installers before 4.0)
+        # Unzip directly into ve.lib
+        lst <- unzip(retrieved,list=TRUE)
+        # Find any packages already in ve.lib and remove those
+        replacements <- file.path(ve.lib,sub("/$","",lst[grep("^[^/]+/$",lst$Name),"Name"]))
+        replacements <- replacements[dir.exists(replacements)]
+        if ( length(replacements) > 0 ) {
+          unlink(replacements,recursive=TRUE)
+        }
+        # Unzip the replacement packages straight into ve.lib
+        message("Unzipping : ",retrieved)
+        message("Into      : ",ve.lib)
+        unzip(retrieved,exdir=ve.lib) # simply extract the download back into ve-lib
+      } else {
+        # Ensure presence of needed packages
+        if ( ! requireNamespace("BiocManager",lib.loc=inst.lib,quietly=TRUE) ) {
+          install.packages("BiocManager",repos="https://cloud.r-project.org",lib=inst.lib)
+          requireNamespace("BiocManager",lib.loc=inst.lib,quietly=TRUE)
+        }
+        # unzip the single MANIFEST file
+        mfc<-unz(retrieved,"MANIFEST","r")
+        manifest <- read.dcf(mfc)
+        close(mfc)
+        manifest <- manifest[1,] # turn matrix into named character vector
+        pkgType <- manifest["pkgType"]
+        destination <- sub("/","",manifest["Destination"])
+        ve.repos <- dirname(retrieved)
+        exdir <- file.path(ve.repos,destination)
+        message("Unzipping : ",retrieved)
+        message("Into      : ",exdir)
+        unzip(retrieved,exdir=exdir)
+        # Now install those packages plus dependencies online that may be needed
+        install.repos <-paste0("file:///",ve.repos)
+        all.repos <- c(
+          install.repos,
+          BiocManager::repositories() # includes https://cran.r-project.org
+        )
+        available <- available.packages(repos=install.repos,type=pkgType)
+        packages <- available[,"Package"]
+        install.packages(pkgs=packages,repos=all.repos,lib=ve.lib,type=pkgType)
+      }
+      return(
+        # TODO: this appears to be using an earlier VE_HOME setup if that was hanging out
+        # in the environment. Need to push our own notion of ve.home back through Sys.setenv
+        # so we get the right ve-lib.
+        function() {
+          if ( ! require(VEStart,quietly=TRUE) ) stop("Installation failed: could not load VEStart")
+          startVisionEval(ve.runtime=NA) # ve.runtime=NA says to ignore any VE_RUNTIME set in environment
+        }
+      )
+    } else if ( installType == "BuildSource" ) {
+      # Unzip to downloads (zip will have an inner top directory)
+      message("Would unzip: ",retrieved)
+      exdir <- dirname(retrieved)
+      message("Into:        ",exdir)
+      exname <- sub("/$","",unzip(retrieved,list=TRUE)[1,"Name"])
+
+      # Unzip the build source distribution (may take a while!)
+      ve.source.root <- file.path(ve.home,"build-source")
+      if ( dir.exists(ve.source.root) ) {
+        message("build-source directory already exists.")
+        stop("Please remove ",ve.source.root," and try install again")
+      }
+      unzip(retrieved,exdir=exdir) # creates exname subdirectory
+      file.rename(file.path(exdir,exname),ve.source.root)
+
+      # Point VE-Bootstrap.R to the right stuff
+      Sys.setenv(VE_SOURCE=file.path(ve.source.root,"sources"))
+
+      return(
+        function() {
+          bootstrap <- file.path(ve.source.root,"VE-Bootstrap.R")
+          if ( ! file.exists(bootstrap) ) stop("Installation failed: could not load ",bootstrap)
+          source(bootstrap)
+        }
+      )
+    }
   }
   return( function() { message("The installation did not finish properly. Please retry.") } )
 }

@@ -36,8 +36,12 @@ ve.make.installer <- function(pkgType=.Platform$pkgType,debug=FALSE) {
 
 buildOneInstaller <- function(pkgType,bld.env,debug) {
 
-  # install directory will hold the zipped results
+  # dated install directory will hold the zipped results
   ve.install <- file.path(ve.env$ve.build.dir,"install")
+  if ( ! dir.exists(ve.install) ) dir.create(ve.install)
+  installer.date <- as.character(Sys.Date())
+  release.name <- paste0("Release_",installer.date)
+  ve.install <- file.path(ve.install,release.name)
   if ( ! dir.exists(ve.install) ) dir.create(ve.install)
   cat("Making",pkgType,"Installer in",ve.install,"\n")
 
@@ -47,7 +51,7 @@ buildOneInstaller <- function(pkgType,bld.env,debug) {
       "VE-Installer_",
       zipname,
       "_",
-      as.character(Sys.Date()),
+      installer.date,
       ".zip"
     )
     file.path(folder,paste(elements,collapse=""))
