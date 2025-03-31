@@ -535,7 +535,7 @@ getReleases <- function(build.type,config,cache=FALSE) {
     if ( build.type == "Release" && ! is.na(ve.build <- Sys.getenv("VE_BUILD",NA) ) ) {
       if ( dir.exists(local.releases <- file.path(ve.build,"install") ) ) { # Locally built installers
         release.data <- list()
-        for ( release.name in dir(local.releases,full.names=TRUE) ) {
+        for ( release.name in rev(dir(local.releases,full.names=TRUE)) ) {
           if ( ! dir.exists(release.name) ) next # may be a file not a folder
           local.installers <- rev(dir(release.name,full.names=TRUE))
           local.installers <- local.installers [ # put them in order of desirability
@@ -603,7 +603,7 @@ setup.dialog <- function(build.type,all.releases,max_width=800) {
   doit <- tclVar("No")                   # Change this if user chooses "Install"
 
   VEValidClone <- function(dir_path) {
-    exists <- dir.exists(dir_path) && length ( dir(dir.path,pattern="VE-Bootstrap.R") ) > 0
+    exists <- dir.exists(dir_path) && length ( dir(dir_path,pattern="VE-Bootstrap.R") ) > 0
   }
 
   # Here's the GUI driver that shows what has been selected to install and allows
@@ -623,7 +623,7 @@ setup.dialog <- function(build.type,all.releases,max_width=800) {
   tkpack(runtime_label,anchor="w",padx=5,pady=5)
   tkgrid(runtime_frame, column = 1, row = 0, sticky="ew", padx = 5, pady = 5)
 
-  if ( build.type != "Local Clone" ) {
+  if ( build.type != "Build Local Clone" ) {
     # Classic Dialog
     tclvalue(repository) <- names(all.releases)[1]
     tclvalue(release) <- names(all.releases[[1]])[1]
@@ -657,7 +657,7 @@ setup.dialog <- function(build.type,all.releases,max_width=800) {
       select.from.list(tt,installer,installer_list) # will update installer variable
     })
 
-    # Display the buttons
+    # Display the buttons-
     tkgrid(repos_button, column = 0, row = 1, sticky = "e", padx = 5, pady = 5)
     tkgrid(release_button, column = 0, row = 2, sticky = "e", padx = 5, pady = 5)
     tkgrid(installer_button, column = 0, row = 3, sticky = "e", padx = 5, pady = 5)
@@ -689,7 +689,7 @@ setup.dialog <- function(build.type,all.releases,max_width=800) {
     tclvalue(repository) <- all.releases[[1]] # set in getReleases to ve.home
     repos_button <- tkbutton(tt, text = "Repository Clone Directory", command = function() {
       dir_path <- tclvalue(tkchooseDirectory())
-      tclvalue(repository) <- if ( VEValidClone(dir_path) ) paste(dir_path,"(Not a clone)") else dir_path
+      tclvalue(repository) <- if ( ! VEValidClone(dir_path) ) paste(dir_path,"(Not a clone)") else dir_path
     })
     tkgrid(repos_button, column = 0, row = 1, sticky = "e", padx = 5, pady = 5)
 
@@ -772,7 +772,7 @@ selectInstaller <- function(config,cache=FALSE) {
     installer <- all.releases[[repo]][[release]][["assets"]][[selected$Installer]]
   } else {
     installer <- list(
-      Repos <- selected$Repos
+      Repos=selected$Repos
     )
   }
   installer$installType <- selected$Runtime
@@ -878,7 +878,9 @@ doInstallation <- function(retrieved) {
   if ( installType == "LocalClone" ) {
     # LocalClone is just looking at a directory containing VE-Bootstrap.R
     # Point VE_SOURCE at it, then run its VE_Bootstrap.R
-    Sys.setenv(VE_SOURCE=retrieved)
+    Sys.setenv(
+      VE_SOURCE=file.path(retrieved)
+    ) # 
     return(
       function() {
         bootstrap <- file.path(retrieved,"VE-Bootstrap.R")

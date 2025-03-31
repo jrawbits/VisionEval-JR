@@ -1050,3 +1050,14 @@ getPackageVersion <- function( package ) {
   version <- sapply(strsplit(substr(package,1,regexpr(".(\\.tar\\.gz|\\.zip)",package)),"_"),FUN=function(x)x[2],simplify=TRUE)
   return( version )
 }
+
+ve.setup <- function(ve.home=NULL,ve.build.dir=NULL,ve.runtime=NULL,ve.sources=NULL) {
+  # TODO: launch a dialog to set the VE parameters and to create .Renviron in VE_HOME
+  # Can just have a series of directory browsers, with sensible defaults based on and updated with
+  # VE_HOME (if the others are stil their defaults)
+  # ve.sources should point to the core repository (or the "sources" folder within it)
+  # ve.build.dir will hold the transient artifacts of building
+  # ve.home will hold ve-lib (and have startup files if requested)
+  # ve.runtime will hold the models folder
+  # This will update .Renviron in VE_HOME.
+}

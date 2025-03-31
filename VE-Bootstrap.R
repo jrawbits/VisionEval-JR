@@ -44,7 +44,7 @@ loadRuntimeEnvironment <- function() { # Keep this synchronized with VE-Bootstra
       ve.env$ve.runtime <- file.path(ve.env$ve.home,"runtime")
     }
   }
-  ve.env$ve.sources <- normalizePath(Sys.getenv("VE_SOURCE",file.path(ve.env$ve.home,"sources")),winslash="/",mustWork=FALSE)
+  ve.env$ve.sources <- normalizePath(Sys.getenv("VE_SOURCE",ve.env$ve.home),winslash="/",mustWork=FALSE)
 
   # ve.test() should be available in VEBuild after build ; provide a package name to search in src
   #   folder and load from there to allow dynamic changes. Use pkgload as in current debug setup.
@@ -52,11 +52,9 @@ loadRuntimeEnvironment <- function() { # Keep this synchronized with VE-Bootstra
   #   "inconvenient".
 
   # Do the rest of the work reading sources etc from VE_HOME and putting build artifacts in VE_BUILD.
-  if ( ! dir.exists(ve.env$ve.runtime) ) dir.create(ve.env$ve.runtime,recursive=TRUE)
   if ( ! dir.exists(ve.env$ve.build.dir) ) dir.create(ve.env$ve.build.dir,recursive=TRUE)
 
   Sys.setenv(VE_BUILD=ve.env$ve.build.dir)
-  Sys.setenv(VE_RUNTIME=ve.env$ve.runtime)
 
   # Construct a ve-lib in ve.build.dir
   # These can be ignored/re-done when a full build happens, based on ve-build-config.yml
@@ -72,7 +70,6 @@ loadRuntimeEnvironment <- function() { # Keep this synchronized with VE-Bootstra
 }
 
 local(
-  # TODO: VEBuild LoadBuildScripts should also do the setup below
   # How to package this so VEBuild can use the same code?
   {
     # Load the builder environment from the source tree
@@ -82,7 +79,7 @@ local(
     # The use case for requiring VEBuild is to rebuild a couple of local packages without having
     #   to iterate over building the entire core VE (so e.g. for updating PUMS or PTaF).
     ve.env <- loadRuntimeEnvironment()
-    VEBuild.scripts <- file.path(ve.env$ve.home,"sources","framework","VEBuild","inst","build-scripts")
+    VEBuild.scripts <- file.path(ve.sources,"sources","framework","VEBuild","inst","build-scripts")
     build.loader <- file.path(VEBuild.scripts,"load-builder.R")
     if ( ! file.exists(build.loader) ) {
       message("No build.loader at ",build.loader)
@@ -100,27 +97,8 @@ local(
     sys.source(build.loader,envir=env.build)
     env.build$load.builder(ve.scripts=VEBuild.scripts)
 
-    # Generate .Renviron with default locations
-    renv.file <- file.path(ve.env$ve.home,".Renviron")
-    renv.txt <- c(
-      # NOTE: use wildcard for library R version, so the same .Renviron works for future R versions
-      paste0("R_LIBS_USER=",file.path(ve.env$ve.home,ve.lib.name,"%v")), # 2-digit R versions
-      paste0("VE_HOME=",ve.env$ve.home),
-      paste0("VE_BUILD=",ve.env$ve.build.dir),
-      paste0("VE_RUNTIME=",ve.env$ve.runtime)
-    )
-    if ( ! file.exists(renv.file) ) {
-      writeLines(renv.txt,renv.file)
-      message("\nCreated default .Renviron")
-    }
-
     # Give the user instructions for optional configuration
-    message("\nEdit VE_HOME in .Renviron to set root location for source code")
-    message("  (VE_HOME is currently '",ve.env$ve.home,"')\n")
-    message("Edit VE_BUILD in .Renviron to set the target location for the build.")
-    message("  (VE_BUILD is currently '",ve.env$ve.build.dir,"')\n")
-    message("Edit ve-build-config.yml to set locations of package files that might reside")
-    message("  outside the VE_HOME directory tree.\n")
+    message("ve.setup() to select VE_HOME, VE_BUILD and VE_RUNTIME prior to building.\n")
     message("ve.build() to build a full VisionEval installation.\n")
     if ( "VEStart" %in% utils::installed.packages(lib.loc=ve.env$ve.lib)[,"Package"] ) {
       message("ve.run() to start VisionEval.\n")

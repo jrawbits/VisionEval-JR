@@ -97,12 +97,10 @@ startVisionEval <- function(
   ve.lib.name="ve-lib",
   debug=FALSE
 ) {
-  ve.pkg.repo <- "pkg-ve-repo" # from VEBuild - local set of packages
-
   # Attach the runtime environment for important configuration parameters (see below)
   ve.env <- getRuntimeEnvironment()
 
-  # Identify location for VE_HOME (contains ve-lib, and optionally ve-pkg for local repository installation)
+  # Identify location for VE_HOME (contains ve-lib)
   if ( missing(ve.home) || is.null(ve.home) ) {
     if ( exists("ve.home",ve.env,inherits=FALSE) ) {
       ve.home <- ve.env$ve.home
@@ -166,7 +164,6 @@ startVisionEval <- function(
   # Set up ve-lib (R library location for installed VE packages and dependencies)
   # The same library location will hold sub-directories for the major/minor R version that is
   # running this installation.
-  ve.env$ve.pkg.repo <- file.path(ve.home,ve.pkg.repo) # in case of local package installation
   ve.env$this.R <- paste(c(R.version["major"],R.version["minor"]),collapse=".")
   ve.env$ve.lib <- file.path(ve.home,ve.lib.name,tools::file_path_sans_ext(ve.env$this.R))
   if ( ! dir.exists(ve.env$ve.lib) ) dir.create(ve.env$ve.lib,recursive=TRUE)
@@ -306,6 +303,8 @@ ve.setup <- function(ve.home,ve.runtime,setupHome=FALSE,overwrite=FALSE) {
     cat("that.R:",this.R,"\n",sep="",file=file.path(location,"r.version"))
 
     # Create .Renviron (VEBuild will add VE_BUILD to the list of defined locations, defaulting to VE_HOME)
+    # TODO: overwrite line items in .Renviron rather than all-or-nothing
+    # TODO: 
     renv.file      <- file.path(location,".Renviron")
     renv.txt       <- c(
       paste0("R_LIBS_USER=",paste(collapse=";",.libPaths()[-length(.libPaths())])), # ignore base library
