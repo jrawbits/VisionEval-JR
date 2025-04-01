@@ -1051,7 +1051,7 @@ getPackageVersion <- function( package ) {
   return( version )
 }
 
-ve.setup <- function(ve.home=NULL,ve.build.dir=NULL,ve.runtime=NULL,ve.sources=NULL) {
+ve.build.setup <- function(ve.home=NULL,ve.build.dir=NULL,ve.runtime=NULL,ve.sources=NULL) {
   # TODO: launch a dialog to set the VE parameters and to create .Renviron in VE_HOME
   # Can just have a series of directory browsers, with sensible defaults based on and updated with
   # VE_HOME (if the others are stil their defaults)

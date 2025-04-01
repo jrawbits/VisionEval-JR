@@ -157,6 +157,7 @@ if ( is.na(ve.home) ) {
     ve.env$ve.home <- Sys.getenv("VE_HOME",NA)
     if ( is.na(ve.home) ) {
       ve.home <- getwd()
+      home.from("getwd()")
     } else home.from <- "VE_HOME"
   } else {
     home.from("Existing ve.env")
@@ -165,6 +166,7 @@ if ( is.na(ve.home) ) {
 } else {
   home.from <- "VE_INSTALL"
   Sys.setenv(VE_HOME=ve.home) # override VE_HOME with VE_INSTALL for the remainder of testing
+  ve.env$ve.home <- ve.home
 }
 
 # Helper function for making an info button
@@ -190,13 +192,21 @@ select.ve.home.dialog <- function(ve.home) {
 
   tcl_original_VE_HOME <- tclVar(ve.home)
   tcl_VE_HOME          <- tclVar(ve.home)
+  cancel_VE_HOME       <- tclVar(0)
+  popup_open           <- tclVar(0)
 
   select_directory <- function() {
-    dir_path <- tclvalue(tkchooseDirectory(initialdir=ve.home,title="Select VE_HOME"))
-    tclvalue(tcl_VE_HOME) <- if (dir_path != "") {
-      dir_path
-    } else {
-      getwd()
+    if (tclvalue(popup_open)==0) {
+      tclvalue(popup_open) <- 1
+      tkconfigure(directory_button,state="disable")
+      dir_path <- tclvalue(tkchooseDirectory(initialdir=ve.home,title="Select VE_HOME"))
+      tclvalue(tcl_VE_HOME) <- if (dir_path != "") {
+        dir_path
+      } else {
+        getwd()
+      }
+      tclvalue(popup_open) <- 0
+      tkconfigure(directory_button,state="normal")
     }
   }
 
@@ -225,9 +235,17 @@ select.ve.home.dialog <- function(ve.home) {
   onOK <- function() {
     tkdestroy(tt)
   }
+  onCancel <- function() {
+    tclvalue(cancel_VE_HOME) <- 1
+    tkdestroy(tt)
+  }
 
-  ok_button <- tkbutton(tt, text = "Select", command = onOK)
-  tkgrid(ok_button, column = 1, row = 1, sticky="w", padx = 5, pady = 5)
+  button_frame <- tkframe(tt)
+  ok_button <- tkbutton(button_frame, text = "Select", command = onOK)
+  cancel_button <- tkbutton(button_frame, text="Cancel", command = onCancel)
+  tkgrid(ok_button,column=0,row=0,sticky="w")
+  tkgrid(cancel_button,column=1,row=0,sticky="e")
+  tkgrid(button_frame, column = 1, row = 1, sticky="ew", padx = 5, pady = 5)
 
   tkgrid.columnconfigure(tt, 1, weight = 1) #Make the second column expandable.
   tkbind(tt, "<Return>", function() {
@@ -236,11 +254,19 @@ select.ve.home.dialog <- function(ve.home) {
 
   tkwait.window(tt)
 
-  return( if ( tclvalue(tcl_VE_HOME) != ve.home ) tclvalue(tcl_VE_HOME) else ve.home )
+  return (
+    if ( tclvalue(cancel_VE_HOME) > 0 ) {
+      NA
+    } else if ( tclvalue(tcl_VE_HOME) != ve.home ) {
+      tclvalue(tcl_VE_HOME)
+    } else {
+      ve.home
+    }
+  )
 }
 
 ve.home <- select.ve.home.dialog(ve.home)
-
+if ( is.na(ve.home) ) stop(call.=FALSE,"Installation cancelled at user request.")
 if ( dir.exists(ve.home) ) setwd(ve.home) else stop(call.=FALSE,"Installation Cancelled. VE_HOME directory does not exist")
 
 ve.env$this.R <- paste(c(R.version["major"],R.version["minor"]),collapse=".")
@@ -252,40 +278,14 @@ if ( ! dir.exists(ve.env$ve.lib) ) dir.create(ve.env$ve.lib,recursive=TRUE)
 if ( ! ve.lib %in% .libPaths() ) .libPaths(c(ve.lib)) # will remove extra libraries
 
 # Create another library for instalation packages (yaml, rjson, BiocManager)
+# That will enable us to install or update instances for the overall VE installation
 inst.lib <- file.path(ve.home,"ve-inst-lib (remove)",ve.env$two.digit.R)
 if ( ! dir.exists(inst.lib) ) dir.create(inst.lib,recursive=TRUE)
 
-####### Load Configuration File
-
-config.file <- file.path(ve.home,"ve-install-config.yml")
-
-# Default repository list for releases
-default.ve.repository <- list(
-  list(user="jrawbits",repository=c("visioneval-jr")),   # test repository
-  list(user="visioneval",repository=c("visioneval-dev"))  # public repository
-)
-
-if ( ! requireNamespace("yaml",lib.loc=inst.lib,quietly=TRUE) ) {
-  install.packages("yaml",repos="https://cloud.r-project.org",lib=inst.lib)
-  requireNamespace("yaml",lib.loc=inst.lib,quietly=TRUE)
-}
-
-install.config <- if ( file.exists(config.file) ) {
-  load.config <- try( silent=TRUE, yaml::yaml.load_file(config.file) ) # will throw error if file is improperly configured
-  if ( is.list(load.config) ) {
-  } else message("Failed to load configuration from:\n",config.file)
-  load.config
-} else {
-  default.config <- list(
-    ve.distributions=default.ve.repository
-  )
-  default.config
-}
-
 ####### process the installation
 
-installVisionEval <- function(config=install.config,cache=cache.releases) { # no function parameters right now
-  installer <- selectInstaller(config,cache=cache)   # pick an available installer
+installVisionEval <- function(cache=cache.releases) { # no function parameters right now
+  installer <- selectInstaller(cache=cache)   # pick an available installer (config handled internally)
   retrieved <- fetchInstaller(installer) # confirms downloaded location and MANIFEST type
   launch    <- doInstallation(retrieved) # launch selects "end user" or "builder"
 }
@@ -408,6 +408,126 @@ get.buildtype.dialog <- function() {
   return( tclvalue(build.type) )
 }
 
+####### Load Configuration File
+
+if ( ! requireNamespace("yaml",lib.loc=inst.lib,quietly=TRUE) ) {
+  install.packages("yaml",repos="https://cloud.r-project.org",lib=inst.lib)
+  requireNamespace("yaml",lib.loc=inst.lib,quietly=TRUE)
+}
+
+install.config.file <- file.path(ve.env$ve.home,"ve-install-config.yml")
+default.ve.repository <- list(
+  list(user="jrawbits",repository=c("visioneval-jr")),   # test repository
+  list(user="visioneval",repository=c("visioneval-dev"))  # public repository
+)
+default.config <- list(ve.distributions=default.ve.repository)
+
+load.install.config <- function() {
+
+  # Create default configuration structure
+  return (
+    if ( file.exists(install.config.file) ) {
+      load.config <- try( silent=TRUE, yaml::yaml.load_file(install.config.file) ) # will throw error if file is improperly configured
+      if ( ! is.list(load.config) ) default.config else load.config
+    } else default.config
+  )
+
+}
+
+edit.install.config <- function() {
+  config <- load.install.config() # re-read the configuration
+
+  # Initialize cfg.data
+  parse.config <- function(config) {
+    cfg.data <- data.frame()
+    for ( user in names(config) ) {          # named list of Github users/organizations
+      for ( repository in config[[user]] ) { # list of repositories for user
+        cfg.data <- rbind(cfg.data,data.frame(user=user,repository=repository))
+      }
+    }
+    cfg.data[order(cfg.data$user,cfg.data$repository),]
+  }
+  cfg.data <- parse.config(config)
+
+  # Start building the tcltk dialog
+  tt <- tktoplevel()
+  tkwm.title(tt, "Edit Install Configuration")
+
+  changed <- tclVar(0) # change to 1 if edited config needs to be loaded.
+
+  # Make the configuration frame
+  config_frame <- NULL
+  tcl.rows <- list() # each entry has a user and repository tclVar.
+  build.config.frame <- function(cfg.data) {
+    # Returns a tkframe with a set of rows inside it representing the objects
+    # Create a data.frame to hold pairs of tclVar objects for each row
+
+    # Map the parsed config into a set of display rows (each of which will have a delete button)
+    if ( ! is.null(config_frame) ) tkdestroy(config_frame)
+    config_frame <- tkframe(tt)
+    want.trash.button <- nrow(cfg.data) > 1
+    for ( row in 1:nrow(cfg.data) ) {
+      tcl.row <- list( row=row, user=tclVar(cfg.data$user[row]), repository=tclVar(cfg.data$repository[row]) )
+      tcl.rows[[row]] <- tcl.row
+      t.row <- row-1
+      
+      user.edit <- tkentry(config_frame,textvariable=tcl.row$user)
+      repository.edit <- tkentry(config_frame,textvariable=tcl.row$repository)
+      # TODO: Can we find a wastebasket icon that will work?
+      tkconfigure(user.edit,state="readonly")
+      tkconfigure(repository.edit,state="readonly")
+      tkgrid(user.edit,row=t.row,column=0,padx=5,pady=5)
+      tkgrid(repository.edit,row=t.row,column=1,padx=5,pady=5)
+
+      if ( want.trash.button ) {
+        trash.button <- tkbutton(config_frame,text="X",font=question_button_font,fg="red",command = function() {
+          cfg.data <- cfg.data[-row,]
+          build.config.frame(cfg.data)
+        })
+        tkgrid(trash.button,row=t.row,column=2,padx=5,pady=5)
+      }
+    }
+    tkgrid(config_frame,row=1,column=0,sticky="ew",padx=5,pady=5)
+  }
+
+  # Create brief instructions row
+  instructions <- tklabel(tt,text="Edit Github repositories to search for core VisionEval releases")
+  tkgrid(instructions,row=0,column=0,sticky="w",padx=5,pady=5)
+
+  # make the configuration frame
+  build.config.frame(cfg.data)
+
+  # make a row of tkentry items to gather a new user / repository pair, with a "+" button to
+  # add them at the end of cfg.data and call build.config.frame
+  make_entry_row(tt) # TODO: may not need a function; just do it once in dialog row 2 and be done
+
+  # buttons to "Reset", "Save", or "Return" in a row below the entry frames
+  # Save button repacks the user/repository controls into hierarchical structure, saves it,
+  #   and returns "changed<-TRUE" leading to retry
+  # Return button exits dialog without changing anything ("changed<-FALSE")
+  onReset <- function() {
+    # Reset button returns to edit defaults (without changing any saved file)
+    cfg.data <- parse.config(default.config)
+    build.config.frame(cfg.data)
+  }
+  onSave <- function() {
+    # iterate cfg.data into a hierarchical list by user / repository
+    new.distributions <- list()
+    for ( user in unique(cfg.data$user) ) {
+      new.distributions[[user]] <- cfg.data$repository[cfg.data$user == user]
+    }
+    write_yaml(list(ve.distributions=new.distributions), install.config.file, indent=2) # ve.env$ve.home/ve-install-config.yml
+    tclvalue(changed) <- 1
+    tkdestroy(tt)
+  }
+  onReturn <- function() {
+    tclvalue(changed) <- 0
+    tkdestroy(tt)
+  }
+
+  return(tclvalue(changed))
+}
+
 ####### getAllReleases from distributions (plus local built if any)
 
 # Test file names for installer.pattern
@@ -427,8 +547,8 @@ installer.pattern <- paste0(
 
 isVEInstaller <- function(filename) all(grepl(installer.pattern,filename))
 
-getReleases <- function(build.type,config,cache=FALSE) {
-  # Option to cach results during testing so as not to hit Github API over and over (they are rate limited)
+getReleases <- function(build.type,cache=FALSE) {
+  # Option to cache results during testing so as not to hit Github API over and over (they are rate limited)
   if ( ! requireNamespace("rjson",lib.loc=inst.lib,quietly=TRUE) ) {
     install.packages("rjson",repos="https://cloud.r-project.org",lib=inst.lib)
     requireNamespace("rjson",lib.loc=inst.lib,quietly=TRUE)
@@ -448,6 +568,7 @@ getReleases <- function(build.type,config,cache=FALSE) {
       all.releases <- ve.env$ve.home
       return(all.releases) # no releases: hunt for local github clone with a VE-Bootstrap.R
     }
+    config <- load.install.config() # ve-install-config.yml may be changed by get.buildtype.dialog
     for ( distro in config$ve.distributions) {
       dist.user <- distro$user
       for ( repo in distro$repository ) {
@@ -628,7 +749,24 @@ setup.dialog <- function(build.type,all.releases,max_width=800) {
     tclvalue(repository) <- names(all.releases)[1]
     tclvalue(release) <- names(all.releases[[1]])[1]
     tclvalue(installer) <- names(all.releases[[1]][[1]][["assets"]])[1]
+
+    # Button management
+    disable_buttons <- function() {
+      tkconfigure(repos_button,state="disabled")
+      tkconfigure(release_button,state="disabled")
+      tkconfigure(installer_button,state="disabled")
+      tkconfigure(repos_config,state="disabled")
+    }
+    enable_buttons <- function() {
+      tkconfigure(repos_button,state="normal")
+      tkconfigure(release_button,state="normal")
+      tkconfigure(installer_button,state="normal")
+      tkconfigure(repos_config,state="normal")
+    }
+
+    # Button definitions
     repos_button <- tkbutton(tt, text = "Repository", command = function() {
+      disable_buttons()
       repos.list <- names(all.releases)
       if ( length(repos.list) < 2 ) return() # Button does nothing if not enough items
 
@@ -639,9 +777,11 @@ setup.dialog <- function(build.type,all.releases,max_width=800) {
       tclvalue(release) <- names(release_list)[1] # reset to first release
       inst_list <- release_list[[tclvalue(release)]][["assets"]]
       tclvalue(installer) <- names(inst_list)[1]
+      enable_buttons()
     })
 
     release_button <- tkbutton(tt, text = "Release", state="normal", command = function() {
+      disable_buttons()
       release_list <- names(all.releases[[tclvalue(repository)]])
       if ( length(release_list) < 2 ) return() # Do nothing if too few items
 
@@ -649,12 +789,15 @@ setup.dialog <- function(build.type,all.releases,max_width=800) {
       select.from.list(tt,release,release_list) # will update repository variable
       inst_list <- all.releases[[tclvalue(repository)]][[tclvalue(release)]][["assets"]]
       tclvalue(installer) <- names(inst_list)[1]
+      enable_buttons()
     })
 
     installer_button <- tkbutton(tt, text = "Installer", state="normal", command = function() {
+      disable_buttons()
       installer_list <- names(all.releases[[tclvalue(repository)]][[tclvalue(release)]][["assets"]])
       if ( length(installer_list) < 2 ) return() # Do nothing if there are too few installers
       select.from.list(tt,installer,installer_list) # will update installer variable
+      enable_buttons()
     })
 
     # Display the buttons-
@@ -665,10 +808,24 @@ setup.dialog <- function(build.type,all.releases,max_width=800) {
 
     # Display the values set by the buttons in label widgets
     # Put the widgets in frames so they resize nicely
-    repos_frame <- tkframe(tt, borderwidth = 2, relief = "groove")
+    repos_outer_frame <- tkframe(tt)
+    repos_frame <- tkframe(repos_outer_frame, borderwidth = 2, relief = "groove")
     repos_label <- tklabel(repos_frame,textvariable=repository, justify="left")
-    tkpack(repos_label,anchor="w",padx=5,pady=5)
-    tkgrid(repos_frame, column = 1, row = 1, sticky="ew", padx = 5, pady = 5)
+    repos_config <- tkbutton(repos_outer_frame,text="Edit Config",state="normal",command = function() {
+      disable_buttons()
+      changed <- edit.install.config()
+      if ( changed == "No" ) { # End the dialog and loop back to re-read configuration
+        tclvalue(doit) <- "TryAgain"
+        tkdestroy(tt)
+      } else { # no change, just go back to the dialog
+        enable_buttons()
+      }
+    })
+    tkgrid(repos_frame,row=0,column=0,sticky="ew",padx=5,pady=5)
+    tkgrid(repos_label,row=0,column=0,sticky="w",padx=5,pady=5)
+    tkgrid(repos_config,row=0,column=1,padx=5,pady=5) # edit install config button
+    tkgrid.columnconfigure(repos_outer_frame,0,weight = 1)
+    tkgrid(repos_outer_frame, column = 1, row = 1, sticky="ew", padx = 5, pady = 5)
 
     release_frame <- tkframe(tt, borderwidth = 2, relief = "groove")
     release_label <- tklabel(release_frame,textvariable=release, justify="left")
@@ -688,8 +845,10 @@ setup.dialog <- function(build.type,all.releases,max_width=800) {
   } else { # Build Local Clone
     tclvalue(repository) <- all.releases[[1]] # set in getReleases to ve.home
     repos_button <- tkbutton(tt, text = "Repository Clone Directory", command = function() {
+      tkconfigure(repos_button,state="disabled")
       dir_path <- tclvalue(tkchooseDirectory())
       tclvalue(repository) <- if ( ! VEValidClone(dir_path) ) paste(dir_path,"(Not a clone)") else dir_path
+      tkconfigure(repos_button,state="normal")
     })
     tkgrid(repos_button, column = 0, row = 1, sticky = "e", padx = 5, pady = 5)
 
@@ -752,12 +911,12 @@ setup.dialog <- function(build.type,all.releases,max_width=800) {
   )
 }
 
-selectInstaller <- function(config,cache=FALSE) {
+selectInstaller <- function(cache=FALSE) {
 
   repeat {
     build.type <- get.buildtype.dialog()
-    if ( is.na(build.type) ) stop(call.=FALSE,"Installation cancelled.")
-    all.releases <- getReleases(build.type,config,cache=cache)
+    if ( is.na(build.type) || build.type=="Cancel" ) stop(call.=FALSE,"Installation cancelled from build type selection dialog.")
+    all.releases <- getReleases(build.type,cache=cache)
     selected <- setup.dialog(build.type,all.releases) # different dialog versions depending on release type
     if ( ! selected$DoIt == "TryAgain") {
       if ( selected$DoIt != "Install" ) stop(call.=FALSE,"Installation cancelled from installer selection dialog")
@@ -974,5 +1133,5 @@ doInstallation <- function(retrieved) {
 
 ####### Run the configured installation
 
-launch <- installVisionEval(install.config)
+launch <- installVisionEval(cache.releases)
 if ( is.function(launch) ) launch() else stop(call.=FALSE,"Installation failed:\n",as.character(launch),"\nPlease retry.")
