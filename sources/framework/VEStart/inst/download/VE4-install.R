@@ -438,16 +438,19 @@ edit.install.config <- function() {
   config <- load.install.config() # re-read the configuration
 
   # Initialize cfg.data
-  parse.config <- function(config) {
+  parse.config <- function(distributions) {
     cfg.data <- data.frame()
-    for ( user in names(config) ) {          # named list of Github users/organizations
-      for ( repository in config[[user]] ) { # list of repositories for user
-        cfg.data <- rbind(cfg.data,data.frame(user=user,repository=repository))
+    # distributions is a list of lists, each of which describes repositories for a user
+    # The inner list has a "user" name and a vector of "repository" names for that user.
+    for ( user in distributions ) {
+      username <- user$user
+      for ( repository in user$repository ) { # list of repositories for user
+        cfg.data <- rbind(cfg.data,data.frame(user=username,repository=repository))
       }
     }
     cfg.data[order(cfg.data$user,cfg.data$repository),]
   }
-  cfg.data <- parse.config(config)
+  cfg.data <- parse.config(config$ve.distributions)
 
   # Start building the tcltk dialog
   tt <- tktoplevel()
@@ -455,75 +458,147 @@ edit.install.config <- function() {
 
   changed <- tclVar(0) # change to 1 if edited config needs to be loaded.
 
+  newUser <- tclVar("")
+  newRepo <- tclVar("")
+
   # Make the configuration frame
-  config_frame <- NULL
-  tcl.rows <- list() # each entry has a user and repository tclVar.
-  build.config.frame <- function(cfg.data) {
+  config_frame <- tkframe(tt) # create this, expecting to destroy it again the first time we build
+
+  build.config.frame <- function() {
     # Returns a tkframe with a set of rows inside it representing the objects
     # Create a data.frame to hold pairs of tclVar objects for each row
 
+    # message("Building config frame:")
+    # print(cfg.data)
+
     # Map the parsed config into a set of display rows (each of which will have a delete button)
-    if ( ! is.null(config_frame) ) tkdestroy(config_frame)
-    config_frame <- tkframe(tt)
+    grid.info <- tcl("grid", "info", config_frame)
+    if ( length( grid.info ) > 0 ) {
+      print(class(grid.info))
+      # message("removing config_frame")
+      tcl("grid","remove",config_frame)
+      tkdestroy(config_frame)
+      config_frame <<- NULL
+    }
+
+    config_frame <<- tkframe(tt)
+    tkgrid(tklabel(config_frame,text="User/Org"),row=0,column=0,padx=5,pady=5)
+    tkgrid(tklabel(config_frame,text="Repository"),row=0,column=1,padx=5,pady=5)
+      
+    create.trash.button.command <- function(row) {
+      as.character(row)
+      return(
+        function() {
+          # message("Removing row ",row," from cfg.data")
+          print(cfg.data)
+          cfg.data <<- cfg.data[-row,]
+          build.config.frame()
+        }
+      )
+    }
     want.trash.button <- nrow(cfg.data) > 1
+    tcl.rows <- list()
     for ( row in 1:nrow(cfg.data) ) {
       tcl.row <- list( row=row, user=tclVar(cfg.data$user[row]), repository=tclVar(cfg.data$repository[row]) )
       tcl.rows[[row]] <- tcl.row
-      t.row <- row-1
       
       user.edit <- tkentry(config_frame,textvariable=tcl.row$user)
       repository.edit <- tkentry(config_frame,textvariable=tcl.row$repository)
-      # TODO: Can we find a wastebasket icon that will work?
       tkconfigure(user.edit,state="readonly")
       tkconfigure(repository.edit,state="readonly")
-      tkgrid(user.edit,row=t.row,column=0,padx=5,pady=5)
-      tkgrid(repository.edit,row=t.row,column=1,padx=5,pady=5)
+      tkgrid(user.edit,row=row,column=0,padx=5,pady=5)
+      tkgrid(repository.edit,row=row,column=1,padx=5,pady=5)
 
       if ( want.trash.button ) {
-        trash.button <- tkbutton(config_frame,text="X",font=question_button_font,fg="red",command = function() {
-          cfg.data <- cfg.data[-row,]
-          build.config.frame(cfg.data)
-        })
-        tkgrid(trash.button,row=t.row,column=2,padx=5,pady=5)
+        trash.button <- tkbutton(config_frame,text="X",fg="red",
+          command = create.trash.button.command(row))
+        tkgrid(trash.button,row=row,column=2,padx=5,pady=5)
       }
     }
+    # message("(Re-)displaying config_frame")
     tkgrid(config_frame,row=1,column=0,sticky="ew",padx=5,pady=5)
+    tclvalue(newUser) <- "" # clear these for further input
+    tclvalue(newRepo) <- ""
   }
 
   # Create brief instructions row
-  instructions <- tklabel(tt,text="Edit Github repositories to search for core VisionEval releases")
+  instructions <- tklabel(tt,text="Github repositories to search for core VisionEval releases.")
   tkgrid(instructions,row=0,column=0,sticky="w",padx=5,pady=5)
 
   # make the configuration frame
-  build.config.frame(cfg.data)
+  build.config.frame()
 
   # make a row of tkentry items to gather a new user / repository pair, with a "+" button to
   # add them at the end of cfg.data and call build.config.frame
-  make_entry_row(tt) # TODO: may not need a function; just do it once in dialog row 2 and be done
+
+  entry_frame <- tkframe(tt, borderwidth = 2, relief = "groove")
+  user_entry  <- tkentry(entry_frame, textvariable = newUser)
+  repo_entry  <- tkentry(entry_frame, textvariable = newRepo)
+  new_button  <- tkbutton(entry_frame, text = "Add", fg="green", command = function() {
+    nu <- tclvalue(newUser)
+    nr <- tclvalue(newRepo)
+    if ( all( nzchar(c(nu,nr)) ) ) {
+      # Add a row to cfg.data
+      # message("Before adding:")
+      # print(cfg.data)
+      cfg.data <<- rbind(cfg.data,data.frame(user=nu,repository=nr))
+      # message("After adding:")
+      # print(cfg.data)
+      # message("Rebuilding config_frame inside add function")
+      build.config.frame()
+    } else {
+      # Can't add unless both variables have something in them
+      # message("No change")
+      # message("nu = ",nu," and nr = ",nr)
+      tclvalue(newUser) = ""
+      tclvalue(newRepo) = ""
+    }
+  })
+  tkgrid(user_entry,row=0,column=0,padx=5,pady=5)
+  tkgrid(repo_entry,row=0,column=1,padx=5,pady=5)
+  tkgrid(new_button,row=0,column=2,padx=5,pady=5)
+  tkgrid(entry_frame,row=2,column=0,sticky="ew",padx=5,pady=5)
 
   # buttons to "Reset", "Save", or "Return" in a row below the entry frames
+  # Reset button sets cfg.data to the default repositories
+  #  (but does NOT save it; need to also press Save)
   # Save button repacks the user/repository controls into hierarchical structure, saves it,
   #   and returns "changed<-TRUE" leading to retry
-  # Return button exits dialog without changing anything ("changed<-FALSE")
+  # Return button cancels dialog without changing anything ("changed<-FALSE")
   onReset <- function() {
     # Reset button returns to edit defaults (without changing any saved file)
+    # User still needs to save in order to apply this configuration
     cfg.data <- parse.config(default.config)
     build.config.frame(cfg.data)
   }
   onSave <- function() {
     # iterate cfg.data into a hierarchical list by user / repository
     new.distributions <- list()
-    for ( user in unique(cfg.data$user) ) {
-      new.distributions[[user]] <- cfg.data$repository[cfg.data$user == user]
+    for ( row in 1:nrow(cfg.data) ) {
+      new.distributions[[row]] <- list(user=cfg.data$user[row],repository=cfg.data$repository[row])
     }
-    write_yaml(list(ve.distributions=new.distributions), install.config.file, indent=2) # ve.env$ve.home/ve-install-config.yml
-    tclvalue(changed) <- 1
+    yaml::write_yaml(list(ve.distributions=new.distributions), install.config.file, indent=2) # ve.env$ve.home/ve-install-config.yml
+    tclvalue(changed) <- "Yes"
     tkdestroy(tt)
   }
   onReturn <- function() {
-    tclvalue(changed) <- 0
+    tclvalue(changed) <- "No"
     tkdestroy(tt)
   }
+
+  # Window action buttons
+  button_frame <- tkframe(tt)
+  reset_button  <- tkbutton(button_frame, text = "Reset", command = onReset)
+  save_button   <- tkbutton(button_frame, text = "Save", command = onSave)
+  return_button <- tkbutton(button_frame, text = "Return", command = onReturn)
+  tkgrid(reset_button,row=0,column=0,padx=5,pady=5)
+  tkgrid(save_button,row=0,column=1,padx=5,pady=5)
+  tkgrid(return_button,row=0,column=2,padx=5,pady=5)
+  tkgrid(button_frame,row=3,column=0,padx=5,pady=5)
+
+  # Run the dialog
+  tkfocus(tt)
+  tkwait.window(tt)
 
   return(tclvalue(changed))
 }
@@ -569,7 +644,7 @@ getReleases <- function(build.type,cache=FALSE) {
       return(all.releases) # no releases: hunt for local github clone with a VE-Bootstrap.R
     }
     config <- load.install.config() # ve-install-config.yml may be changed by get.buildtype.dialog
-    for ( distro in config$ve.distributions) {
+    for ( distro in config$ve.distributions ) {
       dist.user <- distro$user
       for ( repo in distro$repository ) {
         repo.name <- paste(dist.user,repo,sep="/")
@@ -814,12 +889,11 @@ setup.dialog <- function(build.type,all.releases,max_width=800) {
     repos_config <- tkbutton(repos_outer_frame,text="Edit Config",state="normal",command = function() {
       disable_buttons()
       changed <- edit.install.config()
-      if ( changed == "No" ) { # End the dialog and loop back to re-read configuration
+      if ( changed == "Yes" ) { # End the dialog and loop back to re-read configuration
         tclvalue(doit) <- "TryAgain"
         tkdestroy(tt)
-      } else { # no change, just go back to the dialog
-        enable_buttons()
       }
+      enable_buttons()
     })
     tkgrid(repos_frame,row=0,column=0,sticky="ew",padx=5,pady=5)
     tkgrid(repos_label,row=0,column=0,sticky="w",padx=5,pady=5)
@@ -924,7 +998,6 @@ selectInstaller <- function(cache=FALSE) {
     }
   }
 
-  # TODO: this will get a little more elaborate with different build.types
   if ( selected$Runtime != "Build Local Clone" ) {
     repo <- selected$Repos
     release <- selected$Release
