@@ -243,11 +243,14 @@ select.ve.home.dialog <- function(ve.home) {
   button_frame <- tkframe(tt)
   ok_button <- tkbutton(button_frame, text = "Select", command = onOK)
   cancel_button <- tkbutton(button_frame, text="Cancel", command = onCancel)
-  tkgrid(ok_button,column=0,row=0,sticky="w")
-  tkgrid(cancel_button,column=1,row=0,sticky="e")
-  tkgrid(button_frame, column = 1, row = 1, sticky="ew", padx = 5, pady = 5)
+  tkgrid(ok_button,column=0,row=0,sticky="e",padx=5)
+  tkgrid(cancel_button,column=1,row=0,sticky="w",padx=5)
+  tkgrid(button_frame, column = 0, row = 1, columnspan=2, sticky="ew", padx = 5, pady = 5)
 
   tkgrid.columnconfigure(tt, 1, weight = 1) #Make the second column expandable.
+  tkgrid.columnconfigure(button_frame,0, weight=1)
+  tkgrid.columnconfigure(button_frame,1, weight=1)
+  
   tkbind(tt, "<Return>", function() {
     onOK()
   })
@@ -265,9 +268,17 @@ select.ve.home.dialog <- function(ve.home) {
   )
 }
 
+old.ve.home <- ve.home
 ve.home <- select.ve.home.dialog(ve.home)
 if ( is.na(ve.home) ) stop(call.=FALSE,"Installation cancelled at user request.")
-if ( dir.exists(ve.home) ) setwd(ve.home) else stop(call.=FALSE,"Installation Cancelled. VE_HOME directory does not exist")
+if ( dir.exists(ve.home) ) {
+  ve.env$ve.home <- ve.home
+  # Salvage old ve-install-config.yml if it exists
+  if ( file.exists( old.install.config.file <- file.path(old.ve.home,"ve-install-config.yml") ) ) {
+    file.copy(old.install.config.file, ve.env$ve.home)
+  }
+  setwd(ve.home)
+} else stop(call.=FALSE,"Installation Cancelled. VE_HOME directory does not exist")
 
 ve.env$this.R <- paste(c(R.version["major"],R.version["minor"]),collapse=".")
 ve.env$two.digit.R <- tools::file_path_sans_ext(this.R)
@@ -282,131 +293,7 @@ if ( ! ve.lib %in% .libPaths() ) .libPaths(c(ve.lib)) # will remove extra librar
 inst.lib <- file.path(ve.home,"ve-inst-lib (remove)",ve.env$two.digit.R)
 if ( ! dir.exists(inst.lib) ) dir.create(inst.lib,recursive=TRUE)
 
-####### process the installation
-
-installVisionEval <- function(cache=cache.releases) { # no function parameters right now
-  installer <- selectInstaller(cache=cache)   # pick an available installer (config handled internally)
-  retrieved <- fetchInstaller(installer) # confirms downloaded location and MANIFEST type
-  launch    <- doInstallation(retrieved) # launch selects "end user" or "builder"
-}
-
-# TclTk dialog to present a list box with choices
-# Used to select repositories (if more than one configured), releases, and installers
-
-select.from.list <- function(parent_window, dest_var, items, title="Make a Selection") {
-  tt <- tktoplevel(parent = parent_window)
-  tkwm.title(tt, title)
-
-  original_var <- tclVar(tclvalue(dest_var))
-
-  Instructions <- tklabel(tt,text=title,justify="center")
-  tkgrid(Instructions, row=0, column=0, sticky="ew",pady=5)
-
-  lb.frame <- tkframe(tt,borderwidth=2,relief="solid")
-  lb1 <- tklistbox(lb.frame, selectmode = "single", height=0, width=0)
-
-  tkgrid(lb1,row=0,column=0,padx=5,pady=5,sticky="ew")
-  tkgrid.columnconfigure(lb.frame,0,weight=1)
-  for (item in items) {
-    tkinsert(lb1, "end", item)
-  }
-  tkselection.set(lb1,0)
-  tkgrid(lb.frame, row = 1, column = 0, sticky = "ew", padx=5, pady=5)
-
-  onOK <- function() {
-    selection <- as.integer(tcl(lb1, "curselection")) + 1
-    if (length(selection) > 0) {
-      tclvalue(dest_var) <- items[selection]
-    }
-    tkdestroy(tt)
-  }
-
-  onCancel <- function() { # leave dest_var unchanged
-    tclvalue(dest_var) <- tclvalue(original_var)
-    tkdestroy(tt)
-  }
-
-  button.frame <- tkframe(tt)
-  ok_button <- tkbutton(button.frame, text = "OK", command = onOK)
-  cancel_button <- tkbutton(button.frame, text = "Cancel", command = onCancel)
-
-  tkgrid(ok_button, row = 0, column = 0, padx = 5, pady = 5,sticky="e")
-  tkgrid(cancel_button, row = 0, column = 1, padx = 5, pady = 5,sticky="w")
-  tkgrid(button.frame,row=2,column=0)
-
-  tkgrid.columnconfigure(tt, 0, weight = 1)
-  tkgrid.rowconfigure(tt, 0, weight = 1)
-
-  tkwait.window(tt) # Run the dialog
-}
-
-# Helper dialog for selecting installer type (for which releases will be offered)
-
-get.buildtype.dialog <- function() {
-  # Dialog values to update
-  # Keep track of whether we're doing a runtime or build installation
-  # And which repository, release and installer we've selected
-
-  tt <- tktoplevel()
-  tkwm.title(tt, "Set up Installation")
-
-  build.type <- tclVar("Release")                 # Options: Release, Build Release Snapshot, Build Local Clone
-
-  options = c("Release","Build Release Snapshot", "Build Local Clone")
-
-  # Build Type Selector
-  combo <- tklistbox(tt, height = length(options), selectmode = "single", exportselection = FALSE)
-  for (option in options) {
-    tkinsert(combo, "end", option)
-  }
-
-  # Installation Type Dialog
-
-  radio_frame <- tkframe(tt)
-  radio1 <- tkradiobutton(radio_frame, text = "Pre-Built Release (recommended)", variable = build.type, value = options[1])
-  radio2 <- tkradiobutton(radio_frame, text = "Build from Release Code", variable = build.type,         value = options[2])
-  radio3 <- tkradiobutton(radio_frame, text = "Build from Local Clone", variable = build.type,          value = options[3])
-
-  tkgrid(radio1,row=0,column=0,padx=5,pady=2,sticky="w")
-  tkgrid(radio2,row=1,column=0,padx=5,pady=2,sticky="w")
-  tkgrid(radio3,row=2,column=0,padx=5,pady=2,sticky="w")
-  tkgrid(radio_frame,row=0,column=0,padx=5,pady=5,sticky="w")
-
-  instructions <- paste(sep="",
-    "Select how you would like to install VisionEval.\n\n",
-    "* Pre-Built Release, the recommend choice, will show available VisionEval releases for your version of R.\n\n",
-    "* Build from Release Code will let you select a (very large) release zip file and run its build script.\n\n",
-    "* Build from Local Clone is the preferred way to build VisionEval from the ground up.",
-    "You will need to install Git, clone the repository, and check out the branch you would like to build",
-    " before re-running this installation script.\n\n",
-    "Building from a Local Clone is recommended",
-    " if you are planning to make code changes you would like to save or to contribute back to the VisionEval project.\n\n",
-    "NOTE: If there is not a pre-built release for your version of R or your operating system, you can still select 'Pre-Built Release' ",
-    " but it will require you to build the VisionEval packages.\n\n",
-    "For any of the build options on Windows, or if there is no pre-built release available, you will need to have installed RTools.",
-    "See the VisionEval online documentation for information on obtaining RTools. Mac OS and Linux usually already have the required tools."
-  )
-
-  onOK <- function() tkdestroy(tt)
-  onCancel <- function() {
-    tclvalue(build.type) <- "Cancel"
-    tkdestroy(tt)
-  }
-
-  button_frame <- tkframe(tt)
-  ok_button <- tkbutton(button_frame, text = "OK", command = onOK)
-  cancel_button <- tkbutton(button_frame, text = "Cancel", command = onCancel)
-  tkgrid(ok_button, row = 0, column = 0, padx = 5, pady = 5, sticky="w")
-  tkgrid(cancel_button, row = 0, column = 1, padx = 5, pady = 5, sticky="w")
-  tkgrid(info_button(button_frame,instructions), row = 0, column = 2, padx = 5, pady = 10, sticky="e")
-  tkgrid.columnconfigure(button_frame,2,weight = 1)
-  tkgrid(button_frame,row=1,column=0,padx=5,pady=5,sticky="ew")
-  tkgrid.columnconfigure(tt, 0, weight = 1)
-
-  tkwait.window(tt) # Run the dialog
-
-  return( tclvalue(build.type) )
-}
+install.config.file <- file.path(ve.env$ve.home,"ve-install-config.yml")
 
 ####### Load Configuration File
 
@@ -415,7 +302,8 @@ if ( ! requireNamespace("yaml",lib.loc=inst.lib,quietly=TRUE) ) {
   requireNamespace("yaml",lib.loc=inst.lib,quietly=TRUE)
 }
 
-install.config.file <- file.path(ve.env$ve.home,"ve-install-config.yml")
+# Edit installation configuration
+
 default.ve.repository <- list(
   list(user="jrawbits",repository=c("visioneval-jr")),   # test repository
   list(user="visioneval",repository=c("visioneval-dev"))  # public repository
@@ -456,7 +344,7 @@ edit.install.config <- function() {
   tt <- tktoplevel()
   tkwm.title(tt, "Edit Install Configuration")
 
-  changed <- tclVar(0) # change to 1 if edited config needs to be loaded.
+  changed <- tclVar("No") # change to "Yes" below when edited config needs to be re-loaded.
 
   newUser <- tclVar("")
   newRepo <- tclVar("")
@@ -601,6 +489,132 @@ edit.install.config <- function() {
   tkwait.window(tt)
 
   return(tclvalue(changed))
+}
+
+####### process the installation
+
+installVisionEval <- function(cache=cache.releases) { # no function parameters right now
+  installer <- selectInstaller(cache=cache)   # pick an available installer (config handled internally)
+  retrieved <- fetchInstaller(installer) # confirms downloaded location and MANIFEST type
+  launch    <- doInstallation(retrieved) # launch selects "end user" or "builder"
+}
+
+# TclTk dialog to present a list box with choices
+# Used to select repositories (if more than one configured), releases, and installers
+
+select.from.list <- function(parent_window, dest_var, items, title="Make a Selection") {
+  tt <- tktoplevel(parent = parent_window)
+  tkwm.title(tt, title)
+
+  original_var <- tclVar(tclvalue(dest_var))
+
+  Instructions <- tklabel(tt,text=title,justify="center")
+  tkgrid(Instructions, row=0, column=0, sticky="ew",pady=5)
+
+  lb.frame <- tkframe(tt,borderwidth=2,relief="solid")
+  lb1 <- tklistbox(lb.frame, selectmode = "single", height=0, width=0)
+
+  tkgrid(lb1,row=0,column=0,padx=5,pady=5,sticky="ew")
+  tkgrid.columnconfigure(lb.frame,0,weight=1)
+  for (item in items) {
+    tkinsert(lb1, "end", item)
+  }
+  tkselection.set(lb1,0)
+  tkgrid(lb.frame, row = 1, column = 0, sticky = "ew", padx=5, pady=5)
+
+  onOK <- function() {
+    selection <- as.integer(tcl(lb1, "curselection")) + 1
+    if (length(selection) > 0) {
+      tclvalue(dest_var) <- items[selection]
+    }
+    tkdestroy(tt)
+  }
+
+  onCancel <- function() { # leave dest_var unchanged
+    tclvalue(dest_var) <- tclvalue(original_var)
+    tkdestroy(tt)
+  }
+
+  button.frame <- tkframe(tt)
+  ok_button <- tkbutton(button.frame, text = "OK", command = onOK)
+  cancel_button <- tkbutton(button.frame, text = "Cancel", command = onCancel)
+
+  tkgrid(ok_button, row = 0, column = 0, padx = 5, pady = 5,sticky="e")
+  tkgrid(cancel_button, row = 0, column = 1, padx = 5, pady = 5,sticky="w")
+  tkgrid(button.frame,row=2,column=0)
+
+  tkgrid.columnconfigure(tt, 0, weight = 1)
+  tkgrid.rowconfigure(tt, 0, weight = 1)
+
+  tkwait.window(tt) # Run the dialog
+}
+
+# Helper dialog for selecting installer type (for which releases will be offered)
+
+get.buildtype.dialog <- function() {
+  # Dialog values to update
+  # Keep track of whether we're doing a runtime or build installation
+  # And which repository, release and installer we've selected
+
+  tt <- tktoplevel()
+  tkwm.title(tt, "Set up Installation")
+
+  build.type <- tclVar("Release")                 # Options: Release, Build Release Snapshot, Build Local Clone
+
+  options = c("Release","Build Release Snapshot", "Build Local Clone")
+
+  # Build Type Selector
+  combo <- tklistbox(tt, height = length(options), selectmode = "single", exportselection = FALSE)
+  for (option in options) {
+    tkinsert(combo, "end", option)
+  }
+
+  # Installation Type Dialog
+
+  radio_frame <- tkframe(tt)
+  radio1 <- tkradiobutton(radio_frame, text = "Pre-Built Release (recommended)", variable = build.type, value = options[1])
+  radio2 <- tkradiobutton(radio_frame, text = "Build from Release Code", variable = build.type,         value = options[2])
+  radio3 <- tkradiobutton(radio_frame, text = "Build from Local Clone", variable = build.type,          value = options[3])
+
+  tkgrid(radio1,row=0,column=0,padx=5,pady=2,sticky="w")
+  tkgrid(radio2,row=1,column=0,padx=5,pady=2,sticky="w")
+  tkgrid(radio3,row=2,column=0,padx=5,pady=2,sticky="w")
+  tkgrid(radio_frame,row=0,column=0,padx=5,pady=5,sticky="w")
+
+  instructions <- paste(sep="",
+    "Select how you would like to install VisionEval.\n\n",
+    "* Pre-Built Release, the recommend choice, will show available VisionEval releases for your version of R.\n\n",
+    "* Build from Release Code will let you select a (very large) release zip file and run its build script.\n\n",
+    "* Build from Local Clone is the preferred way to build VisionEval from the ground up.",
+    "You will need to install Git, clone the repository, and check out the branch you would like to build",
+    " before re-running this installation script.\n\n",
+    "Building from a Local Clone is recommended",
+    " if you are planning to make code changes you would like to save or to contribute back to the VisionEval project.\n\n",
+    "NOTE: If there is not a pre-built release for your version of R or your operating system, you can still select 'Pre-Built Release' ",
+    " but it will require you to build the VisionEval packages.\n\n",
+    "For any of the build options on Windows, or if there is no pre-built release available, you will need to have installed RTools.",
+    "See the VisionEval online documentation for information on obtaining RTools. Mac OS and Linux usually already have the required tools."
+  )
+
+  onOK <- function() tkdestroy(tt)
+  onCancel <- function() {
+    tclvalue(build.type) <- "Cancel"
+    tkdestroy(tt)
+  }
+
+  button_frame <- tkframe(tt)
+  ok_button <- tkbutton(button_frame, text = "OK", command = onOK)
+  cancel_button <- tkbutton(button_frame, text = "Cancel", command = onCancel)
+  tkgrid(ok_button, row = 0, column = 0, padx = 5, pady = 5, sticky="w")
+  tkgrid(cancel_button, row = 0, column = 1, padx = 5, pady = 5, sticky="w")
+  tkgrid(info_button(button_frame,instructions), row = 0, column = 2, padx = 5, pady = 10, sticky="e")
+  tkgrid.columnconfigure(button_frame,2,weight = 1)
+  tkgrid(button_frame,row=1,column=0,padx=5,pady=5,sticky="ew")
+  tkgrid.columnconfigure(tt, 0, weight = 1)
+
+  tkwait.window(tt) # Run the dialog
+
+  return( tclvalue(build.type) )
 }
 
 ####### getAllReleases from distributions (plus local built if any)
@@ -886,10 +900,10 @@ setup.dialog <- function(build.type,all.releases,max_width=800) {
     repos_outer_frame <- tkframe(tt)
     repos_frame <- tkframe(repos_outer_frame, borderwidth = 2, relief = "groove")
     repos_label <- tklabel(repos_frame,textvariable=repository, justify="left")
-    repos_config <- tkbutton(repos_outer_frame,text="Edit Config",state="normal",command = function() {
+    repos_config <- tkbutton(repos_outer_frame,text="Add Repositories",state="normal",command = function() {
       disable_buttons()
       changed <- edit.install.config()
-      if ( changed == "Yes" ) { # End the dialog and loop back to re-read configuration
+      if ( changed == "Yes" ) {
         tclvalue(doit) <- "TryAgain"
         tkdestroy(tt)
       }
