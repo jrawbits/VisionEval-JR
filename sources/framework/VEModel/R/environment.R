@@ -113,7 +113,6 @@ runtimeEnvironment <- function(ve.new.env=NULL) {
 # Initialize VEModel from external environment (probrably VEStart)
 #' Set up initial VEModel environment from VEStart
 #'
-#' @param new.ve.env An environment containing ve.home, ve.runtime and other setup variables
 #' @return None
 #' @export
 initVisionEval <- function() {

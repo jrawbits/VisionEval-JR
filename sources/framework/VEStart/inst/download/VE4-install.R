@@ -157,10 +157,10 @@ if ( is.na(ve.home) ) {
     ve.env$ve.home <- Sys.getenv("VE_HOME",NA)
     if ( is.na(ve.home) ) {
       ve.home <- getwd()
-      home.from("getwd()")
+      home.from <- "getwd()"
     } else home.from <- "VE_HOME"
   } else {
-    home.from("Existing ve.env")
+    home.from <- "Existing ve.env"
     ve.env$ve.home
   }
 } else {

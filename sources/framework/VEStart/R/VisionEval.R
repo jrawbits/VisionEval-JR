@@ -119,7 +119,7 @@ startVisionEval <- function(
   # ve.runtime can be made non-missing by providing an existing directory or setting it to NA
   # (it defaults when missing to NULL)
   message("Launched runtime: ",ve.runtime)
-  if ( is.na(ve.runtime) ) {
+  if ( ! is.character(ve.runtime) ) {
     home.as.runtime <- askYesNo(paste("Install VisionEval 'models' folder in",ve.home,"?"))
     if ( is.na(home.as.runtime) ) {
       message("Please select a suitable VisionEval runtime directory for models.")
