@@ -8,7 +8,7 @@ bootstrap.file <- unique(
   file.path(
     c(
       ve.home,
-      ve.source,
+      ve.source
     ),
     "VE-Bootstrap.R"
   )

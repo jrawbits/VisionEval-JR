@@ -110,14 +110,14 @@ runtimeEnvironment <- function(ve.new.env=NULL) {
   ve.env
 }
 
-# Initialize VEModel from external environment (probrably VEStart)
-#' Set up initial VEModel environment from VEStart
+# Initialize VEModel
+#' Set up initial VEModel environment
 #'
 #' @return None
 #' @export
 initVisionEval <- function() {
   message("Loading VisionEval 4.0!")
-  ve.env <- runtimeEnvironment()      # point VEModel to the VEStart environment
+  ve.env <- runtimeEnvironment()      # establish VEModel environment (possibly set up externally by VEStart)
   getSetup(reload=TRUE)               # reload global RunParam_ls; also will align with ve.env$ve.runtime
   ModelRoot <- getModelDirectory()    # Full path built from ve.runtime and global visioneval.cnf model directory name
   if ( ! dir.exists(ModelRoot) ) {
