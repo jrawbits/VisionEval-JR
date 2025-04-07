@@ -3,20 +3,36 @@
 
 # General script overview:
 
-# Organize as a function that then gets called as the last line of the script
+# TODO: Organize as a function that then gets called as the last line of the script
 
-# - Load VE_HOME, ve.lib and ve.source (for build installation)
+# - Create ve.env (passed through to VEStart or VEBuild/Boostrap)
+#
+# - Load VE_HOME and get user to confirm location via dialog
+#   * Ideally, option for text dialog (initial text request)
+#   * Copy ve-install-config.yml if new VE_HOME selected
 
-# - Load ve-install-config.yml if it exists
-#      If file does not exist, just insert defaults (including environment)
-#      See ve-install-config.yml.sample for details
-#      Main use is to add to the list of available repositories with released assets
+# - Load and create ve.lib within VE_HOME (once selected)
+#   * Create ve-inst-lib for packages using by VE4-install itself
+#     (So we can load them again if needed into final ve-lib)
 
-# - Look up ve.distributions and (later) ve.sources
-#   Find (latest) release in ve.distributions and look for matching assets
-#   Present a dialog showing distribution repository and available assets
-#   If ve.sources not specified, go for "VE-4.0" branch in "VisionEval-dev"
-#     Initially use VisionEval-JR instead of VisionEval-dev
+# - Identify ve-install-config.yml if it exists and edit with dialog
+#   * If file does not exist, just insert default repositories
+#     See ve-install-config.yml.sample for details
+#   * Dialog can re-write ve-install-config.yml in VE_HOME  
+
+# - Main installation process
+#   * Get releases and select installer (tcltk dialog)
+#   * Three installation options
+#     - Package release (binary, library or source) where available
+#     - Release zipball (for VE-Bootstrap.R build)
+#     - Local Repository Clone (dialog to browse directory)
+#       (just relays to VE-Bootstrap.R but keeps VE_HOME/ve-lib and built locations from installer)
+#   * Result is a file to download
+
+# - Fetch/Download the installer (easy for local clone!) to VE_HOME/download
+
+# - Do Installation of downloaded installer and return a launch function
+#   * Relay through VE_HOME/install or VE_HOME/build-source as needed
 
 # - Present dialog for user that lets them choose:
 #     * Runtime versus Developer installation
@@ -52,81 +68,6 @@
 #         TODO: change the build script to respect VE_SOURCE
 
 # - Start VisionEval
-
-# Pre-packaged installer name information:
-  # Zip file Naming Convention:
-  #   VE-Installer_<pkgType>_<Sys.Date()>.zip
-  # e.g.
-  #   VE-Installer_WinLibrary-R4.3_2025-03-20.zip
-  #   VE-Installer_WinBindary-R4.3_2025-03-20.zip
-  #   VE-Installer_SourcePkgs_2025-03-20.zip
-# Binary naming convention
-
-# Could also allow download of source code zip.
-# No manifest; need to pick extraction directory
-# Look for existence of VE-Bootstrap.R
-# Change working directory then source("VE-Bootstrap.R") to being
-
-# Check for and install RTools if presented with SourcePkgs installer
-
-# store an entire repository tree branch starting at "install-temp"
-# add that ahead of the online repositories (perhaps from the manifest)
-# so we'll drop the manifest at the root of "install-temp"
-# Manifest to include:
-# - pkgType (with "library" as a non-standard)
-# - Manifest (all the stuff generated when a package is built, notably branch, repo, commit ID)
-#   * Individual packages have their own Manifests.
-
-# Try not to zip multilayer folders - just the bottom-most directories
-# Put the necessary contriburl structure into the manifest (including R version)
-
-# When installing, add online repositories (CRAN, BioC) to search for missing dependencies
-# Git manifest is dumped as the installer is built (snapshot of repository situation)
-
-# Search for same types on Github for download (see download.R)
-# ve-install-config.cnf can list additional VEGithubRepositories:
-#   user/repository format (e.g. visioneval/visioneval-dev or jrawbits/visioneval-jr)
-# Will look for latest release on those alternate repositories 
-# Option also to Build - that will clone the repository into VE_HOME and source VE-Bootstrap.R
-#   (initially only work for public repositories)
-#   (cloning will only work into an empty directory)
-#   (cloning is painful due to the historical crud - only allow it for the new rooted repos).
-
-# Options:
-#   1. Any standard available installer at the Github
-#      Standard name pattern filtered by R version (see download.R)
-#   2. Alternative Github from ve-install.cnf
-#      Just a simple config (readable via "desc" package)
-#   3. Alternative to Clone and build from VisionEval-dev Github
-#      Use the same repositories that are checked for released assets
-#      Use the gert package for Github (easy!)
-# Download (if a release) or Clone (for development)
-# If Download:
-#   Unzip the installer file into "install" directory of VE_HOME
-#   Look for type of install in installation manifest
-#      (pre-installed, win.binary install, source install)
-#   Pre-install
-#     Copy to ve-lib (this is the existing approach - big download)
-#     win.binary install - install.packages from contriburl
-#       If dependencies are not present, load them from online
-#     source install - install packages from contriburl
-#       Probably requires RTools, especially if getting all
-#       dependencies; get dependencies online if not present in
-#       installer
-#     In every case, do an update from the installer if ve-lib has
-#       old packages relative to what was downloaded.
-#   Load VEStart
-#     Then run startVisionEval()
-#     Will prompt user to set startup location for models
-#     (VE_RUNTIME)
-#     Create startup files in VE_HOME and VE_RUNTIME
-#     Then change to that directory and load VEModel
-# If Clone
-#    Go to selected Github and do gert::git_clone into VE_HOME
-#      (reject and prompt for new VE_HOME not empty)
-#    Set VE_BUILD, VE_HOME
-#    Launch VE-Boostrap.R once complete
-#    ve.build() then ve.run()
 
 # Set up the working enviroment
 
@@ -275,7 +216,7 @@ if ( dir.exists(ve.home) ) {
   ve.env$ve.home <- ve.home
   # Salvage old ve-install-config.yml if it exists
   if ( file.exists( old.install.config.file <- file.path(old.ve.home,"ve-install-config.yml") ) ) {
-    file.copy(old.install.config.file, ve.env$ve.home)
+    file.copy(old.install.config.file, ve.home)
   }
   setwd(ve.home)
 } else stop(call.=FALSE,"Installation Cancelled. VE_HOME directory does not exist")
@@ -1071,7 +1012,7 @@ fetchInstaller <- function(installer) {
       }
     } else {
       message("Installer has already been downloaded.")
-      message("Install can be found in ",download)
+      message("Installer can be found in ",download)
       message("installer$file is ",installer$file)
       message("For a clean install, remove the downloads directory in VE_HOME")
     }
