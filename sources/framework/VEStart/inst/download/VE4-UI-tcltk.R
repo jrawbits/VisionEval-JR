@@ -142,7 +142,6 @@ edit.install.config <- function(config) {
     # Map the parsed config into a set of display rows (each of which will have a delete button)
     grid.info <- tcl("grid", "info", config_frame)
     if ( length( grid.info ) > 0 ) {
-      print(class(grid.info))
       # message("removing config_frame")
       tcl("grid","remove",config_frame)
       tkdestroy(config_frame)
@@ -157,7 +156,7 @@ edit.install.config <- function(config) {
       as.character(row)
       return(
         function() {
-          # message("Removing row ",row," from cfg.data")
+          # message("Removing "row" from cfg.data")
           print(cfg.data)
           cfg.data <<- cfg.data[-row,]
           build.config.frame()
