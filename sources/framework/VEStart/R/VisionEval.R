@@ -108,7 +108,6 @@ startVisionEval <- function(
       ve.home <- Sys.getenv("VE_HOME",getwd())
     }
   }
-  message("launch ve.home: ",ve.home)
   # set up VE_SOURCE (only used when building, but we want to preserve it in .Renviron)
   if ( exists("ve.sources",ve.env,inherits=FALSE) ) {
     ve.sources <- ve.env$ve.sources
@@ -116,33 +115,31 @@ startVisionEval <- function(
     ve.sources <- Sys.getenv("VE_SOURCE",as.character(NA))
   }
 
-  # ve.runtime can be made non-missing by providing an existing directory or setting it to NA
-  # (it defaults when missing to NULL)
-  message("Launched runtime: ",ve.runtime)
-  if ( ! is.character(ve.runtime) ) {
-    home.as.runtime <- askYesNo(paste("Install VisionEval 'models' folder in",ve.home,"?"))
-    if ( is.na(home.as.runtime) ) {
-      message("Please select a suitable VisionEval runtime directory for models.")
-      stop("Installation cancelled.")
-    }
-  } else home.as.runtime <- ( ve.runtime == ve.home )
-
-  if ( ! home.as.runtime  ) {
-    caption <- "Select directory for VisionEval 'models' folder (VE_RUNTIME)"
-    ve.runtime <- if (exists('utils::choose.dir')) { # Won't exist on non-Windows platforms
-      utils::choose.dir(default=ve.runtime,caption = caption)
+  # Locate default VE_RUNTIME
+  if ( missing(ve.runtime) || is.null(ve.runtime) ) {
+    if ( exists("ve.runtime",ve.env,inherits=FALSE) ) {
+      ve.runtime <- ve.env$ve.runtime
     } else {
-      tcltk::tk_choose.dir(default=ve.runtime,caption = caption)
+      ve.runtime <- Sys.getenv("VE_RUNTIME",NA)
+    }
+  }
+
+  # If environment does not already contain VE_RUNTIME and it is not passed as a parameter,
+  # put up a dialog to select the runtime folder.
+  if ( ! is.character(ve.runtime)  ) {
+    caption <- "Select directory in which to run VisionEval (VE_RUNTIME; location of 'models' folder)"
+    ve.runtime <- if (exists('utils::choose.dir')) { # Won't exist on non-Windows platforms
+      utils::choose.dir(default=ve.home,caption = caption)
+    } else {
+      tcltk::tk_choose.dir(default=ve.home,caption = caption)
     }
     if ( is.na(ve.runtime) || ! dir.exists(ve.runtime) ) {
       message("Please select a suitable VisionEval VE_RUNTIME directory for 'models'")
       stop("Installation cancelled.")
     }
-  } else ve.runtime <- ve.home
-  message("Selected runtime: ",ve.runtime)
-
+  }
   message("Setting up VE_RUNTIME as ",ve.runtime)
-  message("You will want to start VisionEval from that folder.")
+  message("You should start VisionEval from that folder in the future.")
 
   # Save the important parameters
   ve.env$ve.runtime <- ve.runtime
@@ -158,16 +155,19 @@ startVisionEval <- function(
   if ( "package:visioneval" %in% search() ) detach("package:visioneval")
   unloadNamespace("visioneval")
 
-  # TODO: ensure that ve-lib is set up for the current R and has VisionEval in it
-  # If not, kick back to the installation script.
-
   # Set up ve-lib (R library location for installed VE packages and dependencies)
   # The same library location will hold sub-directories for the major/minor R version that is
   # running this installation.
   ve.env$this.R <- paste(c(R.version["major"],R.version["minor"]),collapse=".")
   ve.env$ve.lib <- file.path(ve.home,ve.lib.name,tools::file_path_sans_ext(ve.env$this.R))
-  if ( ! dir.exists(ve.env$ve.lib) ) dir.create(ve.env$ve.lib,recursive=TRUE)
+  if ( ! dir.exists(ve.env$ve.lib) ) {
+    message("VisionEval is not installed for the version of R you are running: R",ve.env$this.R)
+    stop("Please re-run the VisionEval installer using R",ve.env$this.R)
+  }
   .libPaths(ve.env$ve.lib)
+  # Side effect of forcing .libPaths: ignore R_LIBS_USER in .Renviron, so we're essentially
+  # preventing users from adding other R library locations, which is a good thing since it
+  # helps avoid package version hell.
 
   # The following is key for setting up the basic operation
   # NOTE: if VE_HOME is a Github clone, we don't want to mess with the .Rprofile
@@ -213,7 +213,7 @@ checkSetup <- function(ve.home,ve.runtime,overwrite=FALSE) {
   names(runtime.files) <- startup.files
   home.files    <- file.path(ve.home,startup.files)
 
-  # Check that R version identified in VE_RUNTIME is the same as the one that is running
+  # Check that R version identified in VE_RUNTIME is the same as the one that is running this script
   # Won't change anything in VE_RUNTIME unless isTRUE(overwrite)
   ve.env <- getRuntimeEnvironment()
   good.r.version <- FALSE
@@ -237,9 +237,11 @@ checkSetup <- function(ve.home,ve.runtime,overwrite=FALSE) {
     }
     if ( exists("that.R",envir=ve.env) ) {
       if ( ve.env$this.R != ve.env$that.R && ! overwrite ) {
-        message("Wrong R version in ",ve.runtime)
-        message("Re-run startVisionEval() with 'overwrite=T' to change to R ",ve.env$this.R)
-        return(invisible(ve.runtime))
+        # NOTE: We wouldn't get here unless this.R has a library set up already
+        # This message/change is just about tracking what R version the user has been using in this VE_RUNTIME
+        message("Previously ran with R",ve.env$that.R," in ",ve.runtime)
+        message("Re-run startVisionEval(overwrite=T) to change to R",ve.env$this.R)
+        return(list(RVersion=FALSE))
       } else good.r.version <- TRUE
     }
   } else good.r.version <- TRUE # it doesn't exist or we're overwriting it, so we will carry on with this.R
@@ -293,8 +295,6 @@ ve.setup <- function(ve.home,ve.runtime,setupHome=FALSE,overwrite=FALSE) {
   )
   if ( length(setup.locations) == 0 ) return(invisible(ve.runtime)) # Not an error - just means setup files are already up to date
 
-#   message("Setup locations:")
-#   print(setup.locations)
   for ( location in setup.locations ) {
     message("Adding startup files to ",location)
 
@@ -302,16 +302,28 @@ ve.setup <- function(ve.home,ve.runtime,setupHome=FALSE,overwrite=FALSE) {
     this.R <- paste(R.version[c("major","minor")],collapse=".")
     cat("that.R:",this.R,"\n",sep="",file=file.path(location,"r.version"))
 
-    # Create .Renviron (VEBuild will add VE_BUILD to the list of defined locations, defaulting to VE_HOME)
-    # TODO: overwrite line items in .Renviron rather than all-or-nothing
-    # TODO: 
+    # Create or update .Renviron (VEBuild will add VE_BUILD to the list of defined locations, defaulting to VE_HOME)
+    # Find any VE_HOME line and replace it with ve.home
+    # Find any VE_RUNTIME line and replace it with ve.runtime
     renv.file      <- file.path(location,".Renviron")
-    renv.txt       <- c(
-      paste0("R_LIBS_USER=",paste(collapse=";",.libPaths()[-length(.libPaths())])), # ignore base library
+    # If .Renviron exists, read read its lines
+    if ( file.exists(renv.file) ) {
+      renv.txt <- readLines(renv.file,warn=FALSE)
+      backup.number <- 1
+      backup.path <- file.path(location,"Previous.Renviron")
+      if ( file.exists(backup.file <- backup.path) ) {
+        while ( file.exists( backup.file <- paste0(backup.path,backup.number,sep=".") ) ) {
+          backup.number <- backup.number + 1
+        }
+      }
+      writeLines(renv.txt,backup.file)
+      renv.txt <- grep("^(VE_HOME|VE_RUNTIME)=",renv.txt,value=TRUE,invert=TRUE) # Overwrite these lines below
+    }
+    renv.txt <- c(
+      renv.txt,
       paste0("VE_HOME=",normalizePath(ve.home,winslash="/",mustWork=TRUE)),
       paste0("VE_RUNTIME=",normalizePath(ve.runtime,winslash="/",mustWork=TRUE))
     )
-    if ( file.exists(renv.file) ) file.copy(renv.file,file.path(location,"Previous.Renviron"))
     writeLines(renv.txt,renv.file)
 
     # Write launch_Rx.y.bat, providing default R_HOME and encoding the R version in the batch name

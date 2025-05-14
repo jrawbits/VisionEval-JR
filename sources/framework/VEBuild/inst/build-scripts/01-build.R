@@ -3,6 +3,7 @@
 # Author: Jeremy Raw
 
 script.contents <- c(
+  "build.instructions.builder",
   "ve.build",
   "ve.run",
   # the following are used by 02-install.R / ve.make.installer
@@ -11,6 +12,17 @@ script.contents <- c(
   "makeGitInfo",
   "saveGitInfo"
 )  # for "import" package to construct ve.builder pseudo-package
+
+# Build instructions
+build.instructions.builder <- function() {
+  paste( collapse="\n", c(
+    "ve.setup() to select VE_HOME, VE_BUILD and VE_RUNTIME prior to building.",
+    "ve.build() to build a full VisionEval installation.",
+    if ( "VEStart" %in% utils::installed.packages(lib.loc=ve.env$ve.lib)[,"Package"] ) {
+      "ve.run() to start VisionEval."
+    } else NULL
+  ) )
+}
 
 # Create and return build environment (parameters for build)
 # @return the "ve.build.env" environment from the search path
@@ -98,10 +110,10 @@ ve.build.config <- function(config=list(),debug=FALSE, quiet=FALSE) {
   bld.env <- getBuildEnvironment()
 
   bld.env$build.type <- .Platform$pkgType
-  if ( ! suppressWarnings(requireNamespace("yaml",quietly=TRUE)) ) {
+  if ( ! suppressWarnings(requireNamespace("yaml",quietly=TRUE,lib.loc=ve.env$ve.lib)) ) {
     # Used to read configuration files - always get from online source
     utils::install.packages("yaml", lib=ve.env$ve.lib, repos=ve.env$CRAN.mirror, type=bld.env$build.type, quiet=!debug )
-    suppressWarnings(requireNamespace("yaml",quietly=TRUE))
+    suppressWarnings(requireNamespace("yaml",quietly=TRUE,lib.loc=ve.env$ve.lib))
   }
 
   bld.env$ve.wantdocs <- TRUE
@@ -114,8 +126,7 @@ ve.build.config <- function(config=list(),debug=FALSE, quiet=FALSE) {
     if (debug) cat("Build configuration file:",config.file,"\n")
     yaml::yaml.load_file(config.file)
   } else {
-    # if (debug)
-    cat("No usable",config.file,": Using default build configuration.\n")
+    if (!quiet) cat("No usable",config.file,": Using default build configuration.\n")
     list()
   }
 
@@ -312,13 +323,19 @@ ve.load.dependencies <- function(pkg.desc,debug=FALSE) {
   if ( any( ! available.online ) ) {
     # Make sure offline dependencies (VE or locally built packages) are either already installed or
     # scheduled to be built (i.e. present in pkg.desc list of targets)
+    message("Dependencies not available online:")
     local.deps <- pkg.deps[ ! available.online ]
-    available.local.names <- utils::available.packages(repos=bld.env$ve.repository.url,type=bld.env$build.type)[,"Package"]
-    available.local <- local.deps %in% c(available.local.names,names(pkg.desc)) # either built already or scheduled to build
-    if ( any( ! available.local ) ) {
-      cat("Required package(s) are not built and not scheduled to build:\n")
-      print( local.deps[ ! available.local ] )
-      stop("Re-run ve.build being sure to include those targets")
+    print(local.deps)
+    installed.local.names <- utils::installed.packages(lib.loc=ve.lib)[,"Package"]
+    installed.local <- local.deps %in% installed.local.names # this supports building more packages into a runtime installation
+    if ( any( ! installed.local ) ) {
+      available.local.names <- utils::available.packages(repos=bld.env$ve.repository.url,type=bld.env$build.type)[,"Package"]
+      available.local <- local.deps %in% c(installed.local,available.local.names,names(pkg.desc)) # either built already or scheduled to build
+      if ( any( ! available.local ) ) {
+        cat("Required package(s) are not built and not scheduled to build:\n")
+        print( local.deps[ ! available.local ] )
+        stop("Re-run ve.build being sure to include those targets")
+      }
     }
   }        
 

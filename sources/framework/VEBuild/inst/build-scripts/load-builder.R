@@ -20,18 +20,17 @@ load.builder <- function(ve.scripts) {
     CRAN.mirror <- Sys.getenv("VE_CRAN_MIRROR","https://cloud.r-project.org")
   } else {
     ve.lib <- get0("ve.lib",envir=ve.env,ifnotfound=.libPaths()[1])
-    # TODO: make sure ve.lib exists so we can isntall into it below
+    # TODO: make sure ve.lib exists so we can install into it below
     CRAN.mirror <- get0("CRAN.mirror",envir=ve.env,ifnotfound="https://cloud.r-project.org")
   }
 
-  if ( ! suppressWarnings(requireNamespace("import",quietly=TRUE)) ) {
+  if ( ! suppressWarnings(requireNamespace("import",quietly=TRUE,lib.loc=ve.lib)) ) {
     utils::install.packages("import", lib=ve.lib, repos=CRAN.mirror, type=.Platform$pkgType )
-    requireNamespace("import",quietly=TRUE)
+    requireNamespace("import",quietly=TRUE,lib.loc=ve.lib)
   }
 
   script.files <- file.path(ve.scripts,dir(ve.scripts,pattern="\\.R$"),fsep="/")
   for ( sf in script.files ) {
-    # Add error checking for script.contents not present
     # script.contents amounts to an export namespace for the script file
     # those imported functions can access other objects defined in each script
     try(
@@ -39,7 +38,11 @@ load.builder <- function(ve.scripts) {
       eval(parse(text=paste0("import::here(script.contents,.from='",sf,"')")))
     )
     if ( ! exists("script.contents") ) next
+
     eval(parse(text=paste0("import::into(.into='ve.builder',",paste(script.contents,collapse=","),",.from='",sf,"')")))
+    if ( length( instructions <- ls("ve.builder",pattern="^build\\.instructions") ) > 0 ) {
+      eval(parse(text=paste("message(",instructions,"()",")")))
+    }
     rm(script.contents)
   }
   unloadNamespace("import") # so we can load it again as part of ve.build

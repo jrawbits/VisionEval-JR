@@ -84,62 +84,28 @@ UI.source <- if ( caps["tcltk"] ) {
   UI.script <- file.path(dirname(ve.url),"VE4-UI-tcltk.R")
   UI.source <- try( source(UI.script), silent=TRUE )
   if ( inherits(UI.source,"try-error") ) NA else TRUE
-} else {
+} else NA
+if ( isFALSE(UI.source)  ) {
   # Load text interface functions
-  select.ve.home.dialog <- function(ve.home) {
-    # TODO: ask user for an alternate directory using a text interface
-    # To start, could just return ve.home passed in (bypassing the dialog entirely)
-    # instructions (should share with tcltk dialog)
-    instructions <- paste(sep="",
-      "VE_HOME is the directory where VisionEval will be installed. ",
-      "This home directory should ideally be empty before you continue the installation.\n\n",
-      "The default is the directory from which you started R. ",
-      "You can use the 'Change VE_HOME' button to pick a different directory (or create a new on) for your installation.\n\n",
-      "After the installation is finished, you can set a separate directory to hold your VisionEval models (VE_RUNTIME)."
-    )
-  }
+  select.ve.home.dialog <- function(ve.home) ve.home
 
   get.buildtype.dialog  <- function() {
-    # Show options
-    options = c("Release","Build Release Snapshot", "Build Local Clone")
-
-    # Instructions (should share with tcltk dialog)
-    instructions <- paste(sep="",
-      "Select how you would like to install VisionEval.\n\n",
-      "* Pre-Built Release, the recommend choice, will show available VisionEval releases for your version of R.\n\n",
-      "* Build from Release Code will let you select a (very large) release zip file and run its build script.\n\n",
-      "* Build from Local Clone is the preferred way to build VisionEval from the ground up.",
-      "You will need to install Git, clone the repository, and check out the branch you would like to build",
-      " before re-running this installation script.\n\n",
-      "Building from a Local Clone is recommended",
-      " if you are planning to make code changes you would like to save or to contribute back to the VisionEval project.\n\n",
-      "NOTE: If there is not a pre-built release for your version of R or your operating system, you can still select 'Pre-Built Release' ",
-      " but it will require you to build the VisionEval packages.\n\n",
-      "For any of the build options on Windows, or if there is no pre-built release available, you will need to have installed RTools.",
-      "See the VisionEval online documentation for information on obtaining RTools. Mac OS and Linux usually already have the required tools."
-    )
+    # For now, this just tries to do a Release build type
+    return( "Release" )
   }
 
   setup.dialog          <- function(build.type,all.releases,load.install.config,...) {
-    # build type comes from get.buildtype.dialog
-    # all.releases from the getReleases function
-    # load.install.config function reads the configuration file (or produces the default configuration)
-    # ... are other parameters like max_width that make sense for tcltk but not for text
-
-    # The simplified text installation just offers to select a repository, a release, and an installer
-    # compatible with the build type. No messing with the load configuration after the first time
-
-    # Returns the "selected" structure
+    if ( build.type != "Release" ) stop(call.=FALSE,"Unsupported build type - need full dialogs to pick types other than 'Release'")
+    # Returns the "selected" structure (first in installer in the first release in the first repository)
     list(
-      Runtime=build.type,             # Parameter passed into function
-      Repos=tclvalue(repository),
-      Release=tclvalue(release),      # Ignored for Build Local Clone
-      Installer=tclvalue(installer),  # Ignored for Build Local Clone
-      DoIt=tclvalue(doit)             # Values "No", "Try Again", "Install", "Cancel"
+      Runtime   = build.type,
+      Repos     = names(all.release)[1],
+      Release   = names(all.releases[[1]])[1],
+      Installer = names(all.releases[[1]][[1]][["assets"]])[1],
+      DoIt      = "Install"
     )
   }
 }
-# The interface must define a series of functions to gather required data
 
 # Set up the working enviroment
 
@@ -164,9 +130,7 @@ ve.env <- if ( ! "ve.env" %in% search() ) {
 ve.env.list <- ls(ve.env)
 ve.home <- Sys.getenv("VE_INSTALL",NA)  # VE_INSTALL can be used as a bare VE_HOME for testing
 if ( is.na(ve.home) ) {
-  print(ve.env.list)
   if ( ! "ve.home" %in% ve.env.list || is.na(ve.env$ve.home) ) {
-    message("Not in env.list")
     ve.home <- Sys.getenv("VE_HOME",NA)
     if ( is.na(ve.home) ) {
       home.from <- "getwd()"
@@ -374,8 +338,9 @@ getReleases <- function(build.type,cache=FALSE) {
       }
     }
     # If we're doing standard releases, create a virtual release for installers we may have built
-    # locally. This is intended for testing the install script with updated local intallers.
+    # locally. This is intended for testing the install script with updated local installers.
     if ( build.type == "Release" && ! is.na(ve.build <- Sys.getenv("VE_BUILD",NA) ) ) {
+      message("ve.build = ",ve.build)
       if ( dir.exists(local.releases <- file.path(ve.build,"install") ) ) { # Locally built installers
         release.data <- list()
         for ( release.name in rev(dir(local.releases,full.names=TRUE)) ) {

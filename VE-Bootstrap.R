@@ -22,6 +22,7 @@ loadRuntimeEnvironment <- function() { # Keep this synchronized with VE-Bootstra
   ve.env$ve.home <- normalizePath(Sys.getenv("VE_HOME",getwd()),winslash="/",mustWork=FALSE)
   ve.env$ve.build.dir <- Sys.getenv("VE_BUILD",NA)
   ve.env$ve.runtime <- Sys.getenv("VE_RUNTME",NA)
+  message("VE_RUNTIME=",ve.env$ve.runtime)
   if ( is.na(ve.env$ve.build.dir) ) {
     if ( getwd() != ve.env$ve.home ) {
       # If ve.env$ve.home is somewhere else than working directory, we presume it's because
@@ -64,8 +65,8 @@ loadRuntimeEnvironment <- function() { # Keep this synchronized with VE-Bootstra
   ve.env$ve.lib <- file.path(ve.env$ve.home,ve.lib.name,two.digit.R)
   if ( ! dir.exists(ve.env$ve.lib) ) {
     dir.create(ve.env$ve.lib,recursive=TRUE)
-    # if ( ! ve.env$ve.lib %in% .libPaths() ) .libPaths(ve.env$ve.lib,.libPaths())
   }
+  if ( ! ve.env$ve.lib %in% .libPaths() ) .libPaths(ve.env$ve.lib)
   return(ve.env)
 }
 
@@ -84,7 +85,7 @@ local(
     if ( ! file.exists(build.loader) ) {
       message("No build.loader at ",build.loader)
       stop("VisionEval source tree has unexpected structure.")
-    } else message("Loading ve.build...")
+    } else message("Loading ve.build from ",VEBuild.scripts,"...")
 
     # Create an environment to hold build functions (if not already present)
     if ( "ve.builder" %in% search() ) {
@@ -95,13 +96,6 @@ local(
 
     # Load the builder scripts
     sys.source(build.loader,envir=env.build)
-    env.build$load.builder(ve.scripts=VEBuild.scripts)
-
-    # Give the user instructions for optional configuration
-    message("ve.setup() to select VE_HOME, VE_BUILD and VE_RUNTIME prior to building.\n")
-    message("ve.build() to build a full VisionEval installation.\n")
-    if ( "VEStart" %in% utils::installed.packages(lib.loc=ve.env$ve.lib)[,"Package"] ) {
-      message("ve.run() to start VisionEval.\n")
-    }
+    env.build$load.builder(VEBuild.scripts)
   }
 )

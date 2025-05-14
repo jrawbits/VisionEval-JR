@@ -2,7 +2,23 @@
 
 # Author: Jeremy Raw
 
-script.contents <- c( "ve.make.installer" ) # for "import" package to construct ve.build.env pseudo-package
+script.contents <- c(
+  "build.instructions.installer",
+  "ve.make.installer"
+) # for "import" package to construct ve.build.env pseudo-package
+
+# Legal installer types
+legalTypes <- tolower(c("win.binary","win.library","source"))
+
+#Build instructions
+build.instructions.installer <- function() {
+  if ( "VEBuild" %in% utils::installed.packages(lib.loc=ve.env$ve.lib)[,"Package"] ) {
+    paste( collapse="\n", c(
+      "ve.make.installer() to build an installer",
+      paste0("Optionally provide, a build type: one of (",paste(c(legalTypes,"all"),collapse=", "),")")
+    ) )
+  } else NULL
+}
 
 ve.make.installer <- function(pkgType=.Platform$pkgType,debug=FALSE) {
 
@@ -11,7 +27,7 @@ ve.make.installer <- function(pkgType=.Platform$pkgType,debug=FALSE) {
     stop("VisionEval environment is unavailable. Use VE-Bootstrap.R or VEBuild to begin.", call. = FALSE)
   }
 
-  # WARNING: currently does not allow override of ve-build-config.yml
+  # WARNING: currently does not allow override of ve-build-config.yml name
   bld.env <- getBuildEnvironment()
   if ( ! "this.R" %in% ls(bld.env) ) ve.build.config(debug=debug,quiet=TRUE)
 
@@ -22,7 +38,6 @@ ve.make.installer <- function(pkgType=.Platform$pkgType,debug=FALSE) {
   }
 
   # error check pkgType
-  legalTypes <- tolower(c("win.binary","source","win.library"))
   if ( ! is.character(pkgType) ) failure("pkgType must be a character string",pkgType)
   pkgType <- tolower(pkgType)
   if ( pkgType == "all" ) {
