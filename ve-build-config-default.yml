@@ -1,20 +1,5 @@
 # YAML configuration file for VEBuild
 
-# # Identify directory names within VE_BUILD
-#   - ve-lib
-#   - ve-src
-#   - ve-pkg-repo
-#   - dependencies-repo
-# # Identify locations (folders) to search for packages to build and install
-#   - List of directories (relative to VE_HOME)
-#     - Will be searched recursively for DESCRIPTION files
-#   - Don't mess with having VE clone those
-
-BuildTargets:                 # relative to Output
-  ve.lib           : ve-lib
-  ve.src           : ve-src
-  ve.repository    : ve-pkg-repo
-  ve.dependencies  : dependencies-repo
 PackageSources:               # absolute path or relative to VE_HOME
   - sources                   # name of sub-directory of VE_HOME
   - optional                  # Original MultiModal module plus VERPAT model package

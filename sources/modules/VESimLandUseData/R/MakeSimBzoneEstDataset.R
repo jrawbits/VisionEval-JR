@@ -400,7 +400,8 @@ createSimLandUseDataset <- function() {
   rm(StFips_df)
   #Identify individual state components of urbanized areas
   #so that parts of urbanized areas split between states can be addressed alone
-  UzaName_ <- unlist(lapply(strsplit(D_df$UA_NAME, ","), function(x) x[1]))
+  UA_NAME <- iconv(D_df$UA_NAME,from="ISO-8859-1",to="UTF-8")
+  UzaName_ <- unlist(lapply(strsplit(UA_NAME, ","), function(x) x[1]))
   D_df$UZA_NAME <- paste(UzaName_, D_df$STATE, sep = ", ")
   rm(UzaName_)
   #Add the latitude and longitude of the block group centroids

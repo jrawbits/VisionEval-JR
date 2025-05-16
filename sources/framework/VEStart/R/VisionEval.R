@@ -318,7 +318,7 @@ ve.setup <- function(ve.home,ve.runtime,setupHome=FALSE,overwrite=FALSE) {
       }
       writeLines(renv.txt,backup.file)
       renv.txt <- grep("^(VE_HOME|VE_RUNTIME)=",renv.txt,value=TRUE,invert=TRUE) # Overwrite these lines below
-    }
+    } else renv.txt <- character(0)
     renv.txt <- c(
       renv.txt,
       paste0("VE_HOME=",normalizePath(ve.home,winslash="/",mustWork=TRUE)),

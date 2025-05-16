@@ -43,7 +43,7 @@ ve.make.installer <- function(pkgType=.Platform$pkgType,debug=FALSE) {
   if ( pkgType == "all" ) {
     pkgType <- legalTypes
   } else if ( ! pkgType %in% legalTypes ) {
-    failure("pkgType must be one of ",legalTypes,"or the shortcut 'all'\nYou selected '",pkgType,"'")
+    failure(paste0("pkgType must be one of ",legalTypes,"or the shortcut 'all'\nYou selected '",pkgType,"'"))
   }
 
   for ( pt in pkgType ) buildOneInstaller(pt,bld.env,debug)

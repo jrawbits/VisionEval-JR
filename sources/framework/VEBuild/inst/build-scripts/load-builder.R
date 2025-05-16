@@ -8,7 +8,6 @@
 #' The script calling load.build should have created and attached the ve.builder environment.
 #' See \code{VE-Bootstrap.R} at the root of the source tree, or \code{VEBuild::.onAttach()}
 #' @param ve.scripts is the directory in which to seek the builder scripts (usually "inst/build-scripts" within VEBuild)
-#' @value NULL
 #' @name load.builder
 load.builder <- function(ve.scripts) {
 

@@ -4,6 +4,7 @@
 .RData
 .Ruserdata
 *.bak
+launch-R*.bat
 ve-build-config.yml
 ve-install-config.yml
 ve-lib/

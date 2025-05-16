@@ -9,7 +9,6 @@
 #   indicate whether you want to launch a build enviroment
 
 # ve.distributions describes Github repositories that offer releases with VisionEval installers
-# Default for beta testing is to look for releases in jrawbits/visioneval-jr
 
 # Distribution descriptors are case-insensitive
 # The install script presents a dialog based on using the "latest" release, but there is a
@@ -19,9 +18,4 @@
 ve.distributions:
   - user: visioneval    # User or organization
     repository:         # Repository Names
-    - visioneval-dev
-    - visioneval-40
-  - user: jrawbits
-    repository:
-    - visioneval-jr
-    - visioneval-40
+    - visioneval-4

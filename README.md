@@ -27,11 +27,13 @@ Start your selected version of R (using the built-in RGui or RStudio), then copy
 R console:
 
 ```R
-source("https://visioneval.github.io/assets/install/VE4-install.R")
+source(ve.url<-"https://visioneval.github.io/assets/install/VE4-install.R")
 ```
 
 You can download the script for security review by visiting [the download
 link](https://visioneval.github.io/assets/install/VE4-install.R) in your browser.
+
+Note that one option in the standard installation is to install and build the full release.
 
 ## VisionEval Repositories
 
@@ -63,7 +65,7 @@ There are five repositories in the VisionEval organization to serve different pu
  - **[VisionEval-Extras](https://github.com/VisionEval/VisionEval-Extras)**: Additional tools and
    module packages that may be added to core VisionEval.
 
-   **IMPROVED** in VisionEval 4.0: These packages can be built into a standard VisionEval
+   **IMPROVED** in VisionEval 4.0: The "Extras" packages can be built into a standard VisionEval
    installation with a simple configuration change. You can add them to an end-user installation
    without having to rebuild the rest of VisionEval.
 
@@ -84,11 +86,16 @@ To modify and rebuild the released VisionEval system, you can clone a suitable b
 Here are the build steps:
 
 1. Clone the Github
-2. Start `VisionEval-dev.Rproj` in the root directory, or you can use `launch.bat` to start the
-   standard R GUI. You do *NOT* need RStudio to build or run VisionEVal, just a compatible
-   version of R. If you use `launch.bat`, you will need to set the R_HOME environment variable
-   or edit the script itself to point at your version of R. Supported R versions are listed in
-   `build/R-versions.yml`.
+   You will also need [RTools](https://cran.r-project.org/bin/windows/Rtools/) if you are building on
+   Windows. Currently, it is possible to build from source on Mac or Linux, but you will need to load
+   all the SystemRequirements into your operating system. That can be annoying and tedious. We will fix
+   that soon so the SytemRequirements can be auto-installed (if you have administrator/sudo permissions)
+   or at least give you an installation instruction (so your authorized administrator can install them).
+   Keep an eye out for future releases in June 2025.
+2. Start `VisionEval-dev.Rproj` in the root directory, or you can use launch.bat. To use `launch.bat`,
+   you will need to set the R_HOME system or user environment variable. Open the R you want to use
+   and run `R.home()` to get the directory you need. The build will work with any recent R version
+   (ideally in the 4.3 or 4.4 series of R releases).
 3. Run ve.build() to construct the packages
 4. Run ve.run() to launch the runtime (note that the built "runtime" is only used indirectly)
     1. VisionEval runs in the new "runtime.test" directory
@@ -97,11 +104,10 @@ Here are the build steps:
        as a system or user environment variable, or by defining it in the `.Renviron` file that
        is created in the repository root when you run `ve.build()`.
        A complete working runtime will be created in VE_RUNTIME if it does not already exist
-5. Once running, do `walkthrough()` or run `ve.test()` (with no parameters) to get a list of
+5. Once running, do `walkthrough()` (with no parameters) to get a list of
    sample scripts illustrating basic functions (all to run in an additional temporary runtime to
    avoid confusing them with real work).
     1. `walkthrough()` is also available for ordinary users in the distributed runtime
-    2. Run `ve.test("VEModel")` to load more detailed API test functions (a comprehensive exercise of what works and how).
     3. The walkthrough function creates a temporary runtime directory (to avoid trampling any real models you
        may have). Run `exit.walkthrough()` (or quit and restart the R session) to return to regular VE_RUNTIME
 

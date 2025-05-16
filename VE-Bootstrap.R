@@ -22,7 +22,6 @@ loadRuntimeEnvironment <- function() { # Keep this synchronized with VE-Bootstra
   ve.env$ve.home <- normalizePath(Sys.getenv("VE_HOME",getwd()),winslash="/",mustWork=FALSE)
   ve.env$ve.build.dir <- Sys.getenv("VE_BUILD",NA)
   ve.env$ve.runtime <- Sys.getenv("VE_RUNTME",NA)
-  message("VE_RUNTIME=",ve.env$ve.runtime)
   if ( is.na(ve.env$ve.build.dir) ) {
     if ( getwd() != ve.env$ve.home ) {
       # If ve.env$ve.home is somewhere else than working directory, we presume it's because
