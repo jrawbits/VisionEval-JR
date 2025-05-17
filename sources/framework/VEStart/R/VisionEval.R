@@ -130,8 +130,13 @@ startVisionEval <- function(
     caption <- "Select directory in which to run VisionEval (VE_RUNTIME; location of 'models' folder)"
     ve.runtime <- if (exists('utils::choose.dir')) { # Won't exist on non-Windows platforms
       utils::choose.dir(default=ve.home,caption = caption)
-    } else {
+    } else if ( isTRUE(capabilities()["tcltk"]) ) {
       tcltk::tk_choose.dir(default=ve.home,caption = caption)
+    } else {
+      local.runtime <- file.path(ve.home,"runtime")
+      message("Creating runtime directory: ",local.runtime)
+      if ( ! dir.exists(local.runtime) ) dir.create(local.runtime,recursive=TRUE)
+      local.runtime
     }
     if ( is.na(ve.runtime) || ! dir.exists(ve.runtime) ) {
       message("Please select a suitable VisionEval VE_RUNTIME directory for 'models'")

@@ -486,10 +486,11 @@ ve.build.one.package <- function(pkg,reset=FALSE,check=TRUE,debug=0) {
   }
 
   # Gracefully return TRUE if the package is up to date and installed
-  # TODO: might want to check pkg version here as well...
   if ( ! reset &&
        ! newerThan(pkg.folder,pkg.src ) &&
-       pkg.name %in% utils::installed.packages(lib.loc=ve.lib)[,"Package"] ) {
+       pkg.name %in% utils::installed.packages(lib.loc=ve.lib)[,"Package"] &&
+       ! newerThan(pkg.folder,file.path(ve.lib,pkg.name))
+     ) {
     cat(": already INSTALLED\n")
     return(TRUE)
   }
