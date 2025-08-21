@@ -14,8 +14,9 @@ legalTypes <- tolower(c("win.binary","win.library","source"))
 build.instructions.installer <- function() {
   if ( "VEBuild" %in% utils::installed.packages(lib.loc=ve.env$ve.lib)[,"Package"] ) {
     paste( collapse="\n", c(
-      "ve.make.installer() to build an installer",
-      paste0("Optionally provide, a build type: one of (",paste(c(legalTypes,"all"),collapse=", "),")")
+      "ve.make.installer(<build.type>) to build an installer",
+      paste0("  where <build.type> is one of (",paste(c(legalTypes,"all"),collapse=", "),")"),
+      paste0("  with default of ",legalTypes[1])
     ) )
   } else NULL
 }

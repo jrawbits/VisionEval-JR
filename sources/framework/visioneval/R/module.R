@@ -17,6 +17,7 @@
 #' the specifications.
 #'
 #' @return a list.
+#' @import visioneval
 #' @export
 item <- list
 
@@ -369,22 +370,24 @@ loadPackageDataset <- function(DatasetName, DefaultPackage = NULL) {
 #=========================
 #' Save a VisionEval package dataset to the data/ folder during package build
 #'
-#' \code{savePackageDataset} a visioneval framework module developer function
-#' which saves a dataset to the data/ directory during package build.
+#' \code{savePackageDataset} a visioneval framework module developer function which saves a dataset
+#' to the data/ directory during package build.
 #'
-#' This function is used to save a dataset during module estimation and when ' building
-#' module specifications. Using this function is the ' preferred alternative to
-#' hard-wiring saving a dataset using usthis::use_data ' or other means as it does
-#' suitable error-checking.
+#' This function is used to save a dataset during module estimation and when ' building module
+#' specifications. Using this function is the ' preferred alternative to hard-wiring saving a
+#' dataset using usthis::use_data ' or other means as it does suitable error-checking.
+#'
+#' To dodge problems with badly-written modules, set VE_KEEP_R=1 (you'll know you need this if the
+#'   module build crashes during an attempt to build the final package).
 #'
 #' @param dataset A string identifying the name of the object containing
 #' the dataset.
 #' @param overwrite During the SAVE phase and if FALSE, do not overwrite an existing file in data/ space
-#' @param keep  During the BUILD phase and if TRUE, do not reomve the object from the R/ space
+
 #' @param compress Optionally specify a different compression mode
 #' @return The dataset name if it was saved successfully, otherwise an empty character vector
 #' @export
-savePackageDataset <- function(dataset,overwrite=TRUE,keep=FALSE,compress="xz") {
+savePackageDataset <- function(dataset,overwrite=TRUE,compress="xz") {
   dsname <- deparse(substitute(dataset))
   if ( length(dsname)!=1 ) stop("Unable to deparse dataset name.")
   if ( ! dir.exists("data") ) stop("Data directory not found in ",getwd())
@@ -413,12 +416,14 @@ savePackageDataset <- function(dataset,overwrite=TRUE,keep=FALSE,compress="xz") 
     # the function if the variable default is not a usable value (e.g. NULL). Eventually all of this
     # becomes moot when model estimation is pushed down into a function that is called as part of
     # a separate build step.
+    # You can force the datasets to be kept by setting environment variable VE_KEEP_R=1
     Msg_ <- paste(dsname,"in R/ space")
-    if ( ! keep ) {
+    if ( ! isTRUE(as.logical(as.numeric(Sys.getenv("VE_KEEP_R","0")))) ) {
       rm(list=dsname,envir=parent.frame())
       if ( dsname %in% ls(parent.frame()) ) {
         stop("Failed to remove ",Msg_)
       } else {
+        message("If your package crashes during the final build, set environment variable VE_KEEP_R=1 before building")
         message("Removed ",Msg_)
       }
     } else {

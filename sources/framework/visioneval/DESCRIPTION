@@ -27,6 +27,7 @@ Imports:
     yaml,
     stringr,
     reshape2,
+    sf,
     rhdf5,
     knitr,
     futile.logger

@@ -1495,6 +1495,27 @@ createGeoIndex <- function(Table, Group, RunBy, Geo, GeoIndex_ls) {
   Idx_
 }
 
+# Internal helper function - look up previous year for current
+# RunYear using either the PreviousYears run parameter (for models
+# with multiple stages) or the Years run parameter (if everything is
+# running in a single stage.
+findPreviousRunYear <- function( RunYear ) {
+  # Get the PreviousYears or the Years parameter
+  # Find the first previous year prior to the RunYear
+  # Throw an error if nothing is available (because no PreviousYears
+  # or RunYear doesn't have a previous year).
+  previousYears <- getRunParameter("PreviousYears") # Will reach into he model-wide RunParam_ls for the value
+  if ( is.na(previousYears) ) {
+    previousYears <- getRunParameter("Years") # Try for years
+  }
+  if ( is.na(previousYears) || length(previousYears)<1 ) stop(call.=FALSE,"No PreviousYears defined")
+  previousYears <- sort(previousYears,decreasing=TRUE)
+  previousYear <- which(previousYears<RunYear)
+  if ( length(previousYear) < 1 ) stop("No year previous for RunYear ",RunYear)
+  return( previousYear[1] )
+  # NOTE: a separate error will be thrown later if previousYear is not a Group the Datastore
+}
+
 #GET DATA SETS IDENTIFIED IN MODULE SPECIFICATIONS FROM DATASTORE
 #================================================================
 #' Retrieve data identified in 'Get' specifications from datastore
@@ -1545,6 +1566,14 @@ getFromDatastore <- function(ModuleSpec_ls, RunYear, Geo = NULL, GeoIndex_ls = N
     }
     if (Group == "Year") {
       DstoreGroup <- RunYear;
+    }
+    if (Group == "PreviousYear") {
+      # TODO: understand and document implications
+      # Previous Run Year must be present as a group in the current datastore, so the stage seeking
+      # a PreviousYear should "StartFrom" to a stage that contains the previous year.
+      # TODO: Set up a small sample model to try that out.
+      # TODO: modules and script in VETestPreviousYear package
+      DstoreGroup <- findPreviousRunYear(RunYear)
     }
     #Add table component to list if does not exist
     if (is.null(L[[Group]][[Table]])) {

@@ -170,12 +170,15 @@ default.parameters.table = list(
   ModelStateFile = "ModelState.Rda",
   InputPath = ".", # should default to same directory as ModelDir
   InputDir = "inputs", # directory name within InputPath containing model inputs
+  ParamDir = "defs",
   RunParamFile = "run_parameters.json",
   GeoFile = "geo.csv",
+  GeoFileGeometry = "geometry", # created by st_read if GeoFile is a spatial format
+  GeoFileFields = c(Marea="Marea",Azone="Azone",Bzone="Bzone",Czone="Czone"), # names are required geography; value is name in GeoFile
+  GeoFileExtraFields = character(0),
   UnitsFile = "units.csv",
   DeflatorsFile = "deflators.csv",
-  ModelParamFile = "model_parameters.json",
-  ParamDir = "defs",
+  ModelParamFile = "model_parameters.json", # historically in ParamDir; now expected to be in InputDir
   DatastoreType = "RD",
   SaveDatastore = TRUE,           # Whether to archive any existing ResultsDir
   ArchiveResultsName = "Results", # Root name for archived Results directory

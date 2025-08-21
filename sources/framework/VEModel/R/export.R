@@ -187,7 +187,7 @@ VEPartition <- R6::R6Class(
 # table location in the export destination)
 
 # Eventually work this into R6 documentation format...
-# @descriptiom VETableLocator$tableString formats a VETableLocator into a table name string
+# @description VETableLocator$tableString formats a VETableLocator into a table name string
 #
 # @details
 # VETableLocator$tableString is used in the connection types to convert a TableLoc to whatever is
@@ -281,8 +281,8 @@ VETableLocator <- R6::R6Class(
 #                ## Model parameter can add default places to search for connection
 #                ##  parameters, which will be looked up by the connection tags
 #                ## Can load from a file containing connection descriptor, partitions and table locations
-#    config      ## Report the partition string and connecton configuration list used to build connection
-#    load        ## Read an .VEexport (.Rdata) file with the Exporter elements
+#    config      ## Report the partition string and connection configuration list used to build connection
+#    load        ## Read a .VEexport (.Rdata) file with the Exporter elements
 #                ##   (called from $initialize for re-opening connection to additional items)
 #    save        ## Write a .VEexport (.Rdata) file with the Exporter elements
 #    close       ## Close the exporter connection (important for DBI)
@@ -457,7 +457,7 @@ ve.exporter.write <- function(Data, Table, Scenario=NULL, Group=NULL, Metadata=N
 
 ve.exporter.list <- function(names=NULL, namesOnly=TRUE) {
   # namesOnly is intended for interactive use to list out the tables in the export (as written)
-  # if this function is used internally, set namesOnly to False, or if its really deeply
+  # if this function is used internally, set namesOnly to False, or if it's really deeply
   #   internal, just access self$TableList (the "metadata")
   if ( is.null(self$TableList) ) { # Nothing has been exported yet
     return("Nothing exported yet")
@@ -1134,7 +1134,7 @@ defaultExporters <- function() {
     sqlite = list(
       Connection = list(
         driver      = "dbi",
-        Timestamp   = "database", # alternate default for sqlite
+        Timestamp   = "database",  # alternate default for sqlite
         Database    = "Database",  # will get SQLite
         DBExtension = ".sqlite"
       ),
@@ -1184,7 +1184,7 @@ connectionList <- list(
 #' database and credentials). See the specific VEExporter documentation for details on the
 #' connection string and any other optional parameters.
 #' 
-#' Partition Scheme: The partitioning can specify"merge" (just leave the field in the table),
+#' Partition Scheme: The partitioning can specify "merge" (just leave the field in the table),
 #' "folder" where the table in that scenario or group is placed into a hierarchical table (folders
 #' are always constructed first and layered as Scenario/Group/Table), or "name" in which case the
 #' Scenario, Group or Table is pasted into the table name. If Table is "folder" and no name is

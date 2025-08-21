@@ -4,8 +4,10 @@
 
 script.contents <- c(
   "build.instructions.builder",
+  "ve.setup",
   "ve.build",
   "ve.run",
+  # "ve.test",
   # the following are used by 02-install.R / ve.make.installer
   "ve.build.config",
   "getBuildEnvironment",
@@ -15,11 +17,17 @@ script.contents <- c(
 
 # Build instructions
 build.instructions.builder <- function() {
+  build.finished <- "VEStart" %in% utils::installed.packages(lib.loc=ve.env$ve.lib)[,"Package"] 
   paste( collapse="\n", c(
-    "ve.setup() to select VE_HOME, VE_BUILD and VE_RUNTIME prior to building.",
-    "ve.build() to build a full VisionEval installation.",
-    if ( "VEStart" %in% utils::installed.packages(lib.loc=ve.env$ve.lib)[,"Package"] ) {
-      "ve.run() to start VisionEval."
+    "ve.setup() to select VE_BUILD and VE_RUNTIME prior to (re-)building (optional).",
+    paste0("  VE_BUILD is currently ",ve.build.dir),
+    if ( ! build.finished ) paste0("  VE_RUNTIME is currently ",ve.runtime) else NULL,
+    if ( ! build.finished ) paste0("ve.build() to build a full VisionEval installation into ",ve.lib) else {
+      paste0("ve.build() to rebuild updated packages into ",ve.lib)
+    },
+    if ( build.finished ) paste0("ve.build(<packages>,reset=TRUE) to rebuild specific <packages> or all of them"),
+    if ( build.finished ) {
+      paste0("ve.run() to start VisionEval in VE_RUNTIME: ",ve.runtime)
     } else NULL
   ) )
 }
@@ -58,7 +66,7 @@ getBuildEnvironment <- function() {
 # @param config a list of configuration elements that replace iems in the ve-config.yml file (see
 #   documentation for that file elsewhere)
 # @param debug if TRUE or numeric non-zero, issue additional debugging messages during build
-# @param list if TRUE just report what packages would be built and exit
+# @param listtargets if TRUE just report what packages would be built and exit
 # @return data.frame of packages and status (unchanged, built, failed)
 ve.build <- function(
   targets="",
@@ -102,6 +110,7 @@ ve.build.config <- function(config=list(),debug=FALSE, quiet=FALSE) {
   if ( ! is.environment(ve.env) ) {
     stop("VisionEval environment is unavailable.\nUse VE-Bootstrap.R or require(VEBuild) to begin.", call. = FALSE)
   }
+  setwd(ve.env$ve.home) # Always return to VE_HOME prior to build (to correctly find 'sources' directory etc)
   
   # ve.build.config returns the ve.build.env with elements added for each of the objects
   # created in the expression block below, and accessible as e.g. as.environment('ve.build.env')$config.file
@@ -132,13 +141,13 @@ ve.build.config <- function(config=list(),debug=FALSE, quiet=FALSE) {
 
   default.config <- list(
     # bare defaults
-    BuildTargets = c(          # Standard names for folders in VE_BUILD
-      ve.lib = "ve-lib",                      # Where VE packages are installed
+    BuildTargets = c(                         # Standard names for folders in VE_BUILD
+      ve.lib = "ve-lib",                      # Where VE packages are installed (in ve.home)
       ve.src = "ve-src",                      # Where package to build is developed
       ve.repository = "ve-pkg-repo",          # Repository for built packages (always source and binary)
       ve.dependencies = "dependencies-repo"   # Repository for dependencies (downloaded, only for platform package type)
     ),
-    PackageSources = c( "sources", "optional" ) # Directories (absolute or relative to VE_SOURCE) with packages to build
+    PackageSources = c( "framework", "modules", "optional" ) # Directories (absolute or relative to VE_HOME) with packages to build
     # Can be a single package directory or the parent of many package
     # directories (sought recursively)
   )
@@ -192,24 +201,17 @@ ve.build.config <- function(config=list(),debug=FALSE, quiet=FALSE) {
   if ( ! dir.exists(bld.env$build.contriburl) ) dir.create(bld.env$build.contriburl,recursive=TRUE)
   if ( ! dir.exists(bld.env$build.contriburl.src) ) dir.create(bld.env$build.contriburl.src,recursive=TRUE)
 
-#   TODO: trying to do without this download
-#   # Local version of dependencies
-#   bld.env$ve.dependencies <- file.path(ve.env$ve.build.dir,raw.config$BuildTargets["ve.dependencies"])
-#   if ( ! dir.exists(bld.env$ve.dependencies) ) dir.create(bld.env$ve.dependencies)
-#   bld.env$ve.dependencies.url <- paste0("file:///",bld.env$ve.dependencies)
-#   bld.env$dependencies.contriburl <- utils::contrib.url(bld.env$ve.dependencies, bld.env$build.type)
-
   # Obscure error message if ve.lib is already in .libPaths() so we need to test
   if ( ! bld.env$ve.lib %in% .libPaths() ) .libPaths(c(bld.env$ve.lib,.libPaths())) # add ve.lib to front of .libPaths() if not present
 
   bld.env$CRAN.mirror <- raw.config$CRAN.mirror # to simplify access when we start downloading dependencies
 
   # Find the packages to build from within folders named in raw.config$PackageSources
-  # Start by looking for absolute paths or relative to VE_SOURCE or ve.env$ve.sources
+  # Start by looking for absolute paths or relative to ve.env$ve.sources
   # getwd() will be VE_BUILD and may differ from ve.home(aka VE_HOME)
   bld.env$package.paths <- normalizePath(raw.config$PackageSources,winslash="/",mustWork=FALSE)
   if ( any( missing.paths <- ! dir.exists(bld.env$package.paths) ) ) {
-    # retry package paths lokoing for subdirectories of ve.sources explicitly
+    # retry package paths looking for subdirectories of ve.sources explicitly
     bld.env$package.paths[missing.paths] <- file.path(ve.env$ve.sources,raw.config$PackageSources[missing.paths])
   }
   if ( !quiet && any( missing.paths <- ! dir.exists(bld.env$package.paths) ) ) {
@@ -323,9 +325,7 @@ ve.load.dependencies <- function(pkg.desc,debug=FALSE) {
   if ( any( ! available.online ) ) {
     # Make sure offline dependencies (VE or locally built packages) are either already installed or
     # scheduled to be built (i.e. present in pkg.desc list of targets)
-    message("Dependencies not available online:")
     local.deps <- pkg.deps[ ! available.online ]
-    print(local.deps)
     installed.local.names <- utils::installed.packages(lib.loc=ve.lib)[,"Package"]
     installed.local <- local.deps %in% installed.local.names # this supports building more packages into a runtime installation
     if ( any( ! installed.local ) ) {
@@ -336,23 +336,16 @@ ve.load.dependencies <- function(pkg.desc,debug=FALSE) {
         print( local.deps[ ! available.local ] )
         stop("Re-run ve.build being sure to include those targets")
       }
+    } else {
+      for ( local.pkg in local.deps ) {
+        if ( ! suppressWarnings(requireNamespace(local.pkg,quietly=TRUE)) ) {
+          stop("Local package ",local.pkg," could not be loaded. Please rebuild or reinstall it.")
+        } else message("Loaded '",local.pkg,"'")
+      }
     }
   }        
 
   # Install VE package dependencies
-# TODO: trying to do without this step
-#   # Prepare to copy dependencies into a local repository
-#   # We do it this way to make it easier later to build an offline installer where all the
-#   # downloaded dependency packages get zipped up with the VE stuff
-#   # TODO: in practice, we're only zipping up ve-lib, rather than providing installable dependencies
-#   # So this may be overkill
-# 
-#   # Build local repository file tree if not present to receive packages
-#   if ( ! dir.exists(bld.env$dependencies.contriburl) ) {
-#     # Grab the build support packages as the basis for the repository since they are needed
-#     # independently of any particular VE package dependencies.
-#     miniCRAN::makeRepo(support.packages, path = ve.dependencies, repos=repos.online, type=bld.env$build.type)
-#   }
 
   # Remove from pkg.deps any that are installed.
   # If a dependency was installed or built outside the current request, we're okay with that.
@@ -368,35 +361,13 @@ ve.load.dependencies <- function(pkg.desc,debug=FALSE) {
     expanded.deps <- character(0)
   }
 
-# TODO: Don't bother saving downloaded dependency packages - just install them directly into ve-lib
-#   # Make sure the repository is complete (and if it is, try updating it)
-#   # TODO: Maybe we just want to install these in ve-lib rather than saving a full repository
-#   if ( length(missing.packages) > 0 ) {
-#     miniCRAN::addPackage(missing.packages, path=ve.dependencies, repos=repos.online, type=bld.env$build.type, deps=TRUE)
-#   } else if ( length(expanded.deps) > 0 ) {
-#     miniCRAN::updatePackages(oldPkgs=expanded.deps, path=ve.dependencies, repos=repos.online, type=bld.env$build.type, ask=FALSE)
-#   }
-
   # Install dependencies into ve-lib for runtime use
-  # TODO: just do the installation directly from repos.online without saving the packages
   deps.missing <- pkg.deps[ ! pkg.deps %in% inst.pkgs ]
   if ( length(deps.missing) > 0 ) {
     cat("Installing missing dependencies...\n")
     print(deps.missing)
-#     utils::install.packages(deps.missing, lib=ve.lib, contriburl=paste0("file:///",bld.env$dependencies.contriburl),type=bld.env$build.type )
     utils::install.packages(deps.missing, lib=ve.lib, repos=repos.online,type=bld.env$build.type )
   }
-
-# TODO: the following is overkill - we incorporated support.packages into pkg.deps earlier
-#   # Install the remaining support packages (needed for doing the package build)
-#   
-#   for ( pkg in support.packages ) {
-#     if ( ! suppressWarnings(requireNamespace(pkg,quietly=TRUE)) ) {
-# #       utils::install.packages(pkg, lib=ve.lib, contriburl=paste0("file:///",bld.env$dependencies.contriburl), type=bld.env$build.type )
-#       utils::install.packages(pkg, lib=ve.lib, repos=repos.online, type=bld.env$build.type )
-#       suppressWarnings(requireNamespace(pkg,quietly=TRUE))
-#     }
-#   }
 }
 
 ve.build.packages <- function(pkg.desc,reset=FALSE,check=TRUE,debug=FALSE) {
@@ -728,17 +699,29 @@ ve.build.one.package <- function(pkg,reset=FALSE,check=TRUE,debug=0) {
   if ( ! package.built ) {
     cat("++++++++++ Pre-build / Document ",pkg.name,"\n",pkg.src,"\n",sep="")
 
-    # Build collate and namespace
-    if ( bld.env$ve.wantdocs ) { # optionally build docs
+    # Roxygen will build NAMESPACE and .Rd docs
+    if ( bld.env$ve.wantdocs ) { # optionally build .Rd docs
+      # Try the build twice since current (9/2025) version of Roxygen fails sometimes to build
+      # the NAMESPACE on the first try.
+      message("Building namespace and Roxygen docs")
       te <- try( withr::with_dir(pkg.src,roxygen2::roxygenise(roclets=c("collate","namespace","rd"))), silent=TRUE )
       if ( class(te)=="try-error" ) {
-        stop(paste("Documentation error (full docs):\n",te))
-      }# ignore errors
+        message("Retrying namespace and documents build")
+        te <- try( withr::with_dir(pkg.src,roxygen2::roxygenise(roclets=c("collate","namespace","rd"))), silent=TRUE )
+        if ( class(te)=="try-error" ) {
+          stop(paste("Documentation error (full docs):\n",te))
+        }
+      }
     } else {
+      message("Building namespace only")
       te <- try( withr::with_dir(pkg.src,roxygen2::roxygenise(roclets=c("collate","namespace"))), silent=TRUE)
       if ( class(te)=="try-error" ) {
-        stop(paste("Documentation error:\n",te))
-      }# ignore errors
+        message("Retrying namespace build")
+        te <- try( withr::with_dir(pkg.src,roxygen2::roxygenise(roclets=c("collate","namespace"))), silent=TRUE)
+        if ( class(te)=="try-error" ) {
+          stop(paste("Documentation error (namespace only):\n",te))
+        }
+      }
     }
 
     if ( check || ( ! reset && ! dir.exists(check.dir) ) ) {
@@ -844,24 +827,29 @@ ve.build.one.package <- function(pkg,reset=FALSE,check=TRUE,debug=0) {
 }
 
 #' @param ve.runtime Directory to override standard runtime location search
-ve.run <- function(ve.runtime=NULL) {
+ve.run <- function(ve.runtime=NULL,setupHome=FALSE) {
   if ( ! suppressMessages(require(VEStart,quietly=TRUE)) ) {
     stop("VEStart is not available - have you run ve.build()?")
   }
   ve.env <- try( silent=TRUE, as.environment("ve.env") )
   if ( ! is.environment(ve.env) ) stop("VisionEval environment is unavailable; please restart")
-  if ( missing(ve.runtime) || is.null(ve.runtime) ) {
+  existing.runtime <- missing(ve.runtime) || is.null(ve.runtime)
+  if ( existing.runtime ) {
     if ( exists("ve.runtime",ve.env,inherits=FALSE) ) {
       ve.runtime <- ve.env$ve.runtime
     } else {
       ve.runtime <- Sys.getenv("VE_RUNTIME",NA)
-      if ( is.na(ve.runtime) ) ve.runtime <- file.path(ve.env$ve.home,"runtime")
+      if ( is.na(ve.runtime) ) {
+        ve.runtime <- file.path(ve.env$ve.home,"runtime")
+      }
     }
   }
   if ( ! dir.exists(ve.runtime) ) dir.create(ve.runtime,recursive=TRUE)
   if ( ! dir.exists(ve.runtime) ) stop("Could not establish runtime at '",ve.runtime,"'")
 
-  VEStart::startVisionEval()
+  # startVisionEval will unload VEModel and visioneval
+  # it will also create or update .Renviron in ve.runtime
+  VEStart::startVisionEval(ve.runtime=ve.runtime,setupHome=setupHome)
 }
 
 # \code{makeGitInfo} gets Git repository information for folder \code{from} if that
@@ -1069,13 +1057,447 @@ getPackageVersion <- function( package ) {
   return( version )
 }
 
-ve.build.setup <- function(ve.home=NULL,ve.build.dir=NULL,ve.runtime=NULL,ve.sources=NULL) {
-  # TODO: launch a dialog to set the VE parameters and to create .Renviron in VE_HOME
+# IMPORTANT:
+#   Keep the documentation below in sync with the stub ve.setup in VEBuild since
+#   that is what people will consult for function documentation.
+
+#' Set up VEBuild locations (VE_RUNTIME, VE_BUILD, VE_SOURCE)
+#'
+#' The VEBuild package loads a separate searchable environment and namespace which contains the
+#'   true machinery of ve.setup. The function here exists for documentation purposes and will just
+#'   call the ve.setup function in the "ve.builder" pseudo-package.
+#' By default, building VE Packages will take place in a \code{built} subdirectory of VE_HOME.
+#' This function presents a dialog for selecting a new VE_RUNTIME, VE_BUILD and VE_SOURCE location.
+#'   VE_SOURCE is used to locate packages to be built, typically from "VE_HOME/sources".
+#'   It exists so a different VE version can be built from another tree while
+#'   running R and VEBuild in the original location.
+#' If directories selected in the dialog do not exist (which may be the case for the default
+#'   VE_BUILD or VE_RUNTIME, for example) they will be created when the dialog values are selected.
+#'   VE_SOURCE will not be created and must point to an existing directory.
+#'
+#' @param ve.runtime default dialog value for VE_RUNTIME (default to VE_HOME/runtime)
+#' @param ve.build.dir default dialog value for VE_BUILD (default to VE_HOME/built)
+#' @param ve.sources default dialog value for VE_SOURCE (usually VE_HOME/sources)
+#' @return named character vector for selected existing directories for VE_BUILD and VE_RUNTIME
+use.tcltk <- isTRUE(capabilities()["tcltk"])
+
+ve.setup <- function() {
   # Can just have a series of directory browsers, with sensible defaults based on and updated with
-  # VE_HOME (if the others are stil their defaults)
+  # VE_HOME (if the others are still their defaults)
   # ve.sources should point to the core repository (or the "sources" folder within it)
   # ve.build.dir will hold the transient artifacts of building
-  # ve.home will hold ve-lib (and have startup files if requested)
   # ve.runtime will hold the models folder
-  # This will update .Renviron in VE_HOME.
+  # This will update .Renviron in VE_HOME and in VE_RUNTIME
+  # Identify UI Script
+  if ( use.tcltk ) {
+    # Default values are set by VE-Bootstrap.R or .Renviron or VEStart
+    locations <- ve.setup.dialog(ve.build.dir=ve.build.dir,ve.runtime=ve.runtime)
+    if ( is.character(locations) ) {
+      # Update the .Renviron file
+      renv.file      <- file.path(ve.home,".Renviron")
+      # If .Renviron exists, read read its lines
+      if ( file.exists(renv.file) ) {
+        renv.txt <- readLines(renv.file,warn=FALSE)
+        renv.txt <- grep("^(VE_BUILD|VE_RUNTIME)=",renv.txt,value=TRUE,invert=TRUE) # Overwrite these lines below
+      } else renv.txt <- character(0)
+      renv.txt <- c(
+        renv.txt,
+        paste0("VE_BUILD=",locations["VE_BUILD"]),
+        paste0("VE_RUNTIME=",locations["VE_RUNTIME"])
+      )
+      writeLines(renv.txt,renv.file)
+    }
+  }
 }
+
+# Dialog for setting VE_BUILD and VE_SOURCE
+# This function does not touch VE_HOME, which is always set during installation and startup
+#   as the location where ve-lib exists (or where VE-Bootstrap.R is run to initiate a build).
+# VE_RUNTIME can be changed here or provided manually to startVisionEval
+# VE_BUILD says where to put the build artifacts
+# Each will be (re-)written into VE_HOME/.Renviron
+#   And they will propagate via VEStart::startVisionEval into VE_RUNTIME itself
+ve.setup.dialog <- function(ve.build.dir, ve.runtime) {
+
+  if ( ! suppressMessages(require(tcltk,quietly=TRUE)) ) {
+    message("tcltk is not available for setup dialog")
+    message("Please edit .Renviron.")
+    return(character(VE_BUILD=ve.build.dir,VE_RUNTIME=ve.runtime))
+  }
+
+  # Helper function for making an info button in setup dialog
+  question_button_font <- tcltk::tkfont.create(size = 11)
+  info_button <- function(parent.frame,popup.text) {
+    # Use \u2753 Unicode character for question mark
+    tcltk::tkbutton(
+      parent.frame,
+      text = "\u2753", font = question_button_font, fg="green",
+      command = function() {
+        tcltk::tkmessageBox(message = popup.text, icon = "info")
+      }
+    )
+  }
+
+  tt <- tcltk::tktoplevel()
+  tcltk::tkwm.title(tt, "Select VE directories")
+  tcltk::tkwm.maxsize(tt, 800, 10000) # we don't expect to expand vertically
+
+  tcl_VE_BUILD          <- tcltk::tclVar(ve.build.dir)
+  tcl_VE_RUNTIME        <- tcltk::tclVar(ve.runtime)
+  cancel_ve_setup       <- tcltk::tclVar(0)
+  popup_open            <- tcltk::tclVar(0)
+
+  select_build_dir <- function() {
+    if (tcltk::tclvalue(popup_open)==0) {
+      tcltk::tclvalue(popup_open) <- 1
+      tcltk::tkconfigure(build_button,state="disable")
+      dir_path <- tcltk::tclvalue(tcltk::tkchooseDirectory(initialdir=ve.build.dir,title="Select VE_BUILD"))
+      tcltk::tclvalue(tcl_VE_BUILD) <- if (dir_path != "") {
+        dir_path
+      } else {
+        ve.build.dir
+      }
+      tcltk::tclvalue(popup_open) <- 0
+      tcltk::tkconfigure(build_button,state="normal")
+    }
+  }
+
+  select_runtime_dir <- function() {
+    if (tcltk::tclvalue(popup_open)==0) {
+      tcltk::tclvalue(popup_open) <- 1
+      tcltk::tkconfigure(runtime_button,state="disable")
+      dir_path <- tcltk::tclvalue(tcltk::tkchooseDirectory(initialdir=ve.runtime,title="Select VE_RUNTIME"))
+      tcltk::tclvalue(tcl_VE_RUNTIME) <- if (dir_path != "") {
+        dir_path
+      } else {
+        ve.runtime
+      }
+      tcltk::tclvalue(popup_open) <- 0
+      tcltk::tkconfigure(runtime_button,state="normal")
+    }
+  }
+
+  build_button <- tcltk::tkbutton(tt, text = "Change VE_BUILD", command = select_build_dir)
+  tcltk::tkgrid(build_button, column = 0, row = 0, sticky = "e", padx = 5, pady = 5)
+
+  build_frame <- tcltk::tkframe(tt, borderwidth = 2, relief = "groove")
+  build_label <- tcltk::tklabel(build_frame,textvariable=tcl_VE_BUILD, justify="left")
+  tcltk::tkpack(build_label,anchor="w",padx=5,pady=5) # pack inside frame
+
+  runtime_button <- tcltk::tkbutton(tt, text = "Change VE_RUNTIME", command = select_runtime_dir)
+  tcltk::tkgrid(runtime_button, column = 0, row = 1, sticky = "e", padx = 5, pady = 5)
+
+  runtime_frame <- tcltk::tkframe(tt, borderwidth = 2, relief = "groove")
+  runtime_label <- tcltk::tklabel(runtime_frame,textvariable=tcl_VE_RUNTIME, justify="left")
+  tcltk::tkpack(runtime_label,anchor="w",padx=5,pady=5) # pack inside frame
+
+  tcltk::tkgrid(build_frame,   column = 1, row = 0, sticky="ew", padx = 5, pady = 5)
+  tcltk::tkgrid(runtime_frame, column = 1, row = 1, sticky="ew", padx = 5, pady = 5)
+
+  # Help for VE_BUILD
+  tcltk::tkgrid(
+    info_button(tt,
+      paste(sep="",
+        "VE_BUILD is the directory where VisionEval build artifacts will be stored. ",
+        "The default is the 'built' sub-directory of VE_HOME (directory where VisionEval library ve-lib is located). ",
+        "You can use the 'Change VE_BUILD' button to pick a different directory (or create a new on) for your installation.\n\n"
+      )
+    ), column=2,row=0,padx=5,pady=5
+  )
+
+  # Help for VE_RUNTIME
+  tcltk::tkgrid(
+    info_button(tt,
+      paste(sep="",
+        "VE_BUILD is the directory where VisionEval models will be stored. ",
+        "The default is the 'runtime' sub-directory of VE_HOME (directory where VisionEval library ve-lib is located). ",
+        "You can use the 'Change VE_BUILD' button to pick a different directory (or create a new on) for your installation.\n\n"
+      )
+    ), column=2,row=0,padx=5,pady=5
+  )
+
+  # OK and Cancel buttons
+  onOK <- function() {
+    tcltk::tkdestroy(tt)
+  }
+  onCancel <- function() {
+    tcltk::tclvalue(cancel_ve_setup) <- 1
+    tcltk::tkdestroy(tt)
+  }
+
+  button_frame <- tcltk::tkframe(tt)
+  ok_button <- tcltk::tkbutton(button_frame, text = "OK", command = onOK)
+  cancel_button <- tcltk::tkbutton(button_frame, text="Cancel", command = onCancel)
+  tcltk::tkgrid(ok_button,column=0,row=0,sticky="e",padx=5)
+  tcltk::tkgrid(cancel_button,column=1,row=0,sticky="w",padx=5)
+  tcltk::tkgrid(button_frame, column = 0, row = 2, columnspan=2, sticky="ew", padx = 5, pady = 5)
+
+  tcltk::tkgrid.columnconfigure(tt, 1, weight = 1)        # Make the second column expandable.
+  tcltk::tkgrid.columnconfigure(button_frame,0, weight=1) # Do we need both of these configures?
+  tcltk::tkgrid.columnconfigure(button_frame,1, weight=1)
+
+  tcltk::tkbind(tt, "<Return>", function() {
+    onOK()
+  })
+
+  tcltk::tkwait.window(tt)
+
+  return (
+    if ( tcltk::tclvalue(cancel_ve_setup) > 0 ) {
+      NULL
+    } else {
+      c(
+        "VE_BUILD"=tcltk::tclvalue(tcl_VE_BUILD),
+        "VE_RUNTIME"=tcltk::tclvalue(tcl_VE_RUNTIME)
+      )
+    }
+  )
+}
+
+# ve.test <- function(VEPackage,tests="test.R") # changeRuntime=TRUE,usePkgload=NULL,use.git=NULL,use.env=TRUE) {
+#   # Run with the walkthrough if no package provided (or "walkthrough")
+#   # Then we'll redirect to other locations as needed
+#   # TODO: Only available after doing ve.build(). Will call ve.run() to start
+#   # TODO: simpler runtime handling:
+#   # TODO: Look for "walkthrough" subdirectory of VE_RUNTIME and create/populate it from VEModel
+#   # TODO: Where to find walkthrough scripts depends on whether we are loading VEModel or some other package
+#   walkthroughScripts = character(0)
+#   if ( missing(VEPackage) || tolower(VEPackage)=="walkthrough" ) { # load the walkthrough
+#     # TODO: figure out where to get "walkthrough" files
+#     # It should go into whatever ve.runtime is set to, which suggests starting by doing "ve.run()"
+#     # Look there for a folder called "walkthrough"
+#     # Populate it with the walkthrough scripts obtained from (search in order, first found)
+#     # In general, VE_SOURCE will already be set to one of the next two options if source is available
+#     #   - VE_SOURCE/framework/VEModel/inst/walkthrough
+#     #   - VE_HOME/sources/framework/VEModel/inst/walkthrough
+#     #   - VE_HOME/build-source/sources/framework/VEModel/inst/walkthrough
+#     #   - system.file("walkthrough","VEModel")
+#     if ( changeRuntime ) {
+#       # If ve.runtime has not moved away from ve.root (i.e. ve.run() was not yet called)
+#       # then do the default ve.run first. Otherwise, we'll place the walkthrough in ve.runtime.
+#       # TODO: default ve.run runs startVisionEval, which may be tricky. May need to factor out
+#       #   setting ve.runtime from startVisionEval.
+#       cur.dir <- getwd()
+#       changeDir <- cur.dir==ve.home || ! grepl("walkthrough",cur.dir)
+#       # Do walkthrough below current runtime directory
+#       if ( changeDir ) {
+#         # TODO: The various parameters are probably obsolete and over-complicated
+#         # Do the walkthrough file copy here (the copyFiles argument was intended to support relocating
+#         #   a runtime including models folder to a different VE_RUNTIME)
+#         ve.runtime <- ve.run(changeDir=changeDir,copyFiles="walkthrough",use.git=use.git,use.env=use.env)
+#         setwd(file.path(ve.runtime,"walkthrough"))
+#       } else {
+#         # TODO: A better approach is to always do ve.run(), then change further into "walkthrough"
+#         # Trying to avoid recursive creation of "walkthrough" subdirectories if we re-run ve.test
+#         # in the same R session without first calling exit.walkthrough()
+#         ve.runtime <- ve.run()
+#       }
+#     } else {
+#       # TODO: This works just like the runtime walkthrough except we run inside
+#       #   the source code. ve.home is not the right location. We need to do
+#       #   build.loader type things to locate VEModel in the source hierarchy.
+#       message("Running in VEModel source (for developing walkthrough)")
+#       setwd(file.path(ve.sources,"framework/VEModel/inst/walkthrough"))
+#     }
+#     if ( ! file.exists("00-setup.R") ) {
+#       # Make sure directory is aligned right if user is restarting from within
+#       # walkthrough runtime.
+#       # TODO: take care of this by always repositioning to VE_RUNTIME then finding walkthrough
+#       if ( file.exists("../00-setup.R") ) setwd("..")
+#     }
+#     if ( ! file.exists("00-setup.R") ) {
+#       stop("No walkthrough 00-setup.R in ",getwd())
+#     } else {
+#       # 00-setup.R will create or use a temporary runtime in "walkthrough"
+#       message("Loading walkthrough from ",normalizePath("00-setup.R",winslash="/"))
+#       source("00-setup.R") # will create shadow runtime directory in "walkthrough"
+#       # TODO: double check that it's still working okay. Just need a "models" folder, then
+#       # temporarily orient runtime around that location.
+#       # TODO: Question: is ve.runtime ever more than the working directory after loading VE?
+#     }
+#     # Running now in temporary runtime of "walkthrough"
+#     walkthroughScripts = grep("00-setup.R",invert=TRUE,value=TRUE,dir("..",pattern="^[01].*\\.R$",full.names=TRUE))
+#     if ( is.logical(usePkgload) && usePkgload ) {
+#       # TODO: can we automate use of usePkgload if ve.sources
+#       # Do a compatible test load of VEModel itself -- useful for using
+#       # walkthrough to test (and fix) VEModel.
+#       VEPackage = "VEModel"         # debug VEModel
+#       changeRuntime = FALSE         # run in location selected above
+#       ve.runtime <- getwd()         # override global ve.runtime; TODO: must be able to reset via ve.run()
+#       usePkgload = NULL             # revert to default pkgload behavior
+#       tests = character(0)          # don't load the VEModel tests
+#       # Fall through to do the equivalent of the following while running in the walkthrough runtime
+#       # ve.test("VEModel",tests=character(0),changeRuntime=FALSE,usePkgload=NULL)
+#     } else {
+#       require(VEModel,quietly=TRUE)      # Walkthrough requires VEModel
+#       VEModel::setRuntimeDirectory(ve.runtime<-getwd()) # shift ve.runtime to walkthrough runtime
+#       message("\nWalkthrough scripts:")
+#       print(walkthroughScripts)
+#       return(invisible(walkthroughScripts))
+#     }
+#   } else {
+#     # Set the base runtime
+#     # TODO: could do this right at the top with a call to ve.run()
+#     ve.runtime <- get.ve.runtime(use.git=use.git,use.env=use.env) # use standard runtime for non-walkthrough testing
+#   }
+# 
+#   # Make sure pkgload is available
+#   if ( ! suppressWarnings(requireNamespace("pkgload",quietly=TRUE,lib.loc=ve.env$ve.lib)) ) {
+#     stop("Missing required package: 'pkgload'")
+#   }
+#   VEPackage <- VEPackage[1] # can only pkgLoad one at a time
+# 
+#   # Make sure we start looking from the Github root
+#   # TODO: probably want to navigate via ve.sources
+#   setwd(ve.home)
+# 
+#   # Locate the full path to VEPackage
+#   framework.package <- FALSE
+#   if (
+#     ! grepl("/|\\\\",VEPackage) && (
+#       ( framework.package <- file.exists( VEPackage.path <- file.path("sources","framework",VEPackage) ) ) ||
+#       ( file.exists( VEPackage.path <- file.path("sources","modules",VEPackage) ) )
+#     )
+#   ) {
+#     VEPackage.path <- normalizePath(VEPackage.path,winslash="/",mustWork=FALSE)
+#     message("Found ",VEPackage.path)
+#   } else if ( file.exists(VEPackage) ) {
+#     VEPackage.path <- VEPackage
+#     VEPackage <- basename(VEPackage.path)
+#   } else {
+#     stop("Could not locate ",VEPackage)
+#   }
+#   message("Testing ",VEPackage," in ",VEPackage.path)
+# 
+#   # expand "tests" to the full path of each test file
+#   # (1) prepend file.path(VEPackage.path,"tests") to all files with separators
+#   # (2) check each file for existing and report those that don't exist
+#   # (3) normalize all the test paths
+#   setwd(VEPackage.path)
+#   if ( length(tests) > 0 ) {
+#     print(tests)
+#     expand.tests <- ! grepl("/|\\\\",tests)
+#     tests[expand.tests] <- file.path(VEPackage.path,"tests",tests[expand.tests])
+#     tests[!expand.tests] <- normalizePath(tests[!expand.tests],winslash="/",mustWork=FALSE) # relative to VEPackage.path
+#     tests <- tests[ file.exists(tests) ]
+#   }
+# 
+#   # Locate the runtime folder where the tests will run
+#   # TODO: if changing runtime, create a sub-folder of ve.runtime in which to run
+#   if ( changeRuntime ) {
+#     # Use a runtime associated specifically with the tested package
+#     setwd(VEPackage.path)
+#     if ( dir.exists("tests") ) { # in VEPackage.path
+#       ve.runtime <- grep("^(tests/)runtime.*",list.dirs("tests"),value=TRUE)[1]
+#       if ( dir.exists(ve.runtime) ) {
+#         ve.runtime <- normalizePath(ve.runtime,winslash="/",mustWork=FALSE)
+#       }
+#     } else {
+#       dir.create("tests")
+#       ve.runtime <- normalizePath(tempfile(pattern="runtime",tmpdir="tests"),winslash="/",mustWork=FALSE)
+#     }
+#     if ( ! dir.exists(ve.runtime) ) {
+#       ve.runtime <- normalizePath(tempfile(pattern="runtime",tmpdir="tests"),winslash="/",mustWork=FALSE)
+#       dir.create(ve.runtime)
+#     }
+#     model.path <- file.path(ve.runtime,"models")
+#     if ( ! dir.exists(model.path) ) dir.create(model.path)
+#     # TODO: is this too complicated? It's meant for working on visioneval with VEModel and its tests loaded
+#     # Use changeRuntime=FALSE to debug this module in a different module's runtime directory
+#     # Load the other module with changeRuntime=TRUE
+#     # then the new module with changeRuntime=FALSE
+#     message("Testing in Package runtime: ",ve.runtime)
+#   } else {
+#     # Use the standard runtime folder
+#     message("Testing in Existing runtime: ",ve.runtime)
+#   }
+# 
+#   # Detach and unload VE-like Packages
+#   pkgsLoaded <- names(utils::sessionInfo()$otherPkgs)
+#   VEpackages <- grep("(^VE)|(^visioneval$)",pkgsLoaded,value=TRUE)
+#   if ( length(VEpackages)>0 ) {
+#     VEpackages <- paste0("package:",VEpackages)
+#     for ( pkg in VEpackages ) {
+#       message("detaching ",pkg)
+#       detach(pkg,character.only=TRUE)
+#     }
+#   }
+#   nameSpaces <- names(utils::sessionInfo()$loadedOnly)
+#   VEpackages <- grep("^VE",nameSpaces,value=TRUE)
+#   if ( length(VEpackages)>0 ) {
+#     # sessionInfo keeps packages in the reverse order of loading (newest first)
+#     # so we can hopefully unload in the order provided and not trip over dependencies
+#     for ( pkg in VEpackages ) {
+#       backstop = 0
+#       repeat {
+#         message("trying to unload package ",pkg)
+#         try.unload <- try( unloadNamespace(pkg), silent=TRUE )
+#         if ( inherits(try.unload,"try-error") && backstop < 2 ) {
+#           try.first <- sub("^.*imported by .([^']+). so cannot be unloaded","\\1",trimws(try.unload))
+#           message("Trying first to unload package ",try.first)
+#           try( unloadNamespace(try.first), silent=TRUE )
+#           backstop <- backstop + 1
+#         } else break
+#       }
+#     }
+#   }
+#   message("unloading visioneval")
+#   unloadNamespace("visioneval")
+# 
+#   if ( ! is.logical(usePkgload) ) usePkgload <- framework.package
+#   if ( usePkgload ) {
+#     # Use pkgload::load_all to load up the VEPackage (setwd() to the package root first)
+#     message("pkgload::",VEPackage.path)
+#     pkgload::load_all(VEPackage.path)
+#   } else {
+#     # Don't want to use pkgload with module packages since it will re-estimate them
+#     # Expect them to be built and loaded; we'll still grab their tests
+#     require(VEModel,quietly=TRUE)
+#     eval(expr=parse(text=paste0("require(",VEPackage,",quietly=TRUE)"))) # Use the built package
+#   }
+# 
+#   # (Delete and Re-)Create an environment for the package tests ("test.VEPackage) on the search
+#   # path sys.source each of the test files into that environment
+#   if ( length(tests) > 0 ) {
+#     env.testPackage <- "test.VEPackage"
+#     if ( env.testPackage %in% search() ) {
+#       detach(env.testPackage,character.only=TRUE)
+#     }
+#     test.env <- attach(NULL,name=env.testPackage)
+#     for ( test in tests ) {
+#       # Set environment variable with path to test file.
+#       # Inside the test file that can be used to load auxiliary files
+#       # (e.g. testquery.VEqry in VEModel/tests/test.R)
+#       Sys.setenv(VE_test_source=dirname(test))
+#       sys.source(test,envir=test.env)
+#     }
+#     Sys.unsetenv("VE_test_source")
+#   }
+# 
+#   # TODO: Verify that the following will start VEModel in suitable test runtime
+#   # TODO: When re-running ve.run() after doing a walkthrough, need to unload any
+#   #   visioneval, VEModel, etc. Probably want a function unloadVisionEval to do that.
+#   setwd(ve.runtime)
+#   if ( ! "setRuntimeDirectory" %in% getNamespaceExports("VEModel") ) {
+#     # Hack to support pkgload from source folder which does not have a Namespace
+#     if ( "package:VEModel" %in% search() ) {
+#       vem <- as.environment("package:VEModel")
+#       vem$setRuntimeDirectory(ve.runtime)
+#     } else stop("package:VEModel failed to load!")
+#   } else {
+#     VEModel::setRuntimeDirectory(ve.runtime)
+#   }
+# 
+#   # A list of the objects loaded from the "tests" will be displayed after loading
+#   if ( length(walkthroughScripts)>0 ) {
+#     message("\nWalkthrough scripts:")
+#     print(walkthroughScripts)
+#     return(invisible(walkthroughScripts))
+#   } else {
+#     tests <- objects(test.env)
+#     if ( length(tests)==0 ) stop(paste0("No test objects defined for ",VEPackage))
+#     message("\nTest functions:")
+#     print( tests )
+#     return(invisible(tests))
+#   }
+# } # end of ve.test function definition

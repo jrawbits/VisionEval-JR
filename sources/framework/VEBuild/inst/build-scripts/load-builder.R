@@ -24,8 +24,8 @@ load.builder <- function(ve.scripts) {
   }
 
   if ( ! suppressWarnings(requireNamespace("import",quietly=TRUE,lib.loc=ve.lib)) ) {
-    utils::install.packages("import", lib=ve.lib, repos=CRAN.mirror, type=.Platform$pkgType )
-    requireNamespace("import",quietly=TRUE,lib.loc=ve.lib)
+    utils::install.packages("import", lib=ve.lib, repos=CRAN.mirror, type=.Platform$pkgType, quiet=TRUE )
+    suppressWarnings( requireNamespace("import",quietly=TRUE,lib.loc=ve.lib) )
   }
 
   script.files <- file.path(ve.scripts,dir(ve.scripts,pattern="\\.R$"),fsep="/")
@@ -39,10 +39,10 @@ load.builder <- function(ve.scripts) {
     if ( ! exists("script.contents") ) next
 
     eval(parse(text=paste0("import::into(.into='ve.builder',",paste(script.contents,collapse=","),",.from='",sf,"')")))
-    if ( length( instructions <- ls("ve.builder",pattern="^build\\.instructions") ) > 0 ) {
-      eval(parse(text=paste("message(",instructions,"()",")")))
-    }
     rm(script.contents)
+  }
+  if ( length( instructions <- ls("ve.builder",pattern="^build\\.instructions") ) > 0 ) {
+    eval(parse(text=paste("message(",instructions,"()",")")))
   }
   unloadNamespace("import") # so we can load it again as part of ve.build
   rm(sf,script.files)

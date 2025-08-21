@@ -95,7 +95,7 @@ startVisionEval <- function(
   ve.home=NULL,ve.runtime=NULL,
   overwrite=FALSE,
   ve.lib.name="ve-lib",
-  debug=FALSE
+  setupHome=FALSE
 ) {
   # Attach the runtime environment for important configuration parameters (see below)
   ve.env <- getRuntimeEnvironment()
@@ -144,13 +144,12 @@ startVisionEval <- function(
     }
   }
   message("Setting up VE_RUNTIME as ",ve.runtime)
-  message("You should start VisionEval from that folder in the future.")
 
   # Save the important parameters
   ve.env$ve.runtime <- ve.runtime
   ve.env$ve.home <- ve.home
   Sys.setenv(VE_HOME=ve.home,VE_RUNTIME=ve.runtime) # Somewhat redundantly, also save to operating system environment
-  # NOTE: ve.setup below will also save VE_HOME and VE_RUNTIME into the .Renviron startup file
+  # TODO/NOTE: ve.setup.environ below will also save VE_HOME and VE_RUNTIME into the .Renviron startup file
 
   # Clear VEModel if already present
   if ( "package:VEModel" %in% search() ) detach("package:VEModel")
@@ -158,7 +157,7 @@ startVisionEval <- function(
 
   # Clear visioneval so we can update it too
   if ( "package:visioneval" %in% search() ) detach("package:visioneval")
-  unloadNamespace("visioneval")
+  base::unloadNamespace("visioneval")
 
   # Set up ve-lib (R library location for installed VE packages and dependencies)
   # The same library location will hold sub-directories for the major/minor R version that is
@@ -178,8 +177,7 @@ startVisionEval <- function(
   # NOTE: if VE_HOME is a Github clone, we don't want to mess with the .Rprofile
   # Check and construct startup files in VE_RUNTIME and (optionally) VE_HOME if the latter is different from VE_RUNTIME
   # Configure ve.runtime (.Renviron etc.)
-  # TODO: this setup isn't working on a VE4-install.
-  ve.setup(ve.home,ve.runtime,overwrite=overwrite)
+  ve.setup.environ(ve.home,ve.runtime,overwrite=overwrite,setupHome=setupHome)
 
   # Make installed library path active (set VE_HOME, with ve.env$ve.lib in .Renviron
   if ( ! ve.env$ve.lib %in% .libPaths() ) {
@@ -188,10 +186,10 @@ startVisionEval <- function(
     .libPaths(ve.env$ve.lib) # Update .libPaths # Also gets rid of other non-base paths
   }
 
-  # Load VEModel
-  if ( ! require("VEModel",quietly=TRUE) ) {
-    message("Could not load VEModel.")
-    message("Please check VE_HOME location and re-install there if needed.")
+  # Load visioneval and VEModel
+  if ( ! require("visioneval",quietly=TRUE) || ! require("VEModel",quietly=TRUE) ) {
+    message("Could not load visioneval or VEModel.")
+    message("Please check VE_HOME/ve-lib location and re-install there if needed.")
     stop(call.=FALSE,"Failed to start VisionEval")
   } else {
     VEModel::initVisionEval() # should setwd to ve.env$ve.runtime
@@ -201,7 +199,7 @@ startVisionEval <- function(
   invisible(ve.env$ve.runtime)
 }
 
-# ve.setup creates the standard runtime startup files, notably VisionEval.Rproj and launch.bat
+# ve.setup.environ creates the standard runtime startup files, notably VisionEval.Rproj and launch.bat
 startup.files <- c(
   ".Renviron",
   ".Rprofile",
@@ -261,7 +259,7 @@ checkSetup <- function(ve.home,ve.runtime,overwrite=FALSE) {
   )
 }
 
-# ve.setup
+# ve.setup.environ
 #' Set up runtime files.
 #' 
 #' Create or update necessary runtime files, supplying R version-specific parameters
@@ -273,7 +271,7 @@ checkSetup <- function(ve.home,ve.runtime,overwrite=FALSE) {
 #' @param overwrite a logical indicating whether to overwrite existing startup files (default FALSE)
 #' @return the ve.runtime directory, invisibly
 #' @export
-ve.setup <- function(ve.home,ve.runtime,setupHome=FALSE,overwrite=FALSE) {
+ve.setup.environ <- function(ve.home,ve.runtime,setupHome=FALSE,overwrite=FALSE) {
 
   # Key locations should already have been set up
   ve.env <- getRuntimeEnvironment()
@@ -308,22 +306,13 @@ ve.setup <- function(ve.home,ve.runtime,setupHome=FALSE,overwrite=FALSE) {
     cat("that.R:",this.R,"\n",sep="",file=file.path(location,"r.version"))
 
     # Create or update .Renviron (VEBuild will add VE_BUILD to the list of defined locations, defaulting to VE_HOME)
-    # Find any VE_HOME line and replace it with ve.home
-    # Find any VE_RUNTIME line and replace it with ve.runtime
     renv.file      <- file.path(location,".Renviron")
     # If .Renviron exists, read read its lines
     if ( file.exists(renv.file) ) {
       renv.txt <- readLines(renv.file,warn=FALSE)
-      backup.number <- 1
-      backup.path <- file.path(location,"Previous.Renviron")
-      if ( file.exists(backup.file <- backup.path) ) {
-        while ( file.exists( backup.file <- paste0(backup.path,backup.number,sep=".") ) ) {
-          backup.number <- backup.number + 1
-        }
-      }
-      writeLines(renv.txt,backup.file)
       renv.txt <- grep("^(VE_HOME|VE_RUNTIME)=",renv.txt,value=TRUE,invert=TRUE) # Overwrite these lines below
     } else renv.txt <- character(0)
+    # Now replace VE_HOME and VE_RUNTIME with updated values from ve.home and ve.runtime respectively
     renv.txt <- c(
       renv.txt,
       paste0("VE_HOME=",normalizePath(ve.home,winslash="/",mustWork=TRUE)),

@@ -18,7 +18,8 @@ bootstrap.files <- unique(
 )
 bootstrap.files <- bootstrap.files[file.exists(bootstrap.files)]
 if ( length(bootstrap.files) > 0 ) {
-  # Start from a source code bootstrap
+  # Start from a source code bootstrap; changing VE_SOURCES to the source tree
+  Sys.setenv(VE_SOURCE=(ve.source <- file.path(ve.source,"sources")))
   source(bootstrap.files[1])
 } else {
   # Otherwise, do a runtime start (VEStart must be somewhere in .libPaths())

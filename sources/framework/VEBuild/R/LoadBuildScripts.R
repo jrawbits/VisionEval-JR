@@ -28,11 +28,13 @@ loadRuntimeEnvironment <- function() { # Keep this synchronized with VE-Bootstra
   ve.env$ve.runtime <- Sys.getenv("VE_RUNTME",NA)
   if ( is.na(ve.env$ve.build.dir) ) {
     if ( getwd() != ve.env$ve.home ) {
-      # If ve.env$ve.home is somewhere else than working directory, we presume it's because
-      # the user previously did an end-user (VEStart) installation at that location
-      # The working directory is the fresh source code location.
-      # We'll try to rebuild into the end-user location
-      ve.env$ve.build.dir <- ve.env$ve.home
+      # If ve.env$ve.home is somewhere else than the working directory, we presume it's because
+      #   the user previously did an end-user (VEStart) installation at that other location
+      # The working directory is the fresh source code location, and ve.home should be set there to
+      #   support VE-Bootstrap.R. TODO: still need to check that makes sense.
+      # We'll try to rebuild into the built subdirectory of ve.home (and always put the finished
+      #   packages into ve.home/ve-lib)
+      ve.env$ve.build.dir <- file.path(ve.env$ve.home,"built")
       ve.env$ve.home <- getwd()
     } else {
       # Park the artifacts in "built" subdirectory
@@ -67,7 +69,7 @@ loadRuntimeEnvironment <- function() { # Keep this synchronized with VE-Bootstra
   # Generally with the default names and locations, these will end up in the right place
   this.R <- paste(c(R.version["major"],R.version["minor"]),collapse=".")
   two.digit.R <- tools::file_path_sans_ext(this.R)
-  ve.env$ve.lib <- file.path(ve.env$ve.home,ve.lib.name,two.digit.R)
+  ve.env$ve.lib <- file.path(ve.env$ve.home,ve.env$ve.lib.name,two.digit.R)
   if ( ! dir.exists(ve.env$ve.lib) ) {
     dir.create(ve.env$ve.lib,recursive=TRUE)
     # if ( ! ve.env$ve.lib %in% .libPaths() ) .libPaths(ve.env$ve.lib,.libPaths())
@@ -77,11 +79,12 @@ loadRuntimeEnvironment <- function() { # Keep this synchronized with VE-Bootstra
 
 .onAttach <- function(libname, pkgname) {
 
-  # Load the ve.builder scripts so VEBuild itself can be unloaded and rebuilt
+  # Load the ve.builder scripts as a pseudo-package so VEBuild itself can be unloaded and rebuilt
+  # VE_BUILD_RUNNING is set when the build process starts and unset when it finishes
   running <- Sys.getenv("VE_BUILD_RUNNING",NA) # Don't reload scripts if one of them might be rebuilding VEBuild
   if ( is.na(running) ) {
     # The build script loaded below will set and unset VE_BUILD_RUNNING during ve.build()
-    packageStartupMessage("Bootstrapping VisionEval...")
+    packageStartupMessage("Loading VisionEval Builder...")
     loadRuntimeEnvironment()
     VEBuild.scripts <- system.file("build-scripts",package="VEBuild")
     build.loader <- file.path(VEBuild.scripts,"load-builder.R")
@@ -105,9 +108,10 @@ loadRuntimeEnvironment <- function() { # Keep this synchronized with VE-Bootstra
 }
 
 # Function documentation for ve.build.
-# The block of roxygen code below should be kept consistent wit ve.build in the build-scripts folder
+# The block of roxygen code below should be kept consistent with ve.build in the build-scripts folder
 
 #' Build VisionEval from source code in local directories.
+#'
 #' The VEBuild package loads a separate searchable environment and namespace which contains the
 #'   true machinery of ve.build. The function here exists for documentation purposes and will just
 #'   call the ve.build function in the "ve.builder" pseudo-package.
@@ -127,6 +131,29 @@ loadRuntimeEnvironment <- function() { # Keep this synchronized with VE-Bootstra
 #'   documentation for that file elsewhere)
 #' @return data.frame of packages and status (unchanged, built, failed)
 #' @name ve.build
+NULL
+
+# Function documentation for ve.setup
+# The block of roxygen code below should be kept consistent with ve.setup in the build-scripts folder
+
+#' Set up VEBuild locations (VE_BUILD, VE_SOURCE)
+#' The VEBuild package loads a separate searchable environment and namespace which contains the
+#'   true machinery of ve.setup. The function here exists for documentation purposes and will just
+#'   call the ve.setup function in the "ve.builder" pseudo-package.
+#' By default, building VE Packages will take place in a \code{built} subdirectory of VE_HOME.
+#' This function presents a dialog for selecting a new VE_BUILD location, and also for selecting
+#'   a VE_RUNTIME location.
+#' VE_HOME is always kept as the value set in .Renviron when VisionEval was installed. Likewise,
+#'   VE_SOURCE will point at the "sources" folder (defaulting to within VE_HOME) within a source
+#'   code installation. It exists so a different VE version can be built from another tree while
+#'   running R and VEBuild in the original location.
+#' If directories selected in the dialog do not exist (which may be the case for the default
+#'   VE_BUILD or VE_RUNTIME, for example) they will be created when the dialog values are selected.
+#'
+#' @param ve.build.dir default dialog value for VE_BUILD
+#' @param ve.runtime default dialog value for VE_RUNTIME
+#' @return named character vector for selected existing directories for VE_BUILD and VE_RUNTIME
+#' @name ve.setup
 NULL
 
 #' Imports the build scripts into a pre-created attached environment called "ve.builder".

@@ -981,7 +981,7 @@ SpecRequirements <- function(){
         TABLE = list(ValueType = "character",
                      ValuesAllowed = "[0-9a-zA-Z_]"),
         GROUP = list(ValueType = "character",
-                     ValuesAllowed = c("Global", "BaseYear", "Year")),
+                     ValuesAllowed = c("Global", "BaseYear", "Year", "PreviousYear")),
         TYPE = list(ValueType = "character",
                     ValuesAllowed = "[0-9a-zA-Z_]"),
         UNITS = list(ValueType = "character",

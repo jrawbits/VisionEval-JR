@@ -26,6 +26,7 @@
 #'   are being stored.
 #' @param envir The environment in which to create the ModelState_ls
 #' @return The updated RunParam_ls with ModelState parameters fleshed out
+#' @import sf
 #' @export
 initModelState <- function(Save=TRUE,Param_ls=NULL,RunPath=NULL,envir=modelEnvironment()) {
 
@@ -95,19 +96,38 @@ initModelState <- function(Save=TRUE,Param_ls=NULL,RunPath=NULL,envir=modelEnvir
 
   # Note: reproduces visioneval::readGeography, which is itself only called in tests.R
   GeoFile <- getRunParameter("GeoFile",Param_ls=Param_ls)
-  GeoFilePath <- file.path(ParamPath,GeoFile)
-  GeoFilePath <- GeoFilePath[file.exists(GeoFilePath)][1] # Allow ParamPath to be a vector of Paths
-  if ( is.na(GeoFilePath) || length(GeoFilePath)!=1 ) {
-    stop(
-      writeLog(
-        paste("Geography File",GeoFile,"does not exist in",ParamPath),
-        Level="error"
+  # If length 2, then it is geodatabase + table and we ignore ParamPath role
+  # Geo_df <- read.csv(GeoFilePath, colClasses="character")
+  Geo_df <- if ( length(GeoFile) > 1 ) {
+    GeoFilePath <- GeoFile[1]
+    GeoFileTable <- GeoFile[2]
+    sf::st_read(GeoFilePath,GeoFileTable,quiet=TRUE)
+  } else {
+    GeoFileTable <- character(0)
+    GeoFilePath <- file.path(ParamPath,GeoFile)
+    GeoFilePath <- GeoFilePath[file.exists(GeoFilePath)][1] # Allow ParamPath to be a vector of Paths
+    if ( is.na(GeoFilePath) || length(GeoFilePath)!=1 ) {
+      stop(
+        writeLog(
+          paste("Geography File",GeoFile,"does not exist in",ParamPath),
+          Level="error"
+        )
       )
-    )
+    }
+    sf::st_read(GeoFilePath,quiet=TRUE)
   }
-  Geo_df <- read.csv(GeoFilePath, colClasses="character")
-  attr(Geo_df,"file") <- GeoFilePath
-  CheckResults_ls <- checkGeography(Geo_df)
+  # NOTE: following transformations are needed because st_read does not recognize text "NA" as NA
+  if ( "Bzone" %in% names(Geo_df) ) {
+    Geo_df <- within(Geo_df, Bzone[Bzone=="NA"] <- as.character(NA))
+  }
+  if ( "Czone" %in% names(Geo_df) ) {
+    Geo_df <- within(Geo_df, Czone[Czone=="NA"] <- as.character(NA))
+  }
+
+  # Add GeoFile source as attribute
+  attr(Geo_df,"source") <- paste(c(GeoFilePath,GeoFileTable),collapse=" : ")
+
+  CheckResults_ls <- checkGeography(Geo_df) # TODO: could move the geodatabase field renaming to checkGeography
   Messages_ <- CheckResults_ls$Messages
   if (length(Messages_) > 0) {
     writeLog(Messages_,Level="error")
@@ -1436,6 +1456,8 @@ readGeography <- function(Save=TRUE,Param_ls=NULL) {
     Param_ls <- model.env$RunParam_ls
   }
 
+  #TODO: expand to use the same logic as the model initialization,
+  #  including spatial data, field name mapping.
   #Read in geographic definitions if file exists, otherwise error
   #--------------------------------------------------------------
   GeoFile <- getRunParameter("GeoFile",Param_ls=Param_ls)
@@ -1491,6 +1513,10 @@ readGeography <- function(Save=TRUE,Param_ls=NULL) {
 checkGeography <- function(Geo_df) {
   #Check that file has all required fields and extract field attributes
   #--------------------------------------------------------------------
+  # TODO: add field name mapping using RunParam_ls$GeoFileFields
+  # Do that in two parts: if the GeoFileFields are present, just carry on
+  # Otherwise, see if there is a mapping for the missing ones in GeoFileFields
+  # Also, we can relax about Bzone and Czone as those can be filled with NA
   FieldNames_ <- c("Azone", "Bzone", "Czone", "Marea")
   missing <- ! (FieldNames_ %in% names(Geo_df))
   if ( any(missing) ) {
@@ -1517,16 +1543,14 @@ checkGeography <- function(Geo_df) {
     }
   }
 
-  #TODO: Complete or remove Czone implementation
-  #Determine whether entries are correct if Bzones have been specified and
-  #Czones are unspecified
+  # Determine whether entries are correct if Bzones have been specified and Czones are unspecified
   if (BzoneSpecified & !CzoneSpecified) {
-    #Are Bzones completely specified
+    # Are Bzones completely specified
     if (any(is.na(Geo_df$Bzone))) {
       Messages_ <- c(Messages_,
         "Either all Bzone entries must be NA or no Bzone entries must be NA.")
     }
-    #Are any Bzone names duplicated
+    # Are any Bzone names duplicated
     if (any(duplicated(Geo_df$Bzone))) {
       DupBzone <- unique(Geo_df$Bzone[duplicated(Geo_df$Bzone)])
       Messages_ <- c(Messages_, paste0(
@@ -1535,7 +1559,7 @@ checkGeography <- function(Geo_df) {
         ") not allowed."
       ))
     }
-    #Are metropolitan area designations consistent
+    # Are metropolitan area designations consistent
     AzoneMareas_ <- tapply(Geo_df$Marea, Geo_df$Azone, unique)
     AzoneMareas_ <- lapply(AzoneMareas_, function(x) {
       x[x != "None"]
@@ -1545,14 +1569,14 @@ checkGeography <- function(Geo_df) {
         "At least one Azone is assigned more than one Marea.")
     }
   }
-  #Determine whether entries are correct if Czones have been specified
+  # Determine whether entries are correct if Czones have been specified
   if (CzoneSpecified) {
-    #Are Czones completely specified
+    # Are Czones completely specified
     if (any(is.na(Geo_df$Czone))) {
       Messages_ <- c(Messages_,
         "Either all Czone entries must be NA or no Czone entries must be NA.")
     }
-    #Are any Czone names duplicated
+    # Are any Czone names duplicated
     if (any(duplicated(Geo_df$Czone))) {
       DupCzone <- unique(Geo_df$Czone[duplicated(Geo_df$Czone)])
       Messages_ <- c(Messages_, paste0(
@@ -1561,7 +1585,7 @@ checkGeography <- function(Geo_df) {
         ") not allowed."
       ))
     }
-    #Are metropolitan area designations consistent
+    # Are metropolitan area designations consistent
     AzoneMareas_ <- tapply(Geo_df$Marea, Geo_df$Azone, unique)
     AzoneMareas_ <- lapply(AzoneMareas_, function(x) {
       x[x != "None"]
@@ -1571,7 +1595,7 @@ checkGeography <- function(Geo_df) {
         "At least one Azone is assigned more than one Marea.")
     }
   }
-  #Return messages and elements for ModelState
+  # Return messages and elements for ModelState
   Update_ls <- list(Geo_df = Geo_df, BzoneSpecified = BzoneSpecified,
     CzoneSpecified = CzoneSpecified)
   list(Messages = Messages_, Update = Update_ls)
@@ -1607,10 +1631,12 @@ initDatastoreGeography <- function(GroupNames = NULL, envir=modelEnvironment()) 
   G <- getModelState(envir=envir)
 
   #Get FILE and INPUTDIR attribute for specifications
-  filename <- attr(G$Geo_df,"file")
-  if ( is.character(filename) ) {
-    FILE <- basename(filename)
-    INPUTDIR <- dirname(filename)
+  # TODO: update to handle a spatial database as the source (not just a file)
+  # TODO: Put layer as FILE, and database as INPUTDIR if GeoFile is two-part
+  FILENAME <- attr(G$Geo_df,"file")
+  if ( is.character(FILENAME) ) {
+    FILE <- basename(FILENAME)
+    INPUTDIR <- dirname(FILENAME)
   } else {
     FILE <- INPUTDIR <- as.character(NA)
   }
@@ -1681,8 +1707,12 @@ initDatastoreGeography <- function(GroupNames = NULL, envir=modelEnvironment()) 
   }
 
   # closure to create specification list for extra fields
+  # TODO: for starters, ignore (don't save) the geometry field
+  # TODO: The geometry and smallest defined geo field should be saved separately in the Datastore
+  #   Perhaps create a Global/Geometry virtual table that has geometry and Azone or Bzone IDs
   getExtraGeoFields <- function(Geo_df) {
-    extraFields <- ! names(Geo_df) %in% c("Marea","Azone","Bzone","Czone")
+    # TODO: only load specified extra fields from GeoFileExtraFields
+    extraFields <- ! names(Geo_df) %in% c("Marea","Azone","Bzone","Czone") # TODO: affirmative present in ExtraFields
     extraFieldSpecs <- list()
     fieldSpec <- list(
       MODULE = "visioneval",
@@ -1708,8 +1738,7 @@ initDatastoreGeography <- function(GroupNames = NULL, envir=modelEnvironment()) 
 
   extraFieldSpecs <- getExtraGeoFields(G$Geo_df) # names other than "Marea","Azone","Bzone","Czone"
 
-  # TODO: Fix this up so we write extra fields into the BZone Table
-  # Need to write into Bzione Global and Year groups
+  # Perhaps put geometry somewhere else?
   writeExtraFields <- function(Geo_df,extraFieldSpecs,GroupName,Table,envir) {
     GroupTable <- file.path(GroupName,Table)
     for ( name in names(extraFieldSpecs) ) { # Geo_df column names
@@ -1720,7 +1749,7 @@ initDatastoreGeography <- function(GroupNames = NULL, envir=modelEnvironment()) 
     }
   }
 
-  #Initialize geography tables and zone datasets
+  # Initialize geography tables and zone datasets
   if (is.null(GroupNames)) GroupNames <- c("Global", G$Years)
   for (GroupName in GroupNames) {
     initTable(Table = "Region", Group = GroupName, Length = 1,envir=envir)
@@ -1734,10 +1763,10 @@ initDatastoreGeography <- function(GroupNames = NULL, envir=modelEnvironment()) 
     }
   }
 
-  #Add zone names to zone tables
+  # Add zone names to zone tables
   for (GroupName in GroupNames) {
     if (!G$BzoneSpecified & !G$CzoneSpecified) {
-      #Write to Azone table
+      # Write to Azone table
       writeToTable(G$Geo_df$Azone, AzoneSpec_ls, Group = GroupName, Index = NULL, envir=envir)
       MareaSpec_ls$TABLE = "Azone"
       writeToTable(G$Geo_df$Marea, MareaSpec_ls, Group = GroupName, Index = NULL, envir=envir)
@@ -1792,12 +1821,12 @@ initDatastoreGeography <- function(GroupNames = NULL, envir=modelEnvironment()) 
       writeToTable(Mareas_, MareaSpec_ls, Group = GroupName, Index = NULL, envir=envir)
     }
   }
-  #Write to log that complete
+  # Write to log that completed successfully
   Message <- "Geography sucessfully added to datastore."
   writeLog(Message,Level="info")
   TRUE
   # TODO: return the list of specifications used to create the geography
-  # TODO: include FILE as geo.csv and INPUTDIR as ParamPath
+  # TODO: include FILE as geo.csv and INPUTDIR as ParamPath (or more elaborate for spatial database)
 }
 
 #LOAD MODEL PARAMETERS

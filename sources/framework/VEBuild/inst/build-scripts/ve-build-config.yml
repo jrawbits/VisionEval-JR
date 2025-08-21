@@ -1,14 +1,18 @@
-# YAML configuration file for VEBuild
+# Sample YAML configuration file for VEBuild
 
-# # Identify directory names within VE_BUILD
-#   - ve-lib
-#   - ve-src
-#   - ve-pkg-repo
-#   - dependencies-repo
-# # Identify repositories to clone / directories to visit to find VE to build
-#   - List of directories (relative to VE_HOME)
-#     - Will be searched recursively for DESCRIPTION files
-#   - Don't mess with having VE clone those
+# # BuildTargets: Identify directory names for structural directories
+#   - ve-lib (always in VE_HOME)
+#   - ve-src (in VE_BUILD, default VE_HOME/built)
+#   - ve-pkg-repo (in VE_BUILD)
+#   - dependencies-repo (in VE_BUILD)
+#   - installers (in VE_BUILD)
+# # PackageSources: Identifies directories with packages to build
+#   - May be an absolute path to a directory containing (directories containing, recursively) DESCRIPTION files
+#   - May be (1) relative to working directory
+#   - If not found in working directory, then relative to VE_SOURCE
+#   - VE_SOURCE defaults to VE_HOME/sources (for bootstrap from Git repository)
+#   - VE_SOURCE may be set to another folder away from VE_HOME (e.g. if downloading a .zip for installation)
+#   - Typically VE_SOURCE need not be set manually, since it will be set by the installer if needed
 # # Identify desired output:
 #   - Local Installation
 #   - Installer
@@ -24,7 +28,8 @@ BuildTargets:                 # relative to Output - names of dependencies
   - ve.dependencies  : dependencies-repo
   - ve.installers    : installers
 
-PackageSources:               # absolute path or relative to VE_HOME
-  - sources                   # name of sub-directory of VE_HOME
-  - external                  # name of sub-directory of VE_HOME
+PackageSources:               # absolute path or relative to VE_SOURCE
+  - framework                 # name of sub-directory of VE_SOURCE
+  - modules
+  - optional                  # name of sub-directory of VE_SOURCE
   # - C:/Git-Repos/VE-Another-Source
